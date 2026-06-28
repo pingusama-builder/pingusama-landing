@@ -9,6 +9,9 @@ hero-*.png
 # Internal handoff notes (contain local machine paths)
 HANDOFF.md
 
+# Superpowers brainstorming session artifacts
+.superpowers/
+
 # Python
 __pycache__/
 *.pyc
