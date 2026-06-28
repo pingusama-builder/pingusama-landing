@@ -1,0 +1,29 @@
+# Generated runner artifacts (regenerable via make_runner.py; frames are
+# already embedded as base64 in index.html)
+runner_*.png
+runner.b64.txt
+
+# Verification screenshots (Playwright captures)
+hero-*.png
+
+# Internal handoff notes (contain local machine paths)
+HANDOFF.md
+
+# Python
+__pycache__/
+*.pyc
+
+# Vercel
+.vercel/
+
+# Node (if any tooling is added later)
+node_modules/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
