@@ -290,11 +290,20 @@
 
   /* ====== responsive: stack runner below wheel on narrow screens ====== */
   @media (max-width: 640px) {
-    .scene { flex-direction: column; gap: 4px; }
-    .wheel-wrap { width: min(380px, 92vw); }
-    .runner-wrap { padding-bottom: 0; }
-    .runner { width: 110px; height: 116px; }
-    .runner img { width: 110px; }
+    .scene {
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      margin-bottom: 2px;
+    }
+    .wheel-wrap { width: min(360px, 88vw); }
+    .runner-wrap {
+      width: 92px;
+      margin-bottom: 0;        /* undo desktop 106px pull-up */
+      margin-top: -6px;        /* tuck it a little closer to the wheel */
+    }
+    .runner { width: 92px; height: 96px; }
+    .runner img { width: 92px; }
   }
 
   /* hand-drawn divider */
@@ -419,10 +428,20 @@
   @media (max-width: 720px) {
     .wheel-wrap { width: min(380px, 92vw); margin-top: 0; }
     .hero { padding: 12px 0 4px; }
+    .hero h1 { font-size: clamp(30px, 7vw, 42px); }
     .top nav a { margin-left: 14px; font-size: 14px; }
     .brand { font-size: 19px; }
-    .detail { margin-top: 4px; padding: 18px 20px; min-height: 152px; }
+    .detail {
+      margin-top: 4px;
+      padding: 18px 20px;
+      min-height: 152px;
+      text-align: left;
+    }
     .detail-title { font-size: 24px; }
+    .detail-nature { padding-left: 0; padding-right: 0; }
+    .detail-nature::after { margin-left: 0; }
+    .detail-foot { justify-content: flex-start; gap: 16px; }
+    .detail-foot span:empty { display: none; }
   }
 </style>
 </head>
@@ -633,7 +652,7 @@
           <div class="detail-head">
             <span class="detail-eyebrow">the workshop</span>
           </div>
-          <h2 class="detail-title">Hover a point to see its true nature.</h2>
+          <h2 class="detail-title">Pick a point to see its true nature.</h2>
           <p class="detail-nature">Each tool holds a small piece of work I used to do by hand.</p>
           <p class="detail-desc">Tap or hover any of the four points on the wheel above. The panel will tell you what the tool does, whether it's live yet, and where to find it.</p>
         </div>
@@ -740,7 +759,7 @@
             <div class="detail-head">
               <span class="detail-eyebrow">the workshop</span>
             </div>
-            <h2 class="detail-title">Hover a point to see its true nature.</h2>
+            <h2 class="detail-title">Pick a point to see its true nature.</h2>
             <p class="detail-nature">Each tool holds a small piece of work I used to do by hand.</p>
             <p class="detail-desc">Tap or hover any of the four points on the wheel above. The panel will tell you what the tool does, whether it's live yet, and where to find it.</p>
           </div>
