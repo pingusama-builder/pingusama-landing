@@ -1,0 +1,114 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Header from "./Header";
+import Footer from "./Footer";
+import Wheel from "./Wheel";
+import Runner from "./Runner";
+import DetailPanel from "./DetailPanel";
+import { TOOLS, type ToolKey } from "@/lib/tools";
+
+export default function LandingPage({ frames }: { frames: string[] }) {
+  const [activeKey, setActiveKey] = useState<ToolKey | null>(null);
+  const [lockedKey, setLockedKey] = useState<ToolKey | null>(null);
+
+  const handleHover = (key: ToolKey) => {
+    if (lockedKey && lockedKey !== key) return;
+    setActiveKey(key);
+  };
+
+  const handleFocus = (key: ToolKey) => {
+    if (lockedKey && lockedKey !== key) return;
+    setActiveKey(key);
+  };
+
+  const handleLeave = () => {
+    if (lockedKey) return;
+    if (activeKey) setActiveKey(null);
+  };
+
+  const handleClick = (key: ToolKey) => {
+    setActiveKey(key);
+    const becomingLocked = lockedKey !== key;
+    setLockedKey((prev) => (prev === key ? null : key));
+    if (becomingLocked && TOOLS[key].statusKind === "local") {
+      window.open(TOOLS[key].href, "_blank", "noopener");
+    }
+  };
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (target.closest("#wheel-wrap") || target.closest("#detail")) return;
+      if (lockedKey) {
+        setLockedKey(null);
+        setActiveKey(null);
+      }
+    };
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, [lockedKey]);
+
+  return (
+    <>
+      <Header />
+      <main>
+        <section id="wheel" className="hero wrap">
+          <div className="eyebrow">a small workshop · est. 2026</div>
+          <h1>
+            Tools I&apos;ve made,{" "}
+            <em>for the things I kept doing by hand.</em>
+          </h1>
+          <p className="lede">
+            A handful of small web apps, each one built for a specific task I got
+            tired of doing the long way. Pick one from the wheel.
+          </p>
+
+          <div className="scene">
+            <Wheel
+              activeKey={activeKey}
+              lockedKey={lockedKey}
+              onHover={handleHover}
+              onFocus={handleFocus}
+              onClick={handleClick}
+              onLeave={handleLeave}
+            />
+            <Runner frames={frames} />
+          </div>
+
+          <DetailPanel currentKey={lockedKey || activeKey} locked={!!lockedKey} />
+        </section>
+
+        <div className="divider" aria-hidden="true">
+          <svg
+            viewBox="0 0 160 22"
+            fill="none"
+            stroke="#8B6F47"
+            strokeWidth={1.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M2 12 C 14 4, 26 20, 40 12 S 66 4, 80 12 S 106 20, 120 12 S 146 4, 158 12" />
+            <circle cx={80} cy={12} r={2.2} fill="#C97B5C" stroke="none" />
+          </svg>
+        </div>
+
+        <section
+          id="about"
+          className="wrap"
+          style={{ textAlign: "center", padding: "4px 0 20px", maxWidth: 620 }}
+        >
+          <p style={{ margin: "0 0 6px" }}>
+            Each tool lives on its own subdomain and runs in the browser where it
+            can.
+          </p>
+          <p style={{ margin: 0, color: "var(--walnut-soft)" }}>
+            No accounts. No tracking. Made by{" "}
+            <span className="sig">Pingusama</span>, with care.
+          </p>
+        </section>
+      </main>
+      <Footer />
+    </>
+  );
+}

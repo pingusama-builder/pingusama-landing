@@ -2,9 +2,12 @@
 # already embedded as base64 in index.html)
 runner_*.png
 runner.b64.txt
+my-app/data/
+my-app/runner.b64.txt
 
 # Verification screenshots (Playwright captures)
 hero-*.png
+my-app/*.png
 
 # Internal handoff notes (contain local machine paths)
 HANDOFF.md

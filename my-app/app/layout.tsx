@@ -1,0 +1,32 @@
+import type { Metadata } from "next";
+import { Fraunces, Nunito } from "next/font/google";
+import "./globals.css";
+
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-fraunces",
+  display: "swap",
+});
+
+const nunito = Nunito({
+  subsets: ["latin"],
+  variable: "--font-nunito",
+  display: "swap",
+});
+
+export const metadata: Metadata = {
+  title: "Pingusama's Tools — A small workshop of web tools",
+  description: "A small workshop of web tools built by Pingusama.",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" className={`${fraunces.variable} ${nunito.variable}`}>
+      <body className="antialiased">{children}</body>
+    </html>
+  );
+}
