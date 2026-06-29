@@ -325,6 +325,35 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   margin: 8px auto 0;
   background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 56 10'><path d='M2 5 C 8 1, 14 9, 20 5 S 32 1, 38 5 S 50 9, 54 5' fill='none' stroke='%238B6F47' stroke-width='1' stroke-linecap='round'/><circle cx='28' cy='5' r='1.4' fill='%23C97B5C'/></svg>") center/contain no-repeat;
 }
+
+/* ====== wind effect: leaves drift from the Name of the Words point ====== */
+.wind-leaves {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+.point[data-tool="words"]:hover .wind-leaves,
+.point[data-tool="words"]:focus-visible .wind-leaves,
+.point[data-tool="words"].locked .wind-leaves {
+  opacity: 1;
+}
+@keyframes leaf-drift {
+  0%   { transform: translate(0, 0) rotate(0deg); opacity: 0; }
+  15%  { opacity: 1; }
+  100% { transform: translate(18px, -36px) rotate(45deg); opacity: 0; }
+}
+.wind-leaves .leaf {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: leaf-drift 2.2s ease-in-out infinite;
+  opacity: 0;
+}
+.wind-leaves .leaf:nth-child(1) { animation-delay: 0ms; }
+.wind-leaves .leaf:nth-child(2) { animation-delay: 550ms; }
+.wind-leaves .leaf:nth-child(3) { animation-delay: 1100ms; }
+@media (prefers-reduced-motion: reduce) {
+  .wind-leaves .leaf { animation: none; }
+}
 .detail-desc {
   margin: 0 0 14px;
   color: var(--walnut-soft);

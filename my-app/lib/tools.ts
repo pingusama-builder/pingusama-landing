@@ -24,7 +24,7 @@ export const TOOLS: Record<ToolKey, Tool> = {
   words: {
     eyebrow: "the keeper · vocab",
     title: "Name of the Words",
-    nature: "Its true nature: catching the words you almost let go.",
+    nature: "Its true name: catching the words you almost let go.",
     desc: "A pocket vocabulary app. Save a word today, see it again tomorrow, let the ones that matter root themselves and forget the rest.",
     status: "Live",
     statusKind: "live",
@@ -33,7 +33,7 @@ export const TOOLS: Record<ToolKey, Tool> = {
   vn: {
     eyebrow: "the compass · discovery",
     title: "VN Finder",
-    nature: "Its true nature: a small map of stories I kept replaying.",
+    nature: "Its true name: a small map of stories I kept replaying.",
     desc: "Look up visual novels by character, route, or scene. Built from the data of games I couldn't stop thinking about long after the credits rolled.",
     status: "Live",
     statusKind: "live",
@@ -42,7 +42,7 @@ export const TOOLS: Record<ToolKey, Tool> = {
   sw: {
     eyebrow: "the scribe · parser",
     title: "Summoners War Parser",
-    nature: "Its true nature: reading the runes of a save file.",
+    nature: "Its true name: reading the runes of a save file.",
     desc: "Launches the local Summoners War Parser on your machine. Run its start_sw_web.bat first; it opens on http://localhost:5000 (or the next free port if 5000 is busy).",
     status: "Local",
     statusKind: "local",

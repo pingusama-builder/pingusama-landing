@@ -15,8 +15,8 @@ const nunito = Nunito({
 });
 
 export const metadata: Metadata = {
-  title: "Pingusama's Tools — A small workshop of web tools",
-  description: "A small workshop of web tools built by Pingusama.",
+  title: "Pingusama's Tinkering — A small workshop of makings",
+  description: "A small workshop of makings built by Pingusama.",
 };
 
 export default function RootLayout({

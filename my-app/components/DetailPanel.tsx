@@ -52,17 +52,17 @@ export default function DetailPanel({
           )}
         </div>
         <h2 className="detail-title">
-          {t ? t.title : "Pick a point to see its true nature."}
+          {t ? t.title : "Touch a point to wake it."}
         </h2>
         <p className="detail-nature">
           {t
             ? t.nature
-            : "Each tool holds a small piece of work I used to do by hand."}
+            : "Each making holds a small piece of work I used to do by hand."}
         </p>
         <p className="detail-desc">
           {t
             ? t.desc
-            : "Tap or hover any of the four points on the wheel above. The panel will tell you what the tool does, whether it's live yet, and where to find it."}
+            : "Tap or hover any of the four points on the wheel above. The panel will tell you what the making does, whether it's out in the world yet, and where to find it."}
         </p>
         {t && (
           <div className="detail-foot">

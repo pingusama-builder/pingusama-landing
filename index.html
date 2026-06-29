@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
-<title>Pingusama's Tools — A small workshop of web tools</title>
+<title>Pingusama's Tinkering — A small workshop of makings</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -296,6 +296,35 @@
     .runner img.f0 { opacity: 1; }
   }
 
+  /* ====== wind effect: leaves drift from the Name of the Words point ====== */
+  .wind-leaves {
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .25s ease;
+  }
+  .point[data-tool="words"]:hover .wind-leaves,
+  .point[data-tool="words"]:focus-visible .wind-leaves,
+  .point[data-tool="words"].locked .wind-leaves {
+    opacity: 1;
+  }
+  @keyframes leaf-drift {
+    0%   { transform: translate(0, 0) rotate(0deg); opacity: 0; }
+    15%  { opacity: 1; }
+    100% { transform: translate(18px, -36px) rotate(45deg); opacity: 0; }
+  }
+  .wind-leaves .leaf {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: leaf-drift 2.2s ease-in-out infinite;
+    opacity: 0;
+  }
+  .wind-leaves .leaf:nth-child(1) { animation-delay: 0ms; }
+  .wind-leaves .leaf:nth-child(2) { animation-delay: 550ms; }
+  .wind-leaves .leaf:nth-child(3) { animation-delay: 1100ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .wind-leaves .leaf { animation: none; }
+  }
+
   /* ====== responsive: stack runner below wheel on narrow screens ====== */
   @media (max-width: 640px) {
     .scene {
@@ -465,9 +494,9 @@
 
   <main>
     <section id="wheel" class="hero wrap">
-      <div class="eyebrow">a small workshop · est. 2026</div>
-      <h1>Tools I've made, <em>for the things I kept doing by hand.</em></h1>
-      <p class="lede">A handful of small web apps, each one built for a specific task I got tired of doing the long way. Pick one from the wheel.</p>
+      <div class="eyebrow">a quiet workshop · est. 2026</div>
+      <h1>The work of a tinkerer: <em>small, stubborn, useful most of the time.</em></h1>
+      <p class="lede">A handful of small contraptions, each one built because I was tired of doing something the long way. Touch a point to wake it.</p>
 
       <div class="scene">
       <div class="wheel-wrap">
@@ -625,6 +654,12 @@
                 <path d="M11 27 H 21"/>
               </svg>
               <text class="point-label" x="42" y="134" dy="0">Words</text>
+              <!-- wind: small leaves drifting from the point -->
+              <g class="wind-leaves" transform="translate(42 100)">
+                <path class="leaf" d="M -2 -2 C -6 -6, -4 -10, 0 -10 C 4 -10, 6 -6, 2 -2 C 0 0, -1 -1, -2 -2 Z" fill="#8FA876" stroke="#6E8A57" stroke-width="0.6"/>
+                <path class="leaf" d="M 2 2 C -2 -2, 0 -6, 4 -6 C 8 -6, 10 -2, 6 2 C 4 4, 3 3, 2 2 Z" fill="#A3C08A" stroke="#6E8A57" stroke-width="0.6"/>
+                <path class="leaf" d="M -4 4 C -8 0, -6 -4, -2 -4 C 2 -4, 4 0, 0 4 C -2 6, -3 5, -4 4 Z" fill="#8FA876" stroke="#6E8A57" stroke-width="0.6"/>
+              </g>
             </a>
 
             <!-- ====== central sigil (static, like a fixed point of the compass) ====== -->
@@ -660,9 +695,9 @@
           <div class="detail-head">
             <span class="detail-eyebrow">the workshop</span>
           </div>
-          <h2 class="detail-title">Pick a point to see its true nature.</h2>
-          <p class="detail-nature">Each tool holds a small piece of work I used to do by hand.</p>
-          <p class="detail-desc">Tap or hover any of the four points on the wheel above. The panel will tell you what the tool does, whether it's live yet, and where to find it.</p>
+          <h2 class="detail-title">Touch a point to wake it.</h2>
+          <p class="detail-nature">Each making holds a small piece of work I used to do by hand.</p>
+          <p class="detail-desc">Tap or hover any of the four points on the wheel above. The panel will tell you what the making does, whether it's out in the world yet, and where to find it.</p>
         </div>
       </div>
     </section>
@@ -675,17 +710,17 @@
     </div>
 
     <section id="about" class="wrap" style="text-align:center; padding: 4px 0 20px; max-width: 620px;">
-      <p style="margin: 0 0 6px;">Each tool lives on its own subdomain and runs in the browser where it can.</p>
-      <p style="margin: 0; color: var(--walnut-soft);">No accounts. No tracking. Made by <span class="sig">Pingusama</span>, with care.</p>
+      <p style="margin: 0 0 6px;">Each making lives on its own subdomain and runs where it can.</p>
+      <p style="margin: 0; color: var(--walnut-soft);">No accounts. No tracking. Made by <span class="sig">Pingusama</span>, with copper and patience.</p>
     </section>
   </main>
 
   <footer class="foot wrap">
-    © 2026 Pingusama · Built quietly in the background.
+    © 2026 Pingusama · Built quietly, with copper and patience.
   </footer>
 
   <script>
-    /* ----- tool data (the "true natures") ----- */
+    /* ----- tool data (the "true names") ----- */
     const TOOLS = {
       epub: {
         eyebrow: "the tamer · converter",
@@ -699,7 +734,7 @@
       words: {
         eyebrow: "the keeper · vocab",
         title: "Name of the Words",
-        nature: "Its true nature: catching the words you almost let go.",
+        nature: "Its true name: catching the words you almost let go.",
         desc: "A pocket vocabulary app. Save a word today, see it again tomorrow, let the ones that matter root themselves and forget the rest.",
         status: "Live",
         statusKind: "live",
@@ -708,7 +743,7 @@
       vn: {
         eyebrow: "the compass · discovery",
         title: "VN Finder",
-        nature: "Its true nature: a small map of stories I kept replaying.",
+        nature: "Its true name: a small map of stories I kept replaying.",
         desc: "Look up visual novels by character, route, or scene. Built from the data of games I couldn't stop thinking about long after the credits rolled.",
         status: "Live",
         statusKind: "live",
@@ -717,7 +752,7 @@
       sw: {
         eyebrow: "the scribe · parser",
         title: "Summoners War Parser",
-        nature: "Its true nature: reading the runes of a save file.",
+        nature: "Its true name: reading the runes of a save file.",
         desc: "Launches the local Summoners War Parser on your machine. Run its start_sw_web.bat first; it opens on http://localhost:5000 (or the next free port if 5000 is busy).",
         status: "Local",
         statusKind: "local",
@@ -767,9 +802,9 @@
             <div class="detail-head">
               <span class="detail-eyebrow">the workshop</span>
             </div>
-            <h2 class="detail-title">Pick a point to see its true nature.</h2>
-            <p class="detail-nature">Each tool holds a small piece of work I used to do by hand.</p>
-            <p class="detail-desc">Tap or hover any of the four points on the wheel above. The panel will tell you what the tool does, whether it's live yet, and where to find it.</p>
+            <h2 class="detail-title">Touch a point to wake it.</h2>
+            <p class="detail-nature">Each making holds a small piece of work I used to do by hand.</p>
+            <p class="detail-desc">Tap or hover any of the four points on the wheel above. The panel will tell you what the making does, whether it's out in the world yet, and where to find it.</p>
           </div>
         `;
         detail.classList.remove('fading');

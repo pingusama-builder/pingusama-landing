@@ -54,14 +54,14 @@ export default function LandingPage({ frames }: { frames: string[] }) {
       <Header />
       <main>
         <section id="wheel" className="hero wrap">
-          <div className="eyebrow">a small workshop · est. 2026</div>
+          <div className="eyebrow">a quiet workshop · est. 2026</div>
           <h1>
-            Tools I&apos;ve made,{" "}
-            <em>for the things I kept doing by hand.</em>
+            The work of a tinkerer:{" "}
+            <em>small, stubborn, useful most of the time.</em>
           </h1>
           <p className="lede">
-            A handful of small web apps, each one built for a specific task I got
-            tired of doing the long way. Pick one from the wheel.
+            A handful of small contraptions, each one built because I was tired of
+            doing something the long way. Touch a point to wake it.
           </p>
 
           <div className="scene">
@@ -99,12 +99,11 @@ export default function LandingPage({ frames }: { frames: string[] }) {
           style={{ textAlign: "center", padding: "4px 0 20px", maxWidth: 620 }}
         >
           <p style={{ margin: "0 0 6px" }}>
-            Each tool lives on its own subdomain and runs in the browser where it
-            can.
+            Each making lives on its own subdomain and runs where it can.
           </p>
           <p style={{ margin: 0, color: "var(--walnut-soft)" }}>
             No accounts. No tracking. Made by{" "}
-            <span className="sig">Pingusama</span>, with care.
+            <span className="sig">Pingusama</span>, with copper and patience.
           </p>
         </section>
       </main>

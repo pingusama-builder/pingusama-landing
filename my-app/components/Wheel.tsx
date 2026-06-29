@@ -153,6 +153,31 @@ function ToolPoint({
           <path d="M11 27 H 21" />
         </svg>
       )}
+      {key === "words" && (
+        <g className="wind-leaves" transform={`translate(${cx} ${cy})`}>
+          <path
+            className="leaf"
+            d="M -2 -2 C -6 -6, -4 -10, 0 -10 C 4 -10, 6 -6, 2 -2 C 0 0, -1 -1, -2 -2 Z"
+            fill="#8FA876"
+            stroke="#6E8A57"
+            strokeWidth={0.6}
+          />
+          <path
+            className="leaf"
+            d="M 2 2 C -2 -2, 0 -6, 4 -6 C 8 -6, 10 -2, 6 2 C 4 4, 3 3, 2 2 Z"
+            fill="#A3C08A"
+            stroke="#6E8A57"
+            strokeWidth={0.6}
+          />
+          <path
+            className="leaf"
+            d="M -4 4 C -8 0, -6 -4, -2 -4 C 2 -4, 4 0, 0 4 C -2 6, -3 5, -4 4 Z"
+            fill="#8FA876"
+            stroke="#6E8A57"
+            strokeWidth={0.6}
+          />
+        </g>
+      )}
       <text className="point-label" x={cx} y={cy + 34} dy={0}>
         {label}
       </text>
