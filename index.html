@@ -240,6 +240,11 @@
     position: relative;
     width: 132px;
     height: 140px;
+    cursor: pointer;
+  }
+  .runner.paused img,
+  .runner.paused::before {
+    animation-play-state: paused !important;
   }
   .runner img {
     position: absolute;
@@ -835,6 +840,14 @@
         showIdle();
       }
     });
+
+    // click the runner to pause/resume the jog animation
+    const runner = document.querySelector('.runner');
+    if (runner) {
+      runner.addEventListener('click', () => {
+        runner.classList.toggle('paused');
+      });
+    }
   </script>
 
 </body>
