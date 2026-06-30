@@ -43,9 +43,9 @@ export const TOOLS: Record<ToolKey, Tool> = {
     eyebrow: "the scribe · parser",
     title: "Summoners War Parser",
     nature: "Its true name: reading the runes of a save file.",
-    desc: "Launches the local Summoners War Parser on your machine. Run its start_sw_web.bat first; it opens on http://localhost:5000 (or the next free port if 5000 is busy).",
-    status: "Local",
-    statusKind: "local",
-    href: "http://localhost:5000",
+    desc: "Upload your Summoners War save file and inspect runes, monsters, and artifacts. The parser reads the JSON export and turns it into a browsable web dashboard.",
+    status: "Live",
+    statusKind: "live",
+    href: "https://sw-parser.vercel.app",
   },
 };
