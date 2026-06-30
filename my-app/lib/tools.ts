@@ -37,7 +37,7 @@ export const TOOLS: Record<ToolKey, Tool> = {
     desc: "Look up visual novels by character, route, or scene. Built from the data of games I couldn't stop thinking about long after the credits rolled.",
     status: "Live",
     statusKind: "live",
-    href: "https://vn.yourdomain.com",
+    href: "https://vn-finder.vercel.app",
   },
   sw: {
     eyebrow: "the scribe · parser",
