@@ -12,17 +12,20 @@ export default function DetailPanel({
 }) {
   const detailRef = useRef<HTMLDivElement>(null);
   const [displayKey, setDisplayKey] = useState<ToolKey | null>(null);
-  const [fading, setFading] = useState(false);
   const wasLocked = useRef(locked);
 
   useEffect(() => {
     if (currentKey === displayKey) return;
-    setFading(true);
+    const panel = detailRef.current;
+    panel?.classList.add("fading");
     const id = setTimeout(() => {
       setDisplayKey(currentKey);
-      setFading(false);
+      panel?.classList.remove("fading");
     }, 160);
-    return () => clearTimeout(id);
+    return () => {
+      clearTimeout(id);
+      panel?.classList.remove("fading");
+    };
   }, [currentKey, displayKey]);
 
   useEffect(() => {
@@ -40,7 +43,7 @@ export default function DetailPanel({
       id="detail"
       ref={detailRef}
       tabIndex={-1}
-      className={`detail ${displayKey ? "" : "idle"} ${fading ? "fading" : ""}`}
+      className={`detail ${displayKey ? "" : "idle"}`}
     >
       <div className="detail-content">
         <div className="detail-head">

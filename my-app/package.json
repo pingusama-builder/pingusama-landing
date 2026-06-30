@@ -6,14 +6,24 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:db": "vitest run tests/unit/posts.test.ts",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
+    "gray-matter": "^4.0.3",
     "next": "16.2.9",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "rehype-sanitize": "^6.0.0",
+    "rehype-stringify": "^10.0.1",
+    "remark": "^15.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-html": "^16.0.1",
+    "remark-rehype": "^11.1.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -28,6 +38,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5",
+    "vitest": "^4.1.9",
     "ws": "^8.21.0"
   }
 }

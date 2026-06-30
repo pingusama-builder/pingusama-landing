@@ -1,9 +1,8 @@
 "use client";
 
-import { ToolKey, TOOLS } from "@/lib/tools";
+import { ToolKey } from "@/lib/tools";
 
 interface WheelProps {
-  activeKey: ToolKey | null;
   lockedKey: ToolKey | null;
   onHover: (key: ToolKey) => void;
   onFocus: (key: ToolKey) => void;
@@ -186,7 +185,6 @@ function ToolPoint({
 }
 
 export default function Wheel({
-  activeKey,
   lockedKey,
   onHover,
   onFocus,

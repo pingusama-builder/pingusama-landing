@@ -12,6 +12,8 @@ export default function Runner({ frames }: { frames: string[] }) {
         onClick={() => setPaused((p) => !p)}
       >
         {frames.map((src, i) => (
+          // These are inline base64 frames from the sprite sheet; Next Image cannot optimize data URIs.
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             key={i}
             className={`f${i}`}

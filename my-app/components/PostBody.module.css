@@ -1,0 +1,99 @@
+.body {
+  font-family: var(--font-body);
+  color: var(--walnut);
+  line-height: 1.65;
+  text-align: left;
+}
+
+.body :first-child {
+  margin-top: 0;
+}
+
+.body h2,
+.body h3,
+.body h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--walnut);
+  line-height: 1.2;
+  margin: 1.6em 0 0.5em;
+}
+
+.body h2 { font-size: 1.6rem; }
+.body h3 { font-size: 1.35rem; }
+.body h4 { font-size: 1.15rem; }
+
+.body p {
+  margin: 0.9em 0;
+  color: var(--walnut-soft);
+}
+
+.body a {
+  color: var(--terracotta-d);
+  border-bottom: 1px dotted var(--terracotta);
+}
+
+.body a:hover {
+  color: var(--terracotta);
+  border-bottom-color: var(--terracotta);
+}
+
+.body ul,
+.body ol {
+  margin: 0.9em 0;
+  padding-left: 1.4em;
+  color: var(--walnut-soft);
+}
+
+.body li {
+  margin: 0.35em 0;
+}
+
+.body blockquote {
+  margin: 1.2em 0;
+  padding: 0.6em 1em;
+  border-left: 3px solid var(--terracotta);
+  background: var(--bg-card);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--walnut-soft);
+  font-style: italic;
+}
+
+.body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.92em;
+  background: var(--bg-card);
+  color: var(--walnut);
+  padding: 0.15em 0.35em;
+  border-radius: 6px;
+}
+
+.body pre {
+  margin: 1.2em 0;
+  padding: 1em;
+  overflow-x: auto;
+  background: var(--bg-card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.body pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.88em;
+}
+
+.body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  display: block;
+  margin: 1.2em 0;
+}
+
+.body hr {
+  border: none;
+  height: 1px;
+  background: var(--line);
+  margin: 2em 0;
+}

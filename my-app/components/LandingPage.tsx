@@ -66,7 +66,6 @@ export default function LandingPage({ frames }: { frames: string[] }) {
 
           <div className="scene">
             <Wheel
-              activeKey={activeKey}
               lockedKey={lockedKey}
               onHover={handleHover}
               onFocus={handleFocus}
