@@ -64,6 +64,12 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   font-size: 15px;
 }
 .top nav a:hover { color: var(--terracotta); }
+.top nav .pill {
+  margin-left: 18px;
+  padding: 5px 12px;
+  font-size: 11px;
+}
+.top nav .pill:hover { color: var(--walnut-soft); border-color: var(--terracotta); }
 
 .hero {
   padding: 18px 0 8px;
