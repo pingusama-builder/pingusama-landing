@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Post, PostStatus } from "@/lib/db/posts"
 import { PostFormData, savePostAction } from "@/app/admin/blog/actions"
@@ -37,12 +37,32 @@ function postToFormData(post: Post): PostFormData {
   }
 }
 
+type ToolbarAction = {
+  label: string
+  prefix: string
+  suffix: string
+  defaultText: string
+  block?: boolean
+}
+
+const TOOLBAR_ACTIONS: ToolbarAction[] = [
+  { label: "B", prefix: "**", suffix: "**", defaultText: "bold text" },
+  { label: "I", prefix: "_", suffix: "_", defaultText: "italic text" },
+  { label: "H2", prefix: "## ", suffix: "", defaultText: "Heading", block: true },
+  { label: "Link", prefix: "[", suffix: "](https://example.com)", defaultText: "link text" },
+  { label: "List", prefix: "- ", suffix: "", defaultText: "list item", block: true },
+  { label: "Number", prefix: "1. ", suffix: "", defaultText: "list item", block: true },
+  { label: "Quote", prefix: "> ", suffix: "", defaultText: "quoted text", block: true },
+  { label: "Code", prefix: "```\n", suffix: "\n```", defaultText: "code" },
+]
+
 export default function PostEditor({
   post,
 }: {
   post?: Post
 }) {
   const router = useRouter()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [form, setForm] = useState(post ? postToFormData(post) : EMPTY_FORM)
   const [previewHtml, setPreviewHtml] = useState("")
   const [showPreview, setShowPreview] = useState(false)
@@ -51,6 +71,49 @@ export default function PostEditor({
 
   function updateField(field: keyof PostFormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  function applyMarkdown(action: ToolbarAction) {
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    const start = textarea.selectionStart ?? 0
+    const end = textarea.selectionEnd ?? 0
+    const value = form.content_markdown
+    const selected = value.slice(start, end)
+    const before = value.slice(0, start)
+    const after = value.slice(end)
+
+    let replacement: string
+    let newCursorStart: number
+    let newCursorEnd: number
+
+    if (selected) {
+      if (action.block) {
+        // Insert block prefix at the start of each selected line
+        const lines = selected.split("\n")
+        const prefixed = lines.map((line) => action.prefix + line).join("\n")
+        replacement = prefixed
+        newCursorStart = start
+        newCursorEnd = start + replacement.length
+      } else {
+        replacement = action.prefix + selected + action.suffix
+        newCursorStart = start
+        newCursorEnd = start + replacement.length
+      }
+    } else {
+      replacement = action.prefix + action.defaultText + action.suffix
+      newCursorStart = start + action.prefix.length
+      newCursorEnd = newCursorStart + action.defaultText.length
+    }
+
+    const nextValue = before + replacement + after
+    updateField("content_markdown", nextValue)
+
+    window.requestAnimationFrame(() => {
+      textarea.focus()
+      textarea.setSelectionRange(newCursorStart, newCursorEnd)
+    })
   }
 
   async function handlePreview() {
@@ -232,13 +295,28 @@ export default function PostEditor({
         <label htmlFor="content_markdown" className="text-sm font-semibold">
           Markdown body
         </label>
+        <div className="flex flex-wrap gap-1 rounded-t-[var(--radius)] border border-[var(--line)] border-b-0 bg-[var(--bg-card)] p-1">
+          {TOOLBAR_ACTIONS.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={() => applyMarkdown(action)}
+              disabled={isPending}
+              className="px-2 py-1 text-xs font-semibold rounded hover:bg-[var(--line)] text-[var(--walnut)] disabled:opacity-50"
+              title={action.label}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
         <textarea
+          ref={textareaRef}
           id="content_markdown"
           value={form.content_markdown}
           onChange={(event) => updateField("content_markdown", event.target.value)}
           rows={16}
           required
-          className="px-3 py-2 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--bg-card)] text-[var(--walnut)] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[var(--terracotta)]"
+          className="px-3 py-2 rounded-b-[var(--radius)] rounded-t-none border border-[var(--line)] bg-[var(--bg-card)] text-[var(--walnut)] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[var(--terracotta)]"
         />
       </div>
 
