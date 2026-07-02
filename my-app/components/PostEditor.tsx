@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Post, PostStatus } from "@/lib/db/posts"
 import { PostFormData, savePostAction } from "@/app/admin/blog/actions"
 import { previewMarkdown } from "@/app/admin/blog/preview"
+import { uploadBlogImage } from "@/lib/supabase/storage"
 import PostBody from "./PostBody"
 
 const EMPTY_FORM: PostFormData = {
@@ -68,6 +69,8 @@ export default function PostEditor({
   const [showPreview, setShowPreview] = useState(false)
   const [error, setError] = useState("")
   const [isPending, startTransition] = useTransition()
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   function updateField(field: keyof PostFormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -120,6 +123,30 @@ export default function PostEditor({
     const html = await previewMarkdown(form.content_markdown)
     setPreviewHtml(html)
     setShowPreview(true)
+  }
+
+  async function handleImageUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    setError("")
+
+    const result = await uploadBlogImage(file)
+
+    setUploading(false)
+    event.target.value = ""
+
+    if (!result.success) {
+      setError(result.error)
+      return
+    }
+
+    updateField("cover_image_url", result.publicUrl)
+  }
+
+  function triggerFilePicker() {
+    fileInputRef.current?.click()
   }
 
   function handleSubmit(statusOverride?: PostStatus) {
@@ -249,10 +276,52 @@ export default function PostEditor({
           />
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2">
           <label htmlFor="cover_image_url" className="text-sm font-semibold">
-            Cover image URL
+            Cover image
           </label>
+
+          {form.cover_image_url && (
+            <div className="relative rounded-[var(--radius)] border border-[var(--line)] overflow-hidden bg-[var(--bg-card)]" style={{ aspectRatio: "16 / 9" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={form.cover_image_url}
+                alt="Cover preview"
+                className="w-full h-full object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => updateField("cover_image_url", "")}
+                disabled={isPending || uploading}
+                className="absolute top-2 right-2 px-2 py-1 text-xs font-semibold rounded bg-[var(--walnut)] text-[var(--paper)] hover:bg-[var(--terracotta)]"
+              >
+                Remove
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={triggerFilePicker}
+              disabled={isPending || uploading}
+              className="pill cursor-pointer"
+            >
+              {uploading ? "Uploading…" : "Upload image"}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={handleImageUpload}
+              className="hidden"
+              aria-hidden="true"
+            />
+            <span className="text-xs text-[var(--walnut-soft)]">
+              or paste a URL below
+            </span>
+          </div>
+
           <input
             id="cover_image_url"
             type="url"
