@@ -1,14 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import Header from "./Header";
 import Footer from "./Footer";
 import Wheel from "./Wheel";
 import Runner from "./Runner";
 import DetailPanel from "./DetailPanel";
+import PostCard from "./PostCard";
 import { TOOLS, type ToolKey } from "@/lib/tools";
+import { Post } from "@/lib/db/posts";
 
-export default function LandingPage({ frames }: { frames: string[] }) {
+export default function LandingPage({
+  frames,
+  posts,
+}: {
+  frames: string[];
+  posts: Post[];
+}) {
   const [activeKey, setActiveKey] = useState<ToolKey | null>(null);
   const [lockedKey, setLockedKey] = useState<ToolKey | null>(null);
 
@@ -91,6 +100,30 @@ export default function LandingPage({ frames }: { frames: string[] }) {
             <circle cx={80} cy={12} r={2.2} fill="#C97B5C" stroke="none" />
           </svg>
         </div>
+
+        <section id="notes" className="notes-band wrap" aria-label="Latest notes">
+          <div className="notes-head">
+            <div>
+              <p className="notes-eyebrow">from the workshop</p>
+              <h2 className="notes-title">Notes from the workshop</h2>
+            </div>
+            <Link href="/blog" className="notes-all">
+              All notes →
+            </Link>
+          </div>
+
+          {posts.length === 0 ? (
+            <div className="notes-empty">
+              <p>No notes yet. Check back as the workshop fills up.</p>
+            </div>
+          ) : (
+            <div className="notes-grid">
+              {posts.map((post) => (
+                <PostCard key={post.id} post={post} />
+              ))}
+            </div>
+          )}
+        </section>
 
         <section
           id="about"
