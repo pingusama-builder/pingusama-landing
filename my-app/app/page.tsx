@@ -7,6 +7,8 @@ const frames = JSON.parse(
   readFileSync(join(process.cwd(), "public", "runner.b64.txt"), "utf8")
 ) as string[];
 
+export const revalidate = 60
+
 export default async function Home() {
   const posts = await getPosts({ status: "published", limit: 3 });
   return <LandingPage frames={frames} posts={posts} />;

@@ -92,6 +92,7 @@ export async function savePostAction(
       post = await createPost(payload)
     }
 
+    revalidatePath("/")
     revalidatePath("/blog")
     revalidatePath(`/blog/${post.slug}`)
     revalidatePath("/admin/blog")
@@ -108,6 +109,7 @@ export async function deletePostAction(
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     await deletePost(id)
+    revalidatePath("/")
     revalidatePath("/blog")
     revalidatePath("/admin/blog")
     return { success: true }
