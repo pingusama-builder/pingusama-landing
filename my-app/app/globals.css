@@ -16,6 +16,7 @@
 
   --font-display: var(--font-fraunces), Georgia, serif;
   --font-body:    var(--font-nunito), system-ui, sans-serif;
+  --font-serif:   var(--font-aleo), Georgia, serif;
 
   --radius:       14px;
   --shadow:       0 2px 0 rgba(62,44,32,.08), 0 8px 24px rgba(62,44,32,.10);

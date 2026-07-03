@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Post, PostStatus } from "@/lib/db/posts"
+import { BLOG_CATEGORIES } from "@/lib/categories"
 import { PostFormData, savePostAction } from "@/app/admin/blog/actions"
 import { previewMarkdown } from "@/app/admin/blog/preview"
 import { uploadBlogImage } from "@/lib/supabase/storage"
@@ -222,13 +223,19 @@ export default function PostEditor({
           <label htmlFor="category" className="text-sm font-semibold">
             Category
           </label>
-          <input
+          <select
             id="category"
-            type="text"
             value={form.category}
             onChange={(event) => updateField("category", event.target.value)}
             className="px-3 py-2 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--bg-card)] text-[var(--walnut)] focus:outline-none focus:ring-2 focus:ring-[var(--terracotta)]"
-          />
+          >
+            <option value="">— Uncategorized —</option>
+            {BLOG_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex flex-col gap-1">

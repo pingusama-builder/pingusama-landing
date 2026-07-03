@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
+import Link from "next/link"
 import Header from "@/components/Header"
 import Footer from "@/components/Footer"
 import PostCard from "@/components/PostCard"
 import Pagination from "@/components/Pagination"
+import { BLOG_CATEGORIES } from "@/lib/categories"
 import { getPosts } from "@/lib/db/posts"
 
 const PAGE_SIZE = 10
@@ -60,13 +62,25 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
           <p
             style={{
               maxWidth: 520,
-              margin: "0 auto",
+              margin: "0 auto 18px",
               color: "var(--walnut-soft)",
               fontSize: "clamp(15px, 1.6vw, 17px)",
             }}
           >
             A quiet feed of notes, updates, and makings.
           </p>
+
+          <div className="flex flex-wrap justify-center gap-2" style={{ maxWidth: 640, margin: "0 auto" }}>
+            {BLOG_CATEGORIES.map((category) => (
+              <Link
+                key={category}
+                href={`/blog/category/${encodeURIComponent(category)}`}
+                className="pill"
+              >
+                {category}
+              </Link>
+            ))}
+          </div>
         </section>
 
         {posts.length === 0 && page === 1 ? (

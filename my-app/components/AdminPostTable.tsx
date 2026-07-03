@@ -79,6 +79,12 @@ export default function AdminPostTable({ posts }: { posts: Post[] }) {
               </td>
               <td className="py-3 px-2 text-right">
                 <Link
+                  href={`/admin/blog/edit/${post.slug}`}
+                  className="open-link mr-3"
+                >
+                  edit
+                </Link>
+                <Link
                   href={`/blog/${post.slug}`}
                   target="_blank"
                   rel="noopener"

@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { Post } from "@/lib/db/posts"
+import { categoryPath } from "@/lib/categories"
 import TagList from "./TagList"
 import CoverImage from "./CoverImage"
 
@@ -14,9 +15,13 @@ export default function PostCard({ post }: PostCardProps) {
     <article className="detail">
       <CoverImage src={post.cover_image_url} label={post.title} />
       <div className="detail-head mt-3">
-        <span className="detail-eyebrow">
-          {post.category ?? "from the workshop"}
-        </span>
+        {post.category ? (
+          <Link href={categoryPath(post.category)} className="detail-eyebrow hover:text-[var(--terracotta)]">
+            {post.category}
+          </Link>
+        ) : (
+          <span className="detail-eyebrow">from the workshop</span>
+        )}
         {date && (
           <time dateTime={date.toISOString()} className="pill">
             {date.toLocaleDateString("en-US", {

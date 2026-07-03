@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
+import Link from "next/link"
 import Header from "@/components/Header"
 import Footer from "@/components/Footer"
 import PostBody from "@/components/PostBody"
 import TagList from "@/components/TagList"
+import { categoryPath } from "@/lib/categories"
 import { getPublishedPostBySlug } from "@/lib/db/posts"
 
 export const revalidate = 60
@@ -48,7 +50,11 @@ export default async function PostPage({ params }: PostPageProps) {
       <main className="wrap py-8">
         <article className="detail" style={{ maxWidth: 720, margin: "0 auto" }}>
           <div className="detail-head">
-            {post.category && <span className="pill">{post.category}</span>}
+            {post.category && (
+              <Link href={categoryPath(post.category)} className="pill hover:border-[var(--terracotta)] hover:text-[var(--terracotta)]">
+                {post.category}
+              </Link>
+            )}
             {date && (
               <time
                 dateTime={post.published_at ?? undefined}

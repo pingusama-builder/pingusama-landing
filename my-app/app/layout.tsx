@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
-import { Fraunces, Nunito } from "next/font/google";
+import { Aleo, Fraunces, Nunito } from "next/font/google";
 import "./globals.css";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
   variable: "--font-fraunces",
+  display: "swap",
+});
+
+const aleo = Aleo({
+  subsets: ["latin"],
+  variable: "--font-aleo",
   display: "swap",
 });
 
@@ -25,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${nunito.variable}`}>
+    <html lang="en" className={`${fraunces.variable} ${aleo.variable} ${nunito.variable}`}>
       <body className="antialiased">{children}</body>
     </html>
   );

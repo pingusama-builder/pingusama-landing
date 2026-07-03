@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sample — Source Serif body | Pingusama's Tinkering</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:           #E8DCC4;
+      --bg-card:      #F4ECD8;
+      --paper:        #FBF4DF;
+      --sage:         #8FA876;
+      --sage-deep:    #6E8A57;
+      --terracotta:   #C97B5C;
+      --terracotta-d: #A55E42;
+      --dusk:         #4F6D7A;
+      --walnut:       #3E2C20;
+      --walnut-soft:  #5C4536;
+      --line:         #B8A584;
+      --radius:       14px;
+
+      --font-display: "Fraunces", Georgia, serif;
+      --font-body:    "Source Serif 4", Georgia, "Times New Roman", serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: var(--font-body);
+      color: var(--walnut);
+      background: var(--bg);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    header.top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 22px 0;
+      border-bottom: 1px dashed var(--line);
+      margin-bottom: 36px;
+    }
+
+    .brand {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 22px;
+      color: var(--walnut);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+    }
+
+    .brand span { color: var(--terracotta); }
+
+    nav a {
+      margin-left: 18px;
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--walnut-soft);
+      text-decoration: none;
+    }
+
+    nav a:hover { color: var(--terracotta); }
+
+    article {
+      padding-bottom: 48px;
+    }
+
+    .meta {
+      font-family: system-ui, sans-serif;
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--dusk);
+      font-weight: 700;
+      margin: 0 0 8px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: clamp(34px, 6vw, 48px);
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+      margin: 0 0 18px;
+      color: var(--walnut);
+    }
+
+    .date {
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      color: var(--walnut-soft);
+      margin-bottom: 22px;
+    }
+
+    .cover {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      border-radius: var(--radius);
+      margin-bottom: 28px;
+      border: 1.5px solid var(--line);
+    }
+
+    .body {
+      font-size: 18px;
+      line-height: 1.7;
+      color: var(--walnut-soft);
+    }
+
+    .body p {
+      margin: 0 0 1.2em;
+      text-align: left;
+    }
+
+    .body p:first-of-type::first-letter {
+      font-family: var(--font-display);
+      font-size: 3.6em;
+      float: left;
+      line-height: 0.85;
+      padding-right: 10px;
+      padding-top: 6px;
+      color: var(--terracotta-d);
+      font-weight: 700;
+    }
+
+    .body h2,
+    .body h3 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--walnut);
+      line-height: 1.2;
+      margin: 1.8em 0 0.6em;
+    }
+
+    .body h2 { font-size: 1.55em; }
+    .body h3 { font-size: 1.3em; }
+
+    .body a {
+      color: var(--terracotta-d);
+      text-decoration: none;
+      border-bottom: 1px dotted var(--terracotta);
+    }
+
+    .body a:hover {
+      color: var(--terracotta);
+      border-bottom-color: var(--terracotta);
+    }
+
+    .body blockquote {
+      margin: 1.6em 0;
+      padding: 1em 1.2em;
+      border-left: 3px solid var(--terracotta);
+      background: var(--bg-card);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      color: var(--walnut-soft);
+      font-style: italic;
+    }
+
+    .body blockquote p {
+      margin: 0;
+    }
+
+    .body code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88em;
+      background: var(--bg-card);
+      color: var(--walnut);
+      padding: 0.15em 0.35em;
+      border-radius: 6px;
+    }
+
+    .body pre {
+      margin: 1.6em 0;
+      padding: 1em;
+      overflow-x: auto;
+      background: var(--bg-card);
+      border: 1.5px solid var(--line);
+      border-radius: var(--radius);
+      font-size: 0.9em;
+    }
+
+    .body pre code {
+      background: transparent;
+      padding: 0;
+    }
+
+    .body img {
+      max-width: 100%;
+      height: auto;
+      border-radius: var(--radius);
+      display: block;
+      margin: 1.6em 0;
+    }
+
+    .body ul,
+    .body ol {
+      margin: 1.2em 0;
+      padding-left: 1.6em;
+    }
+
+    .body li {
+      margin: 0.4em 0;
+    }
+
+    @media (max-width: 640px) {
+      .body { font-size: 17px; }
+      h1 { font-size: clamp(30px, 9vw, 40px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <a class="brand" href="/">Pingusama<span>.</span></a>
+      <nav>
+        <a href="/blog">blog</a>
+        <a href="/">tools</a>
+        <a href="/admin/login">log in</a>
+      </nav>
+    </header>
+
+    <article>
+      <p class="meta">from the workshop</p>
+      <h1>The Missing Element of Prof. Golden</h1>
+      <p class="date">July 3, 2026</p>
+      <img class="cover" src="https://kuyytbmmvxcmiyxqsnpe.supabase.co/storage/v1/object/public/blog-assets/covers/1783011407882-duijf9-1-swi061n2ioru2vo6jfobjq.webp" alt="">
+      <div class="body">
+        <p>Prof. Golden Buttoneyes can seriously use some advice. Like right now. He is willing to pay for it — and probably not a small sum — but he couldn’t figure out the right way to ask, or the right bear to seek the advice from. You see, the gold den is so full of scholars and know-it-alls that all the Happyland expect them to have it all figured out. But not this time, not for Golden today.</p>
+        <p>It started off like any other day. Golden woke up, got dressed, put on his spotless bowtie, drove to his office at the University of Golden. He had two classes to teach that day, one in metaphysics and one in biochemistry. A renowned expert in both fields in Happyland, his lectures are often jam-packed of students but few that are lucky enough to get a spot hardly ever grasp what he talks about. After work, Golden went to his favorite cafe (he’s not a fan of alcohol) in town to get his daily dose of caffeine and read. He did not expect his life was about to change.</p>
+        <p>At twelve to six, Golden looked up from his book when he heard the cafe’s doorbell. A young Coffee female bear slid in with easy grace in her steps. Golden wasn’t staring — he never stares at anything except when it is a book or a research journal — but he immediately sense that there is something different in the air…No, it’s not the air, it’s the graceful Coffee stepping towards him.</p>
+        <p>“Aren’t you Prof. Golden?”</p>
+        <p>“Indeed.” Golden managed. He has been approached by students, reporters and countless others but never by an attractive young female Coffee — of all Dens.</p>
+        <p>“My name is Jane. I have read all your books and sat in your lectures several times. It’s getting harder to get into those but I just wanted to say I am really fascinated by your deep knowledge and forward thinking…”</p>
+        <p>“Are you a student of the University?” Golden snapped. He couldn’t help but notice the young Coffee, no, Jane, has the most pleasing voice he has heard ever.</p>
+        <p>“Yes…to a certain extent…I am a visiting teaching fellow from the University of Coffee Hills. My contract is soon due and I will be leaving soon for Coffee Hills…I heard you like it here so I thought I would just come by and say hi…you know…to…to…you!” Jane blushed.</p>
+        <p>“Hmm…thanks for dropping by…I guess. Can I help you with anything?”</p>
+        <p>“Not really…I just wanted to talk to you.” Are those tears Golden spots at the corner of her eyes?</p>
+        <p>“Farewell, Prof. Golden. It’s been…a…my pleasure to be teaching with you at the same university!”</p>
+        <p>With that, she turned and quickly walked away…before Golden came to his senses.</p>
+        <p>After that, Golden thought about the encounter with Jane every day when he goes to the cafe. He thinks about it when he is in the bath. Prof Golden Buttoneyes know all the elements of this world by heart but he knows he is missing the most important one right now.</p>
+      </div>
+    </article>
+  </div>
+</body>
+</html>

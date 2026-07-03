@@ -1,7 +1,9 @@
+import Link from "next/link"
 import Header from "@/components/Header"
 import Footer from "@/components/Footer"
 import PostCard from "@/components/PostCard"
 import Pagination from "@/components/Pagination"
+import { BLOG_CATEGORIES } from "@/lib/categories"
 import { getPosts } from "@/lib/db/posts"
 import type { Metadata } from "next"
 
@@ -62,7 +64,20 @@ export default async function CategoryPage({
           >
             Category: {decodedCategory}
           </h1>
+          <Link href="/blog" className="open-link">← All notes</Link>
         </section>
+
+        <div className="flex flex-wrap gap-2 mb-6">
+          {BLOG_CATEGORIES.map((category) => (
+            <Link
+              key={category}
+              href={`/blog/category/${encodeURIComponent(category)}`}
+              className={`pill ${category === decodedCategory ? "live" : ""}`}
+            >
+              {category}
+            </Link>
+          ))}
+        </div>
 
         {posts.length === 0 && page === 1 ? (
           <div className="detail">
