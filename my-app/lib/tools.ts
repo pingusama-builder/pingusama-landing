@@ -28,7 +28,7 @@ export const TOOLS: Record<ToolKey, Tool> = {
     desc: "A pocket vocabulary app. Save a word today, see it again tomorrow, let the ones that matter root themselves and forget the rest.",
     status: "Live",
     statusKind: "live",
-    href: "https://words.yourdomain.com",
+    href: "https://name-of-words.vercel.app",
   },
   vn: {
     eyebrow: "the compass · discovery",
