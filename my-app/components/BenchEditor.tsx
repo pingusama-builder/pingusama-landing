@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Image from "next/image";
 import type { ShelfData, VaultData, Book } from "@/lib/books";
 import { isValidIsbn13, normalizeIsbn13 } from "@/lib/isbn";
+import { formatRelativeDate } from "@/lib/date";
 
 interface BenchEditorProps {
   initialShelf: ShelfData;
@@ -25,7 +26,14 @@ interface BenchEditorProps {
 type SectionKey = "currentlyReading" | "tbr";
 
 const EMPTY_BOOK = { isbn13: "", note: "" };
-const EMPTY_CLIP = { title: "", url: "", source: "", date: "", note: "" };
+
+const EMPTY_CLIP = {
+  title: "",
+  url: "",
+  source: "",
+  date: "",
+  note: "",
+};
 
 type PreviewState =
   | { status: "idle"; book?: undefined; error?: undefined }
@@ -134,7 +142,7 @@ export default function BenchEditor({
 
   function updateClip(
     index: number,
-    field: keyof typeof EMPTY_CLIP,
+    field: "title" | "url" | "source" | "note",
     value: string
   ) {
     setVault((prev) => {
@@ -147,7 +155,13 @@ export default function BenchEditor({
   function addClip() {
     setVault((prev) => ({
       ...prev,
-      clips: [...prev.clips, { ...EMPTY_CLIP }],
+      clips: [
+        ...prev.clips,
+        {
+          ...EMPTY_CLIP,
+          date: formatRelativeDate(new Date()),
+        },
+      ],
     }));
   }
 
@@ -502,12 +516,12 @@ export default function BenchEditor({
                   <label className="text-xs font-semibold uppercase tracking-wider text-[var(--walnut-soft)]">
                     Date
                   </label>
-                  <input
-                    type="text"
-                    value={clip.date}
-                    onChange={(e) => updateClip(i, "date", e.target.value)}
-                    className={inputClass()}
-                  />
+                  <span
+                    className="px-3 py-2 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--bg-card-hi)] text-[var(--walnut-soft)] text-sm"
+                    title="Date is set automatically when the clip is added"
+                  >
+                    {clip.date || "—"}
+                  </span>
                 </div>
                 <div className="flex flex-col gap-1 md:col-span-2">
                   <label className="text-xs font-semibold uppercase tracking-wider text-[var(--walnut-soft)]">
