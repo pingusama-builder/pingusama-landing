@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import type { Book, ResolvedShelf, ShelfError, VaultData } from "@/lib/books";
 
@@ -156,6 +156,52 @@ function ErrorList({ errors }: { errors: ShelfError[] }) {
   );
 }
 
+interface BookNoteProps {
+  book: Book & { note: string };
+  isSelected: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+}
+
+function BookNote({ book, isSelected, onSelect, onClose }: BookNoteProps) {
+  const id = `note-${book.googleBooksId}`;
+  return (
+    <span className="bench-note-group">
+      <button
+        type="button"
+        className="bench-note-toggle"
+        onClick={onSelect}
+        aria-expanded={isSelected}
+        aria-controls={id}
+      >
+        {book.title}
+      </button>
+      {isSelected && (
+        <div id={id} className="bench-note-panel">
+          <div className="bench-note-head">
+            <strong>{book.title}</strong>
+            <button
+              type="button"
+              onClick={onClose}
+              className="bench-note-close"
+              aria-label="Close note"
+            >
+              ×
+            </button>
+          </div>
+          {book.note ? (
+            <p className="bench-note-body">{book.note}</p>
+          ) : (
+            <p className="bench-note-empty">
+              No note yet. Add one in the admin bench editor.
+            </p>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
 export default function BenchOverlay({
   isOpen,
   onClose,
@@ -165,6 +211,7 @@ export default function BenchOverlay({
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const clips: Clip[] = vault.clips;
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
 
   useLockBodyScroll(isOpen);
   useEscapeKey(onClose, isOpen);
@@ -227,12 +274,27 @@ export default function BenchOverlay({
                 </div>
                 <div className="bench-shelf-divider" />
                 <div className="bench-section-foot">
-                  <span>
+                  <span className="bench-open-list">
                     open:{" "}
-                    <span className="bench-tag">
-                      {shelf.currentlyReading.map((b) => b.title).join(" · ") ||
-                        "—"}
-                    </span>
+                    {shelf.currentlyReading.length > 0 ? (
+                      shelf.currentlyReading.map((book, i) => (
+                        <span key={book.googleBooksId}>
+                          <BookNote
+                            book={book}
+                            isSelected={selectedBookId === book.googleBooksId}
+                            onSelect={() =>
+                              setSelectedBookId(book.googleBooksId)
+                            }
+                            onClose={() => setSelectedBookId(null)}
+                          />
+                          {i < shelf.currentlyReading.length - 1 && (
+                            <span aria-hidden="true"> · </span>
+                          )}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="bench-tag">—</span>
+                    )}
                   </span>
                   <span>+{waitingCount} waiting</span>
                 </div>
@@ -258,8 +320,8 @@ export default function BenchOverlay({
                   className="bench-clip-stack"
                   aria-labelledby="bench-vault-title"
                 >
-                  {clips.slice(0, 5).map((clip) => (
-                    <ClipRow key={clip.url} clip={clip} />
+                  {clips.slice(0, 5).map((clip, i) => (
+                    <ClipRow key={`${clip.url || clip.title}-${i}`} clip={clip} />
                   ))}
                 </div>
                 {clips.length > 5 && (
