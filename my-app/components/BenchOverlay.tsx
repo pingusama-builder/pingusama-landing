@@ -156,20 +156,25 @@ function ErrorList({ errors }: { errors: ShelfError[] }) {
   );
 }
 
-interface BookNoteProps {
+interface BookNoteChipProps {
   book: Book & { note: string };
   isSelected: boolean;
   onSelect: () => void;
   onClose: () => void;
 }
 
-function BookNote({ book, isSelected, onSelect, onClose }: BookNoteProps) {
+function BookNoteChip({
+  book,
+  isSelected,
+  onSelect,
+  onClose,
+}: BookNoteChipProps) {
   const id = `note-${book.googleBooksId}`;
   return (
-    <span className="bench-note-group">
+    <>
       <button
         type="button"
-        className="bench-note-toggle"
+        className={`bench-note-chip ${isSelected ? "selected" : ""}`}
         onClick={onSelect}
         aria-expanded={isSelected}
         aria-controls={id}
@@ -177,28 +182,68 @@ function BookNote({ book, isSelected, onSelect, onClose }: BookNoteProps) {
         {book.title}
       </button>
       {isSelected && (
-        <div id={id} className="bench-note-panel">
-          <div className="bench-note-head">
-            <strong>{book.title}</strong>
-            <button
-              type="button"
-              onClick={onClose}
-              className="bench-note-close"
-              aria-label="Close note"
-            >
-              ×
-            </button>
+        <div id={id} className="bench-note-panel-row">
+          <div className="bench-note-panel">
+            <div className="bench-note-head">
+              <strong>{book.title}</strong>
+              <button
+                type="button"
+                onClick={onClose}
+                className="bench-note-close"
+                aria-label="Close note"
+              >
+                ×
+              </button>
+            </div>
+            {book.note ? (
+              <p className="bench-note-body">{book.note}</p>
+            ) : (
+              <p className="bench-note-empty">
+                No note yet. Add one in the admin bench editor.
+              </p>
+            )}
           </div>
-          {book.note ? (
-            <p className="bench-note-body">{book.note}</p>
-          ) : (
-            <p className="bench-note-empty">
-              No note yet. Add one in the admin bench editor.
-            </p>
-          )}
         </div>
       )}
-    </span>
+    </>
+  );
+}
+
+interface BookNoteGroupProps {
+  title: string;
+  count: number;
+  books: (Book & { note: string })[];
+  selectedBookId: string | null;
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}
+
+function BookNoteGroup({
+  title,
+  count,
+  books,
+  selectedBookId,
+  onSelect,
+  onClose,
+}: BookNoteGroupProps) {
+  if (books.length === 0) return null;
+  return (
+    <div className="bench-note-group-block">
+      <h5 className="bench-note-group-title">
+        {title} <span className="bench-count">· {count}</span>
+      </h5>
+      <div className="bench-note-chips">
+        {books.map((book) => (
+          <BookNoteChip
+            key={book.googleBooksId}
+            book={book}
+            isSelected={selectedBookId === book.googleBooksId}
+            onSelect={() => onSelect(book.googleBooksId)}
+            onClose={onClose}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -258,45 +303,40 @@ export default function BenchOverlay({
 
             {hasBooks ? (
               <>
-                <div
-                  className="bench-cover-row"
-                  aria-labelledby="bench-shelf-title"
-                >
-                  {shelf.currentlyReading.map((book, i) => (
-                    <Cover
-                      key={book.googleBooksId}
-                      book={book}
-                      className={
-                        i === 0 ? "tilt-l" : i === 2 ? "tilt-r" : "lift"
-                      }
-                    />
-                  ))}
-                </div>
+                {openCount > 0 && (
+                  <div
+                    className="bench-cover-row"
+                    aria-labelledby="bench-shelf-title"
+                  >
+                    {shelf.currentlyReading.map((book, i) => (
+                      <Cover
+                        key={book.googleBooksId}
+                        book={book}
+                        className={
+                          i === 0 ? "tilt-l" : i === 2 ? "tilt-r" : "lift"
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
                 <div className="bench-shelf-divider" />
-                <div className="bench-section-foot">
-                  <span className="bench-open-list">
-                    open:{" "}
-                    {shelf.currentlyReading.length > 0 ? (
-                      shelf.currentlyReading.map((book, i) => (
-                        <span key={book.googleBooksId}>
-                          <BookNote
-                            book={book}
-                            isSelected={selectedBookId === book.googleBooksId}
-                            onSelect={() =>
-                              setSelectedBookId(book.googleBooksId)
-                            }
-                            onClose={() => setSelectedBookId(null)}
-                          />
-                          {i < shelf.currentlyReading.length - 1 && (
-                            <span aria-hidden="true"> · </span>
-                          )}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="bench-tag">—</span>
-                    )}
-                  </span>
-                  <span>+{waitingCount} waiting</span>
+                <div className="bench-shelf-notes">
+                  <BookNoteGroup
+                    title="Currently reading"
+                    count={openCount}
+                    books={shelf.currentlyReading}
+                    selectedBookId={selectedBookId}
+                    onSelect={setSelectedBookId}
+                    onClose={() => setSelectedBookId(null)}
+                  />
+                  <BookNoteGroup
+                    title="Waiting"
+                    count={waitingCount}
+                    books={shelf.tbr}
+                    selectedBookId={selectedBookId}
+                    onSelect={setSelectedBookId}
+                    onClose={() => setSelectedBookId(null)}
+                  />
                 </div>
                 {hasErrors && <ErrorList errors={shelf.errors} />}
               </>

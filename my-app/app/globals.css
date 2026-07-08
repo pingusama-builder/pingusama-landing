@@ -738,33 +738,62 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   opacity: 0.85;
 }
 
-.bench-open-list {
-  display: inline;
+.bench-shelf-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bench-note-group-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bench-note-group-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
   color: var(--walnut-soft);
 }
-.bench-note-group {
-  display: inline;
+.bench-note-group-title .bench-count {
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-body);
 }
-.bench-note-toggle {
-  display: inline;
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: var(--sage-deep);
-  font-weight: 600;
+.bench-note-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+.bench-note-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line);
+  background: #FBF4DF;
+  color: var(--walnut-soft);
+  font-size: 12px;
+  font-weight: 700;
   cursor: pointer;
-  border-bottom: 1px dotted var(--sage);
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
-.bench-note-toggle:hover,
-.bench-note-toggle:focus-visible {
+.bench-note-chip:hover,
+.bench-note-chip:focus-visible {
   color: var(--terracotta);
-  border-bottom-color: var(--terracotta);
+  border-color: var(--terracotta);
   outline: none;
 }
+.bench-note-chip.selected {
+  color: var(--sage-deep);
+  border-color: var(--sage);
+  background: #EAF1DE;
+}
+.bench-note-panel-row {
+  flex: 1 0 100%;
+}
 .bench-note-panel {
-  display: block;
-  margin-top: 10px;
   padding: 12px 14px;
   border-radius: 12px;
   background: var(--bg-card-hi);
