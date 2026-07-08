@@ -102,13 +102,9 @@ function Cover({ book, className }: { book: Book; className?: string }) {
 }
 
 function ClipRow({ clip }: { clip: Clip }) {
-  return (
-    <a
-      href={clip.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="bench-clip"
-    >
+  const hasUrl = clip.url && clip.url.trim() !== "";
+  const content = (
+    <>
       <span className="bench-clip-pin" aria-hidden="true" />
       <span className="bench-clip-body">
         <span className="bench-clip-title">{clip.title || "Untitled clip"}</span>
@@ -119,6 +115,26 @@ function ClipRow({ clip }: { clip: Clip }) {
         </span>
         {clip.note && <p className="bench-clip-note">{clip.note}</p>}
       </span>
+    </>
+  );
+
+  if (!hasUrl) {
+    return (
+      <div className="bench-clip bench-clip-static" aria-label={clip.title || "Untitled clip"}>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={clip.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="bench-clip"
+      aria-label={clip.title || clip.url}
+    >
+      {content}
     </a>
   );
 }

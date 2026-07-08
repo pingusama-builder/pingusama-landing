@@ -620,6 +620,13 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   transform: translateX(2px);
   background: rgba(255,255,255,0.62);
 }
+.bench-clip-static {
+  cursor: default;
+}
+.bench-clip-static:hover {
+  transform: none;
+  background: rgba(255,255,255,0.45);
+}
 .bench-clip-pin {
   width: 6px;
   height: 6px;
