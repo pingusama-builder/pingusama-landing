@@ -34,6 +34,23 @@ CREATE INDEX IF NOT EXISTS idx_posts_status_published_at ON public.posts (status
 CREATE INDEX IF NOT EXISTS idx_posts_category ON public.posts (category);
 CREATE INDEX IF NOT EXISTS idx_posts_tags ON public.posts USING GIN (tags);
 
+-- 3b. Row-Level Security on posts
+-- The app reads/writes posts ONLY through the service-role key (lib/db/posts.ts),
+-- which bypasses RLS. Anon/authenticated clients never touch this table directly,
+-- so we lock it down: public can read published posts, nobody (anon/auth) can write.
+-- All writes happen via the service role, which is unaffected.
+ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read published posts" ON public.posts;
+CREATE POLICY "Public read published posts"
+  ON public.posts
+  FOR SELECT
+  TO anon, authenticated
+  USING (status = 'published');
+
+-- No INSERT/UPDATE/DELETE policies for anon/authenticated: writes are
+-- service-role only. This is what closes the "publicly accessible table" hole.
+
 -- 4. Search function
 CREATE OR REPLACE FUNCTION public.search_posts(query_text text)
 RETURNS SETOF public.posts
