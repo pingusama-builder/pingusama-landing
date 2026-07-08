@@ -1,0 +1,53 @@
+{
+  "clips": [
+    {
+      "title": "On building slowly, in public",
+      "url": "https://x.com/search?q=building%20slowly%20in%20public",
+      "source": "X · thread",
+      "date": "2d ago",
+      "note": "for the \"small, stubborn\" line of thought"
+    },
+    {
+      "title": "A translator's notebook",
+      "url": "https://www.youtube.com/results?search_query=translator+notebook",
+      "source": "blog",
+      "date": "1w ago",
+      "note": "for court language, kept close"
+    },
+    {
+      "title": "The watercourse way, revisited",
+      "url": "https://en.wikipedia.org/wiki/Tao_Te_Ching",
+      "source": "essay",
+      "date": "3w ago",
+      "note": "for the space, not for anywhere else"
+    },
+    {
+      "title": "Small tools, long shadows",
+      "url": "https://www.youtube.com/results?search_query=small+tools+programming",
+      "source": "talk",
+      "date": "1mo ago",
+      "note": "why tiny utilities outlast big platforms"
+    },
+    {
+      "title": "Notes on patience from a pixel runner",
+      "url": "https://gamedev.net/search?query=pixel+animation+patience",
+      "source": "article",
+      "date": "2mo ago",
+      "note": "for the runner, and for the work"
+    },
+    {
+      "title": "A pattern language for quiet sites",
+      "url": "https://www.indiehackers.com/search/pattern-language-quiet-sites",
+      "source": "post",
+      "date": "3mo ago",
+      "note": "kept for when the workshop grows a new room"
+    },
+    {
+      "title": "The craft of clipping without hoarding",
+      "url": "https://readwise.io/search?q=clipping+without+hoarding",
+      "source": "newsletter",
+      "date": "4mo ago",
+      "note": "a reminder that the vault is a garden, not a warehouse"
+    }
+  ]
+}

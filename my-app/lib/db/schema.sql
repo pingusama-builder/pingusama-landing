@@ -129,3 +129,12 @@ BEGIN
       USING (bucket_id = 'blog-assets');
   END IF;
 END $$;
+
+-- 7. Bench config (shelf + vault as JSON). Service-role only; no public RLS policies.
+CREATE TABLE IF NOT EXISTS public.bench (
+  key text PRIMARY KEY,
+  data jsonb NOT NULL,
+  updated_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE public.bench ENABLE ROW LEVEL SECURITY;

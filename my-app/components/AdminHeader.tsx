@@ -10,8 +10,9 @@ export default function AdminHeader() {
         Pingusama<span className="dot">.</span> Admin
       </Link>
       <nav>
+        <Link href="/admin/blog">blog</Link>
+        <Link href="/admin/bench">bench</Link>
         <Link href="/">site</Link>
-        <Link href="/blog">blog</Link>
         <button
           onClick={() => logout()}
           className="open-link"

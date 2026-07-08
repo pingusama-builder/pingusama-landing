@@ -6,20 +6,28 @@ import Header from "./Header";
 import Footer from "./Footer";
 import Wheel from "./Wheel";
 import Runner from "./Runner";
+import BenchWagon from "./BenchWagon";
+import BenchOverlay from "./BenchOverlay";
 import DetailPanel from "./DetailPanel";
 import PostCard from "./PostCard";
 import { TOOLS, type ToolKey } from "@/lib/tools";
 import { Post } from "@/lib/db/posts";
+import type { ResolvedShelf, VaultData } from "@/lib/books";
 
 export default function LandingPage({
   frames,
   posts,
+  shelf,
+  vault,
 }: {
   frames: string[];
   posts: Post[];
+  shelf: ResolvedShelf;
+  vault: VaultData;
 }) {
   const [activeKey, setActiveKey] = useState<ToolKey | null>(null);
   const [lockedKey, setLockedKey] = useState<ToolKey | null>(null);
+  const [benchOpen, setBenchOpen] = useState(false);
 
   const handleHover = (key: ToolKey) => {
     if (lockedKey && lockedKey !== key) return;
@@ -74,6 +82,11 @@ export default function LandingPage({
           </p>
 
           <div className="scene">
+            <BenchWagon
+              books={shelf.currentlyReading}
+              isOpen={benchOpen}
+              onOpen={() => setBenchOpen(true)}
+            />
             <Wheel
               lockedKey={lockedKey}
               onHover={handleHover}
@@ -139,6 +152,12 @@ export default function LandingPage({
           </p>
         </section>
       </main>
+      <BenchOverlay
+        isOpen={benchOpen}
+        onClose={() => setBenchOpen(false)}
+        shelf={shelf}
+        vault={vault}
+      />
       <Footer />
     </>
   );

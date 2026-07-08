@@ -1,0 +1,70 @@
+{
+  "books": [
+    {
+      "googleBooksId": "yoHbJ78JZCYC",
+      "title": "What I Talk About When I Talk About Running",
+      "subtitle": null,
+      "authors": ["Haruki Murakami"],
+      "publisher": "Random House Digital, Inc.",
+      "publishedDate": "2009-04",
+      "pageCount": 194,
+      "infoLink": "http://books.google.com.hk/books?id=yoHbJ78JZCYC&dq=isbn:9780307473394&hl=&source=gbs_api",
+      "thumbnail": "http://books.google.com/books/content?id=yoHbJ78JZCYC&printsec=frontcover&img=1&zoom=1&source=gbs_api",
+      "isbn13": "9780307473394",
+      "isbn10": "0307473392"
+    },
+    {
+      "googleBooksId": "rSWlEAAAQBAJ",
+      "title": "Sea of Tranquility",
+      "subtitle": "A novel",
+      "authors": ["Emily St. John Mandel"],
+      "publisher": "Vintage",
+      "publishedDate": "2023-03-28",
+      "pageCount": 273,
+      "infoLink": "http://books.google.com.hk/books?id=rSWlEAAAQBAJ&dq=isbn:9780593466735&hl=&source=gbs_api",
+      "thumbnail": "http://books.google.com/books/content?id=rSWlEAAAQBAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api",
+      "isbn13": "9780593466735",
+      "isbn10": "059346673X"
+    },
+    {
+      "googleBooksId": "_Qu_zQEACAAJ",
+      "title": "A Psalm for the Wild-Built",
+      "subtitle": null,
+      "authors": ["Becky Chambers"],
+      "publisher": "Tordotcom",
+      "publishedDate": "2021-07-13",
+      "pageCount": null,
+      "infoLink": "http://books.google.com.hk/books?id=_Qu_zQEACAAJ&dq=isbn:9781250236210&hl=&source=gbs_api",
+      "thumbnail": "http://books.google.com/books/content?id=_Qu_zQEACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api",
+      "isbn13": "9781250236210",
+      "isbn10": "1250236215"
+    },
+    {
+      "googleBooksId": "l3dtEAAAQBAJ",
+      "title": "The Creative Act",
+      "subtitle": "A Way of Being",
+      "authors": ["Rick Rubin"],
+      "publisher": "Penguin",
+      "publishedDate": "2023-01-17",
+      "pageCount": 433,
+      "infoLink": "http://books.google.com.hk/books?id=l3dtEAAAQBAJ&dq=isbn:9780593652886&hl=&source=gbs_api",
+      "thumbnail": "http://books.google.com/books/content?id=l3dtEAAAQBAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api",
+      "isbn13": "9780593652886",
+      "isbn10": "0593652886"
+    },
+    {
+      "googleBooksId": "f6WMEAAAQBAJ",
+      "title": "The Once and Future King",
+      "subtitle": null,
+      "authors": ["T. H. White"],
+      "publisher": "National Geographic Books",
+      "publishedDate": "2016-10-25",
+      "pageCount": null,
+      "infoLink": "http://books.google.com.hk/books?id=f6WMEAAAQBAJ&dq=isbn:9780143111614&hl=&source=gbs_api",
+      "thumbnail": "http://books.google.com/books/content?id=f6WMEAAAQBAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api",
+      "isbn13": "9780143111610",
+      "isbn10": "0143111612"
+    }
+  ]
+}
+
