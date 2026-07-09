@@ -138,3 +138,86 @@ CREATE TABLE IF NOT EXISTS public.bench (
 );
 
 ALTER TABLE public.bench ENABLE ROW LEVEL SECURITY;
+
+-- 8. Book metadata + mirrored cover pointers. Service-role only (like bench).
+CREATE TABLE IF NOT EXISTS public.books (
+  isbn13           text PRIMARY KEY,
+  google_books_id  text,
+  title            text NOT NULL,
+  subtitle         text,
+  authors          text[] NOT NULL DEFAULT '{}',
+  publisher        text,
+  published_date   text,
+  page_count       int,
+  info_link        text,
+  isbn10           text,
+  cover_url        text,
+  cover_source     text,
+  has_cover        boolean NOT NULL DEFAULT false,
+  last_fetched_at  timestamptz,
+  updated_at       timestamptz DEFAULT now()
+);
+
+ALTER TABLE public.books ENABLE ROW LEVEL SECURITY;
+
+-- 9. Storage bucket for mirrored book covers. Public read (browser <img>),
+-- authenticated writes (admin warming path).
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('covers', 'covers', true)
+ON CONFLICT (id) DO NOTHING;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage'
+      AND tablename  = 'objects'
+      AND policyname = 'Public read access for covers'
+  ) THEN
+    CREATE POLICY "Public read access for covers"
+      ON storage.objects
+      FOR SELECT
+      TO anon, authenticated
+      USING (bucket_id = 'covers');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage'
+      AND tablename  = 'objects'
+      AND policyname = 'Authenticated upload for covers'
+  ) THEN
+    CREATE POLICY "Authenticated upload for covers"
+      ON storage.objects
+      FOR INSERT
+      TO authenticated
+      WITH CHECK (bucket_id = 'covers');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage'
+      AND tablename  = 'objects'
+      AND policyname = 'Authenticated update for covers'
+  ) THEN
+    CREATE POLICY "Authenticated update for covers"
+      ON storage.objects
+      FOR UPDATE
+      TO authenticated
+      USING (bucket_id = 'covers')
+      WITH CHECK (bucket_id = 'covers');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage'
+      AND tablename  = 'objects'
+      AND policyname = 'Authenticated delete for covers'
+  ) THEN
+    CREATE POLICY "Authenticated delete for covers"
+      ON storage.objects
+      FOR DELETE
+      TO authenticated
+      USING (bucket_id = 'covers');
+  END IF;
+END $$;
