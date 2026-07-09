@@ -86,9 +86,9 @@ function Cover({ book, className }: { book: Book; className?: string }) {
       className={`bench-cover ${className ?? ""}`}
       title={book.title}
     >
-      {book.thumbnail ? (
+      {book.coverUrl ? (
         <Image
-          src={book.thumbnail}
+          src={book.coverUrl}
           alt={book.title}
           width={56}
           height={84}
