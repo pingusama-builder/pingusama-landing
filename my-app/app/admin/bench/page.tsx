@@ -6,8 +6,9 @@ import {
   loadBenchData,
   saveShelfAction,
   saveVaultAction,
-  refreshCacheAction,
+  warmBooksAction,
   previewBookAction,
+  listBookStatusesAction,
 } from "./actions"
 
 export default async function AdminBenchPage() {
@@ -32,16 +33,20 @@ export default async function AdminBenchPage() {
           </h1>
           <p className="detail-desc mt-2">
             Edit the shelf (ISBNs + notes) and the vault (clipped links). Save
-            each tab separately. Refresh the book cache after changing ISBNs.
+            each tab separately. Warm book covers after changing ISBNs.
           </p>
         </div>
 
         <BenchEditor
           initialShelf={shelf}
           initialVault={vault}
+          initialBookStatuses={await listBookStatusesAction([
+            ...shelf.currentlyReading.map((e) => e.isbn13),
+            ...shelf.tbr.map((e) => e.isbn13),
+          ])}
           saveShelf={saveShelfAction}
           saveVault={saveVaultAction}
-          refreshCache={refreshCacheAction}
+          warmBooks={warmBooksAction}
           previewBook={previewBookAction}
         />
       </main>

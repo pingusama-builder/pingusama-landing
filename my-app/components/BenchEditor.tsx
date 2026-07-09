@@ -3,20 +3,25 @@
 import { useState, useTransition } from "react";
 import Image from "next/image";
 import type { ShelfData, VaultData, Book } from "@/lib/books";
+import type { BookStatus } from "@/app/admin/bench/actions";
 import { isValidIsbn13, normalizeIsbn13 } from "@/lib/isbn";
 import { formatRelativeDate } from "@/lib/date";
 
 interface BenchEditorProps {
   initialShelf: ShelfData;
   initialVault: VaultData;
+  initialBookStatuses: BookStatus[];
   saveShelf: (
     shelf: ShelfData
   ) => Promise<{ success: true } | { success: false; error: string }>;
   saveVault: (
     vault: VaultData
   ) => Promise<{ success: true } | { success: false; error: string }>;
-  refreshCache: () => Promise<
-    { success: true; count: number } | { success: false; error: string }
+  warmBooks: (
+    opts?: { force?: boolean }
+  ) => Promise<
+    | { success: true; results: { isbn13: string; status: string; error?: string }[]; statuses: BookStatus[] }
+    | { success: false; error: string }
   >;
   previewBook: (
     isbn13: string
@@ -63,12 +68,49 @@ function ValidityHint({ isbn, touched }: { isbn: string; touched: boolean }) {
   );
 }
 
+function BookStatusBadge({
+  isbn13,
+  status,
+}: {
+  isbn13: string;
+  status: BookStatus | undefined;
+}) {
+  if (isbn13.trim() !== "" && !isValidIsbn13(isbn13)) {
+    return (
+      <div className="bench-status-row">
+        <span className="bench-status-badge invalid">invalid ISBN</span>
+      </div>
+    );
+  }
+  if (!status) return null;
+  const label =
+    status.status === "warmed" ? "✓ warmed"
+    : status.status === "stale" ? "⟳ stale"
+    : status.status === "no-cover" ? "⊘ no cover"
+    : "⊘ not warmed";
+  return (
+    <div className="bench-status-row">
+      <span className={`bench-status-badge ${status.status}`}>{label}</span>
+      {status.coverUrl && (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img src={status.coverUrl} alt="" className="bench-status-thumb" />
+      )}
+      {status.lastFetchedAt && (
+        <span className="bench-status-date">
+          warmed {formatRelativeDate(new Date(status.lastFetchedAt))}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function BenchEditor({
   initialShelf,
   initialVault,
+  initialBookStatuses,
   saveShelf,
   saveVault,
-  refreshCache,
+  warmBooks,
   previewBook,
 }: BenchEditorProps) {
   const [tab, setTab] = useState<"shelf" | "vault">("shelf");
@@ -79,6 +121,27 @@ export default function BenchEditor({
   const [isPending, startTransition] = useTransition();
   const [previews, setPreviews] = useState<Record<string, PreviewState>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  const [bookStatuses, setBookStatuses] = useState<BookStatus[]>(initialBookStatuses);
+
+  function statusFor(isbn13: string): BookStatus | undefined {
+    return bookStatuses.find((s) => s.isbn13 === normalizeIsbn13(isbn13));
+  }
+
+  function handleWarmBooks(force: boolean) {
+    startTransition(async () => {
+      setError("");
+      const result = await warmBooks({ force });
+      if (!result.success) {
+        setError(result.error);
+        return;
+      }
+      setBookStatuses(result.statuses);
+      const warmed = result.results.filter((r) => r.status === "warmed").length;
+      const errors = result.results.filter((r) => r.status === "error").length;
+      showMessage(`Warmed ${warmed} book(s)${errors ? `, ${errors} error(s)` : ""}.`);
+    });
+  }
 
   function previewKey(section: SectionKey, index: number) {
     return `${section}-${index}`;
@@ -206,18 +269,6 @@ export default function BenchEditor({
     });
   }
 
-  function handleRefreshCache() {
-    startTransition(async () => {
-      setError("");
-      const result = await refreshCache();
-      if (!result.success) {
-        setError(result.error);
-        return;
-      }
-      showMessage(`Cache refreshed with ${result.count} books.`);
-    });
-  }
-
   function handlePreview(section: SectionKey, index: number) {
     const isbn = normalizeIsbn13(shelf[section][index].isbn13);
     const key = previewKey(section, index);
@@ -266,9 +317,9 @@ export default function BenchEditor({
     const book = state.book;
     return (
       <div className="flex items-start gap-3 mt-3 p-3 rounded-[var(--radius)] bg-[var(--bg-card)] border border-[var(--line)]">
-        {book.thumbnail ? (
+        {(book.coverUrl ?? book.thumbnail) ? (
           <Image
-            src={book.thumbnail}
+            src={(book.coverUrl ?? book.thumbnail)!}
             alt={book.title}
             width={48}
             height={72}
@@ -320,14 +371,24 @@ export default function BenchEditor({
         >
           Vault
         </button>
-        <button
-          type="button"
-          onClick={handleRefreshCache}
-          disabled={isPending}
-          className="pill cursor-pointer ml-auto"
-        >
-          {isPending ? "Refreshing…" : "Refresh book cache"}
-        </button>
+        <div className="flex items-center gap-2 ml-auto">
+          <button
+            type="button"
+            onClick={() => handleWarmBooks(false)}
+            disabled={isPending}
+            className="pill live cursor-pointer"
+          >
+            {isPending ? "Warming…" : "Warm book covers"}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleWarmBooks(true)}
+            disabled={isPending}
+            className="pill cursor-pointer"
+          >
+            Re-warm all
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -443,6 +504,13 @@ export default function BenchEditor({
                             : "Preview book"}
                         </button>
                         <BookPreview state={previews[key] ?? { status: "idle" }} />
+                      </div>
+
+                      <div className="md:col-span-3">
+                        <BookStatusBadge
+                          isbn13={book.isbn13}
+                          status={statusFor(book.isbn13)}
+                        />
                       </div>
                     </div>
                   );

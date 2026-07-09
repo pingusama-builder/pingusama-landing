@@ -1077,3 +1077,38 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   .detail-foot { justify-content: flex-start; gap: 16px; }
   .detail-foot span:empty { display: none; }
 }
+
+/* Bench editor: per-ISBN warm status + cover thumbnail */
+.bench-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--walnut-soft);
+}
+.bench-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.bench-status-badge.warmed { color: var(--sage-deep); border-color: var(--sage); }
+.bench-status-badge.stale  { color: var(--dusk); border-color: var(--line); }
+.bench-status-badge.missing { color: var(--terracotta-d); border-color: var(--terracotta); }
+.bench-status-badge.no-cover { color: var(--dusk); border-color: var(--line); }
+.bench-status-badge.invalid { color: var(--terracotta-d); border-color: var(--terracotta); }
+.bench-status-thumb {
+  width: 28px;
+  height: 42px;
+  border-radius: 2px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: var(--bg-card-hi);
+}
+.bench-status-date { color: var(--dusk); font-size: 0.7rem; }
