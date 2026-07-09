@@ -1,19 +1,31 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { requireAdmin } from "@/lib/auth";
 import {
   ShelfData,
   VaultData,
-  resolveShelf,
+  warmBook,
   fetchBookByIsbn,
   Book,
+  WarmResult,
 } from "@/lib/books";
+import { isValidIsbn13, normalizeIsbn13 } from "@/lib/isbn";
 import { loadShelf, loadVault, saveShelf, saveVault } from "@/lib/db/bench";
+import {
+  getBooksByIsbns,
+  isStale,
+  type BookRow,
+} from "@/lib/db/books";
 
-const CACHE_PATH = join(process.cwd(), "lib", "data", "shelf-cache.json");
+export type BookStatusCode = "warmed" | "stale" | "missing" | "no-cover";
+export interface BookStatus {
+  isbn13: string;
+  status: BookStatusCode;
+  hasCover: boolean;
+  lastFetchedAt: string | null;
+  coverUrl: string | null;
+}
 
 export async function loadBenchData(): Promise<{
   shelf: ShelfData;
@@ -54,25 +66,53 @@ export async function saveVaultAction(
   }
 }
 
-export async function refreshCacheAction(): Promise<
-  { success: true; count: number } | { success: false; error: string }
+function uniqueValidIsbns(shelf: ShelfData): { isbns: string[]; invalid: string[] } {
+  const seen = new Set<string>();
+  const isbns: string[] = [];
+  const invalid: string[] = [];
+  for (const entry of [...shelf.currentlyReading, ...shelf.tbr]) {
+    const cleaned = normalizeIsbn13(entry.isbn13);
+    if (!isValidIsbn13(cleaned)) {
+      invalid.push(entry.isbn13 || "(empty)");
+      continue;
+    }
+    if (!seen.has(cleaned)) {
+      seen.add(cleaned);
+      isbns.push(cleaned);
+    }
+  }
+  return { isbns, invalid };
+}
+
+export async function warmBooksAction(
+  opts: { force?: boolean } = {}
+): Promise<
+  | { success: true; results: WarmResult[]; statuses: BookStatus[] }
+  | { success: false; error: string }
 > {
   try {
     await requireAdmin();
     const shelf = await loadShelf();
-    const resolved = await resolveShelf(shelf);
-    const books = [...resolved.currentlyReading, ...resolved.tbr];
-    writeFileSync(
-      CACHE_PATH,
-      JSON.stringify({ books }, null, 2) + "\n",
-      "utf8"
-    );
+    const { isbns, invalid } = uniqueValidIsbns(shelf);
+
+    const results: WarmResult[] = [];
+    for (const isbn of isbns) {
+      const result = await warmBook(isbn, opts);
+      results.push(result);
+      // Small stagger to avoid hammering Google Books.
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    for (const bad of invalid) {
+      results.push({ isbn13: bad, status: "error", error: "Invalid ISBN-13" });
+    }
+
+    const statuses = await listBookStatusesAction(isbns);
     revalidatePath("/");
     revalidatePath("/admin/bench");
-    return { success: true, count: books.length };
+    return { success: true, results, statuses };
   } catch (err) {
     const message =
-      err instanceof Error ? err.message : "Failed to refresh cache";
+      err instanceof Error ? err.message : "Failed to warm books";
     return { success: false, error: message };
   }
 }
@@ -82,17 +122,55 @@ export async function previewBookAction(
 ): Promise<{ success: true; book: Book } | { success: false; error: string }> {
   try {
     await requireAdmin();
-    const book = await fetchBookByIsbn(isbn13);
-    if (!book) {
+    const warm = await warmBook(isbn13);
+    if (warm.status === "error") {
       return {
         success: false,
-        error: "No book found. Check the ISBN-13 and API key.",
+        error: warm.error?.includes("Invalid")
+          ? "Enter a valid ISBN-13 first"
+          : "No book found. Check the ISBN-13 and API key.",
       };
     }
-    return { success: true, book };
+    const book = await fetchBookByIsbn(isbn13);
+    if (!book) {
+      return { success: false, error: "No book found. Check the ISBN-13 and API key." };
+    }
+    // After warming, fetch the row so the preview shows the mirrored cover URL.
+    const rows = await getBooksByIsbns([normalizeIsbn13(isbn13)]);
+    const row = rows.get(normalizeIsbn13(isbn13));
+    return {
+      success: true,
+      book: {
+        ...book,
+        coverUrl: row?.cover_url ?? null,
+        coverSource: row?.cover_source ?? null,
+      },
+    };
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to preview book";
     return { success: false, error: message };
   }
+}
+
+function rowToStatus(isbn13: string, row: BookRow | undefined): BookStatus {
+  if (!row) {
+    return { isbn13, status: "missing", hasCover: false, lastFetchedAt: null, coverUrl: null };
+  }
+  if (!row.has_cover) return { isbn13, status: "no-cover", hasCover: false, lastFetchedAt: row.last_fetched_at, coverUrl: row.cover_url };
+  if (isStale(row.last_fetched_at)) {
+    return { isbn13, status: "stale", hasCover: true, lastFetchedAt: row.last_fetched_at, coverUrl: row.cover_url };
+  }
+  return { isbn13, status: "warmed", hasCover: true, lastFetchedAt: row.last_fetched_at, coverUrl: row.cover_url };
+}
+
+export async function listBookStatusesAction(
+  isbns: string[]
+): Promise<BookStatus[]> {
+  await requireAdmin();
+  const valid = isbns
+    .map((i) => normalizeIsbn13(i))
+    .filter((i) => i !== "" && isValidIsbn13(i));
+  const rows = await getBooksByIsbns(valid);
+  return valid.map((isbn) => rowToStatus(isbn, rows.get(isbn)));
 }
