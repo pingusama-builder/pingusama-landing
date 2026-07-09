@@ -14,6 +14,7 @@ import {
   mirrorCover,
   bookRowToBook,
   isStale,
+  type BookRow,
 } from "@/lib/db/books";
 import { fetchCoverBytes } from "@/lib/covers";
 
@@ -154,7 +155,7 @@ describe("resolveShelf", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("resolves entries from Supabase books without calling Google Books", async () => {
-    const row = {
+    const row: BookRow = {
       isbn13: "9780307473394",
       google_books_id: "g1",
       title: "Running Book",
@@ -278,29 +279,25 @@ describe("warmBook", () => {
   });
 
   it("skips a fresh, covered row when force is false", async () => {
+    const freshRow: BookRow = {
+      isbn13: "9780307473394",
+      google_books_id: "g1",
+      title: "Running",
+      subtitle: null,
+      authors: [],
+      publisher: null,
+      published_date: null,
+      page_count: null,
+      info_link: null,
+      isbn10: null,
+      cover_url: "u",
+      cover_source: "google",
+      has_cover: true,
+      last_fetched_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
     vi.mocked(getBooksByIsbns).mockResolvedValue(
-      new Map([
-        [
-          "9780307473394",
-          {
-            isbn13: "9780307473394",
-            google_books_id: "g1",
-            title: "Running",
-            subtitle: null,
-            authors: [],
-            publisher: null,
-            published_date: null,
-            page_count: null,
-            info_link: null,
-            isbn10: null,
-            cover_url: "u",
-            cover_source: "google",
-            has_cover: true,
-            last_fetched_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ],
-      ])
+      new Map([["9780307473394", freshRow]])
     );
     vi.mocked(isStale).mockReturnValue(false);
 
