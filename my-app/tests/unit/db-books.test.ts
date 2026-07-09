@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const selectMock = vi.fn();
 const inMock = vi.fn();
-const eqMock = vi.fn();
-const singleMock = vi.fn();
 const upsertMock = vi.fn();
 const uploadMock = vi.fn();
 const fromMock = vi.fn();
@@ -28,8 +26,6 @@ import {
 function resetChain() {
   selectMock.mockReset();
   inMock.mockReset();
-  eqMock.mockReset();
-  singleMock.mockReset();
   upsertMock.mockReset();
   uploadMock.mockReset();
   fromMock.mockReset();

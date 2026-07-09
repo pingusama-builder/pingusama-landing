@@ -16,6 +16,7 @@ vi.mock("@/lib/db/bench", () => ({
 
 vi.mock("@/lib/db/books", () => ({
   getBooksByIsbns: vi.fn(),
+  bookRowToBook: vi.fn(),
   isStale: vi.fn(),
 }));
 
@@ -41,22 +42,6 @@ import * as dbBooks from "@/lib/db/books";
 import * as books from "@/lib/books";
 import { revalidatePath } from "next/cache";
 
-const fullBook = {
-  googleBooksId: "g1",
-  title: "Preview Book",
-  subtitle: null,
-  authors: ["Author"],
-  publisher: null,
-  publishedDate: null,
-  pageCount: null,
-  infoLink: null,
-  thumbnail: null,
-  isbn13: "9780307473394",
-  isbn10: null,
-  coverUrl: "https://supabase.example/covers/9780307473394.jpg",
-  coverSource: "google" as const,
-};
-
 describe("bench admin actions", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -80,6 +65,7 @@ describe("bench admin actions", () => {
     expect(result).toEqual({ success: true });
     expect(bench.saveShelf).toHaveBeenCalledWith(shelf);
     expect(revalidatePath).toHaveBeenCalledWith("/");
+    expect(revalidatePath).toHaveBeenCalledWith("/admin/bench");
   });
 
   it("saveShelfAction returns an error when persistence fails", async () => {
@@ -122,6 +108,8 @@ describe("bench admin actions", () => {
     expect(result.results[0].status).toBe("warmed");
     expect(result.results[1].status).toBe("error");
     expect(revalidatePath).toHaveBeenCalledWith("/");
+    expect(books.warmBook).toHaveBeenCalledTimes(1);
+    expect(books.warmBook).toHaveBeenCalledWith("9780307473394", {});
   });
 
   it("warmBooksAction forces re-warm when force=true", async () => {
@@ -147,7 +135,21 @@ describe("bench admin actions", () => {
 
   it("previewBookAction warms and returns the book for a valid ISBN", async () => {
     vi.mocked(books.warmBook).mockResolvedValue({ isbn13: "9780307473394", status: "warmed" });
-    vi.mocked(books.fetchBookByIsbn).mockResolvedValue(fullBook);
+    vi.mocked(dbBooks.bookRowToBook).mockImplementation((row) => ({
+      googleBooksId: row.google_books_id ?? row.isbn13,
+      title: row.title,
+      subtitle: row.subtitle,
+      authors: row.authors ?? [],
+      publisher: row.publisher,
+      publishedDate: row.published_date,
+      pageCount: row.page_count,
+      infoLink: row.info_link,
+      thumbnail: null,
+      isbn13: row.isbn13,
+      isbn10: row.isbn10,
+      coverUrl: row.cover_url,
+      coverSource: row.cover_source,
+    }));
     vi.mocked(dbBooks.getBooksByIsbns).mockResolvedValue(
       new Map([
         [
@@ -179,6 +181,7 @@ describe("bench admin actions", () => {
     expect(result.book.title).toBe("Preview Book");
     expect(result.book.coverUrl).toBe("https://supabase.example/covers/9780307473394.jpg");
     expect(books.warmBook).toHaveBeenCalledWith("9780307473394");
+    expect(books.fetchBookByIsbn).not.toHaveBeenCalled();
   });
 
   it("previewBookAction returns an error when warming fails", async () => {

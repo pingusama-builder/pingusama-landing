@@ -6,7 +6,6 @@ import {
   ShelfData,
   VaultData,
   warmBook,
-  fetchBookByIsbn,
   Book,
   WarmResult,
 } from "@/lib/books";
@@ -14,6 +13,7 @@ import { isValidIsbn13, normalizeIsbn13 } from "@/lib/isbn";
 import { loadShelf, loadVault, saveShelf, saveVault } from "@/lib/db/bench";
 import {
   getBooksByIsbns,
+  bookRowToBook,
   isStale,
   type BookRow,
 } from "@/lib/db/books";
@@ -131,21 +131,14 @@ export async function previewBookAction(
           : "No book found. Check the ISBN-13 and API key.",
       };
     }
-    const book = await fetchBookByIsbn(isbn13);
-    if (!book) {
+    // After warming, read the row back and build the Book from it — no second Google fetch.
+    const normalized = normalizeIsbn13(isbn13);
+    const rows = await getBooksByIsbns([normalized]);
+    const row = rows.get(normalized);
+    if (!row) {
       return { success: false, error: "No book found. Check the ISBN-13 and API key." };
     }
-    // After warming, fetch the row so the preview shows the mirrored cover URL.
-    const rows = await getBooksByIsbns([normalizeIsbn13(isbn13)]);
-    const row = rows.get(normalizeIsbn13(isbn13));
-    return {
-      success: true,
-      book: {
-        ...book,
-        coverUrl: row?.cover_url ?? null,
-        coverSource: row?.cover_source ?? null,
-      },
-    };
+    return { success: true, book: bookRowToBook(row) };
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to preview book";

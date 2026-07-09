@@ -339,6 +339,24 @@ describe("warmBook", () => {
     expect(row.cover_url).toBeNull();
   });
 
+  it("returns no-cover when mirrorCover throws after a cover is fetched", async () => {
+    vi.mocked(getBooksByIsbns).mockResolvedValue(new Map());
+    vi.mocked(fetch).mockResolvedValue(googleBooksResponse(fullBook));
+    vi.mocked(fetchCoverBytes).mockResolvedValue({
+      bytes: Buffer.from([1, 2, 3]),
+      mimeType: "image/jpeg",
+      source: "google",
+    });
+    vi.mocked(mirrorCover).mockRejectedValue(new Error("upload failed"));
+    vi.mocked(upsertBook).mockResolvedValue(undefined);
+
+    const result = await warmBook("9780307473394");
+    expect(result.status).toBe("no-cover");
+    expect(upsertBook).toHaveBeenCalledWith(
+      expect.objectContaining({ isbn13: "9780307473394", has_cover: false })
+    );
+  });
+
   it("returns error when Google Books metadata fetch fails", async () => {
     vi.mocked(getBooksByIsbns).mockResolvedValue(new Map());
     vi.mocked(fetch).mockResolvedValue({ ok: false, status: 404 } as Response);
