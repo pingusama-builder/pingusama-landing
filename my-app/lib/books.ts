@@ -1,6 +1,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isValidIsbn13, normalizeIsbn13 } from "./isbn";
+import {
+  getBooksByIsbns,
+  upsertBook,
+  mirrorCover,
+  bookRowToBook,
+  isStale,
+  type BookRow,
+} from "./db/books";
+import { fetchCoverBytes } from "./covers";
 
 export { isValidIsbn13, normalizeIsbn13 } from "./isbn";
 
@@ -16,6 +25,8 @@ export interface Book {
   thumbnail: string | null;
   isbn13: string | null;
   isbn10: string | null;
+  coverUrl: string | null;
+  coverSource: "google" | "openlibrary" | null;
 }
 
 export interface ShelfEntry {
@@ -50,27 +61,15 @@ export interface ResolvedShelf {
   errors: ShelfError[];
 }
 
+export type WarmStatus = "warmed" | "skipped" | "no-cover" | "error";
+export interface WarmResult {
+  isbn13: string;
+  status: WarmStatus;
+  error?: string;
+}
+
 const API = "https://www.googleapis.com/books/v1/volumes";
 const ONE_DAY = 60 * 60 * 24;
-
-let cache: Record<string, Book> | null = null;
-
-function loadCache(): Record<string, Book> {
-  if (cache) return cache;
-  try {
-    const raw = readFileSync(
-      join(process.cwd(), "lib", "data", "shelf-cache.json"),
-      "utf8"
-    );
-    const data = JSON.parse(raw) as { books: Book[] };
-    cache = Object.fromEntries(
-      data.books.map((b) => [b.isbn13 ?? b.googleBooksId, b])
-    );
-  } catch {
-    cache = {};
-  }
-  return cache;
-}
 
 function getApiKey(): string | undefined {
   return process.env.GOOGLE_BOOKS_API_KEY;
@@ -115,11 +114,12 @@ export async function fetchBookByIsbn(isbn13: string): Promise<Book | null> {
   if (!isValidIsbn13(cleaned)) return null;
   const apiKey = getApiKey();
   if (!apiKey) return null;
-  return fetchByIsbn(cleaned, apiKey);
+  const book = await fetchByIsbn(cleaned, apiKey);
+  if (!book) return null;
+  return { ...book, coverUrl: null, coverSource: null };
 }
 
 async function parseBook(res: Response): Promise<Book | null> {
-
   const data = (await res.json()) as {
     items?: Array<{
       id: string;
@@ -158,49 +158,141 @@ async function parseBook(res: Response): Promise<Book | null> {
     isbn10:
       v.industryIdentifiers?.find((x) => x.type === "ISBN_10")?.identifier ??
       null,
+    coverUrl: null,
+    coverSource: null,
+  };
+}
+
+export function warmBookToRow(
+  book: Book,
+  cover: {
+    coverUrl: string | null;
+    coverSource: "google" | "openlibrary" | null;
+    hasCover: boolean;
+  }
+): BookRow {
+  return {
+    isbn13: book.isbn13 ?? "",
+    google_books_id: book.googleBooksId,
+    title: book.title,
+    subtitle: book.subtitle,
+    authors: book.authors,
+    publisher: book.publisher,
+    published_date: book.publishedDate,
+    page_count: book.pageCount,
+    info_link: book.infoLink,
+    isbn10: book.isbn10,
+    cover_url: cover.coverUrl,
+    cover_source: cover.coverSource,
+    has_cover: cover.hasCover,
+    last_fetched_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+export async function warmBook(
+  isbn13: string,
+  opts: { force?: boolean } = {}
+): Promise<WarmResult> {
+  const cleaned = normalizeIsbn13(isbn13);
+  if (!isValidIsbn13(cleaned)) {
+    return { isbn13, status: "error", error: "Invalid ISBN-13" };
+  }
+
+  if (!opts.force) {
+    const existing = (await getBooksByIsbns([cleaned])).get(cleaned);
+    if (existing && existing.has_cover && !isStale(existing.last_fetched_at)) {
+      return { isbn13: cleaned, status: "skipped" };
+    }
+  }
+
+  const book = await fetchBookByIsbn(cleaned);
+  if (!book) {
+    return {
+      isbn13: cleaned,
+      status: "error",
+      error: "Not found in Google Books",
+    };
+  }
+
+  const cover = await fetchCoverBytes({
+    googleBooksId: book.googleBooksId,
+    isbn13: book.isbn13,
+  });
+
+  let coverUrl: string | null = null;
+  let coverSource: "google" | "openlibrary" | null = null;
+  let hasCover = false;
+  if (cover) {
+    try {
+      coverUrl = await mirrorCover(cleaned, cover.bytes, cover.mimeType);
+      coverSource = cover.source;
+      hasCover = true;
+    } catch (err) {
+      console.warn(
+        `Cover mirror failed for ${cleaned}:`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  await upsertBook(
+    warmBookToRow(book, { coverUrl, coverSource, hasCover })
+  );
+
+  return {
+    isbn13: cleaned,
+    status: hasCover ? "warmed" : "no-cover",
   };
 }
 
 export async function resolveShelf(shelf: ShelfData): Promise<ResolvedShelf> {
-  const apiKey = getApiKey();
-  const cache = loadCache();
+  const allEntries = [...shelf.currentlyReading, ...shelf.tbr];
+  const isbns = allEntries.map((e) => normalizeIsbn13(e.isbn13));
+  const rows = await getBooksByIsbns(isbns);
 
-  const resolve = async (entries: ShelfEntry[]) => {
-    const results: (Book & { note: string })[] = [];
-    const errors: ShelfError[] = [];
-    for (const entry of entries) {
-      let book: Book | null = null;
-      if (apiKey) {
-        book = await fetchByIsbn(entry.isbn13, apiKey);
-      }
-      if (!book) {
-        book = cache[entry.isbn13] ?? null;
-        if (book) {
-          console.warn(`Using cached fallback for ${entry.isbn13}`);
-        }
-      }
-      if (book) {
-        results.push({ ...book, note: entry.note });
-      } else {
-        errors.push({
-          isbn13: entry.isbn13,
-          note: entry.note,
-          reason: "Not found in Google Books or the local cache",
-        });
-      }
-      // Small stagger to avoid hammering the Google Books API from the build machine.
-      await new Promise((resolve) => setTimeout(resolve, 120));
+  const toBook = (entry: ShelfEntry, isbn13: string): Book & { note: string } => {
+    const row = rows.get(isbn13);
+    if (row) {
+      return { ...bookRowToBook(row), note: entry.note };
     }
-    return { results, errors };
+    // Degraded fallback: no row in Supabase yet -> ISBN-labelled chip, no cover.
+    return {
+      googleBooksId: `isbn:${isbn13}`,
+      title: isbn13,
+      subtitle: null,
+      authors: [],
+      publisher: null,
+      publishedDate: null,
+      pageCount: null,
+      infoLink: null,
+      thumbnail: null,
+      isbn13,
+      isbn10: null,
+      coverUrl: null,
+      coverSource: null,
+      note: entry.note,
+    };
   };
 
-  const reading = await resolve(shelf.currentlyReading);
-  const tbr = await resolve(shelf.tbr);
+  const errors: ShelfError[] = [];
+  for (const entry of allEntries) {
+    const isbn13 = normalizeIsbn13(entry.isbn13);
+    if (!rows.has(isbn13)) {
+      errors.push({
+        isbn13,
+        note: entry.note,
+        reason: "Not warmed yet — open /admin/bench → Warm book covers",
+      });
+    }
+  }
 
   return {
-    currentlyReading: reading.results,
-    tbr: tbr.results,
-    errors: [...reading.errors, ...tbr.errors],
+    currentlyReading: shelf.currentlyReading.map((e) =>
+      toBook(e, normalizeIsbn13(e.isbn13))
+    ),
+    tbr: shelf.tbr.map((e) => toBook(e, normalizeIsbn13(e.isbn13))),
+    errors,
   };
 }
 

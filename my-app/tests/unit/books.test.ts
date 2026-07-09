@@ -4,7 +4,30 @@ import {
   normalizeIsbn13,
   fetchBookByIsbn,
   resolveShelf,
+  warmBook,
+  type Book,
 } from "@/lib/books"
+
+import {
+  getBooksByIsbns,
+  upsertBook,
+  mirrorCover,
+  bookRowToBook,
+  isStale,
+} from "@/lib/db/books";
+import { fetchCoverBytes } from "@/lib/covers";
+
+vi.mock("@/lib/db/books", () => ({
+  getBooksByIsbns: vi.fn(),
+  upsertBook: vi.fn(),
+  mirrorCover: vi.fn(),
+  bookRowToBook: vi.fn(),
+  isStale: vi.fn(),
+}));
+
+vi.mock("@/lib/covers", () => ({
+  fetchCoverBytes: vi.fn(),
+}));
 
 describe("isValidIsbn13", () => {
   it("accepts a valid ISBN-13", () => {
@@ -124,66 +147,207 @@ describe("fetchBookByIsbn", () => {
 })
 
 describe("resolveShelf", () => {
-  let originalKey: string | undefined
-
   beforeEach(() => {
-    originalKey = process.env.GOOGLE_BOOKS_API_KEY
-    process.env.GOOGLE_BOOKS_API_KEY = "test-key"
-    globalThis.fetch = vi.fn()
-  })
+    vi.clearAllMocks();
+    process.env.GOOGLE_BOOKS_API_KEY = "test-key";
+  });
+  afterEach(() => vi.restoreAllMocks());
 
-  afterEach(() => {
-    process.env.GOOGLE_BOOKS_API_KEY = originalKey
-    vi.restoreAllMocks()
-  })
+  it("resolves entries from Supabase books without calling Google Books", async () => {
+    const row = {
+      isbn13: "9780307473394",
+      google_books_id: "g1",
+      title: "Running Book",
+      subtitle: null,
+      authors: ["A Runner"],
+      publisher: null,
+      published_date: null,
+      page_count: null,
+      info_link: null,
+      isbn10: null,
+      cover_url: "https://supabase.example/covers/9780307473394.jpg",
+      cover_source: "google",
+      has_cover: true,
+      last_fetched_at: "2026-07-01T00:00:00Z",
+      updated_at: "2026-07-01T00:00:00Z",
+    };
+    vi.mocked(getBooksByIsbns).mockResolvedValue(new Map([["9780307473394", row]]));
+    vi.mocked(bookRowToBook).mockImplementation((r) => ({
+      googleBooksId: r.google_books_id ?? r.isbn13,
+      title: r.title,
+      subtitle: r.subtitle,
+      authors: r.authors,
+      publisher: r.publisher,
+      publishedDate: r.published_date,
+      pageCount: r.page_count,
+      infoLink: r.info_link,
+      thumbnail: null,
+      isbn13: r.isbn13,
+      isbn10: r.isbn10,
+      coverUrl: r.cover_url,
+      coverSource: r.cover_source,
+    }));
 
-  it("resolves books for each shelf entry", async () => {
-    vi.mocked(fetch).mockResolvedValue({
+    const shelf = {
+      currentlyReading: [{ isbn13: "9780307473394", note: "n1" }],
+      tbr: [{ isbn13: "9780307473394", note: "n2" }],
+    };
+    const resolved = await resolveShelf(shelf);
+
+    expect(getBooksByIsbns).toHaveBeenCalledWith(["9780307473394", "9780307473394"]);
+    expect(resolved.currentlyReading[0].title).toBe("Running Book");
+    expect(resolved.currentlyReading[0].coverUrl).toBe("https://supabase.example/covers/9780307473394.jpg");
+    expect(resolved.tbr[0].note).toBe("n2");
+    expect(resolved.errors).toHaveLength(0);
+  });
+
+  it("reports unwarmed ISBNs as errors and renders degraded chips", async () => {
+    vi.mocked(getBooksByIsbns).mockResolvedValue(new Map());
+    globalThis.fetch = vi.fn();
+
+    const shelf = {
+      currentlyReading: [{ isbn13: "9780307473394", note: "note" }],
+      tbr: [],
+    };
+    const resolved = await resolveShelf(shelf);
+
+    expect(resolved.currentlyReading[0].title).toBe("9780307473394");
+    expect(resolved.currentlyReading[0].coverUrl).toBeNull();
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].reason).toContain("Not warmed yet");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("warmBook", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.GOOGLE_BOOKS_API_KEY = "test-key";
+    globalThis.fetch = vi.fn();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  const fullBook: Book = {
+    googleBooksId: "g1",
+    title: "Running",
+    subtitle: null,
+    authors: ["Haruki Murakami"],
+    publisher: null,
+    publishedDate: null,
+    pageCount: null,
+    infoLink: null,
+    thumbnail: "http://books.google.com/books/content?id=g1&zoom=1",
+    isbn13: "9780307473394",
+    isbn10: null,
+    coverUrl: null,
+    coverSource: null,
+  };
+
+  // Real fetchBookByIsbn drives globalThis.fetch; this stubs the Google Books JSON.
+  function googleBooksResponse(book: Book) {
+    return {
       ok: true,
       status: 200,
       json: async () => ({
         items: [
           {
-            id: "running",
+            id: book.googleBooksId,
             volumeInfo: {
-              title: "Running Book",
-              authors: ["A Runner"],
-              industryIdentifiers: [{ type: "ISBN_13", identifier: "9780307473394" }],
+              title: book.title,
+              subtitle: book.subtitle,
+              authors: book.authors,
+              publisher: book.publisher,
+              publishedDate: book.publishedDate,
+              pageCount: book.pageCount,
+              infoLink: book.infoLink,
+              imageLinks: { thumbnail: book.thumbnail },
+              industryIdentifiers: [
+                { type: "ISBN_13", identifier: book.isbn13 ?? "" },
+              ],
             },
           },
         ],
       }),
-    } as Response)
+    } as Response;
+  }
 
-    const shelf = {
-      currentlyReading: [{ isbn13: "9780307473394", note: "n1" }],
-      tbr: [{ isbn13: "9780307473394", note: "n2" }],
-    }
+  it("reports error for an invalid ISBN without fetching", async () => {
+    const result = await warmBook("not-an-isbn");
+    expect(result.status).toBe("error");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 
-    const resolved = await resolveShelf(shelf)
-    expect(resolved.currentlyReading).toHaveLength(1)
-    expect(resolved.currentlyReading[0].title).toBe("Running Book")
-    expect(resolved.currentlyReading[0].note).toBe("n1")
-    expect(resolved.tbr).toHaveLength(1)
-    expect(resolved.tbr[0].note).toBe("n2")
-    expect(resolved.errors).toHaveLength(0)
-  })
+  it("skips a fresh, covered row when force is false", async () => {
+    vi.mocked(getBooksByIsbns).mockResolvedValue(
+      new Map([
+        [
+          "9780307473394",
+          {
+            isbn13: "9780307473394",
+            google_books_id: "g1",
+            title: "Running",
+            subtitle: null,
+            authors: [],
+            publisher: null,
+            published_date: null,
+            page_count: null,
+            info_link: null,
+            isbn10: null,
+            cover_url: "u",
+            cover_source: "google",
+            has_cover: true,
+            last_fetched_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ],
+      ])
+    );
+    vi.mocked(isStale).mockReturnValue(false);
 
-  it("reports unresolved entries when the API returns nothing", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ items: [] }),
-    } as Response)
+    const result = await warmBook("9780307473394");
+    expect(result.status).toBe("skipped");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 
-    const shelf = {
-      currentlyReading: [{ isbn13: "0000000000000", note: "missing" }],
-      tbr: [],
-    }
+  it("warms a book: fetches metadata, mirrors cover, upserts row", async () => {
+    vi.mocked(getBooksByIsbns).mockResolvedValue(new Map());
+    vi.mocked(fetch).mockResolvedValue(googleBooksResponse(fullBook));
+    vi.mocked(fetchCoverBytes).mockResolvedValue({
+      bytes: Buffer.from([1, 2, 3]),
+      mimeType: "image/jpeg",
+      source: "google",
+    });
+    vi.mocked(mirrorCover).mockResolvedValue("https://supabase.example/covers/9780307473394.jpg");
+    vi.mocked(upsertBook).mockResolvedValue(undefined);
 
-    const resolved = await resolveShelf(shelf)
-    expect(resolved.currentlyReading).toHaveLength(0)
-    expect(resolved.errors).toHaveLength(1)
-    expect(resolved.errors[0].isbn13).toBe("0000000000000")
-  })
-})
+    const result = await warmBook("9780307473394");
+    expect(result.status).toBe("warmed");
+    expect(mirrorCover).toHaveBeenCalledWith("9780307473394", expect.any(Buffer), "image/jpeg");
+    expect(upsertBook).toHaveBeenCalled();
+    const row = vi.mocked(upsertBook).mock.calls[0][0];
+    expect(row.cover_url).toBe("https://supabase.example/covers/9780307473394.jpg");
+    expect(row.has_cover).toBe(true);
+  });
+
+  it("returns no-cover when neither source yields a cover", async () => {
+    vi.mocked(getBooksByIsbns).mockResolvedValue(new Map());
+    vi.mocked(fetch).mockResolvedValue(googleBooksResponse(fullBook));
+    vi.mocked(fetchCoverBytes).mockResolvedValue(null);
+    vi.mocked(upsertBook).mockResolvedValue(undefined);
+
+    const result = await warmBook("9780307473394");
+    expect(result.status).toBe("no-cover");
+    const row = vi.mocked(upsertBook).mock.calls[0][0];
+    expect(row.has_cover).toBe(false);
+    expect(row.cover_url).toBeNull();
+  });
+
+  it("returns error when Google Books metadata fetch fails", async () => {
+    vi.mocked(getBooksByIsbns).mockResolvedValue(new Map());
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 404 } as Response);
+
+    const result = await warmBook("9780307473394");
+    expect(result.status).toBe("error");
+    expect(mirrorCover).not.toHaveBeenCalled();
+  });
+});
