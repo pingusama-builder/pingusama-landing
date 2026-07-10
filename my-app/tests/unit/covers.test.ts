@@ -17,10 +17,20 @@ describe("fetchCoverBytes", () => {
         get: (name: string) =>
           name.toLowerCase() === "content-type" ? mimeType : null,
       },
-      arrayBuffer: async () => new ArrayBuffer(bytes.length),
-      // covers.ts uses .arrayBuffer() then Buffer.from; emulate byte length
+      arrayBuffer: async () => Uint8Array.from(bytes).buffer,
       bytes: async () => Uint8Array.from(bytes),
     } as unknown as Response;
+  }
+
+  function pngHeader(width: number, height: number, colorType: number, bitDepth = 8) {
+    const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+    const ihdrLen = [0, 0, 0, 13];
+    const ihdrType = [73, 72, 68, 82];
+    const w = [(width >> 24) & 0xff, (width >> 16) & 0xff, (width >> 8) & 0xff, width & 0xff];
+    const h = [(height >> 24) & 0xff, (height >> 16) & 0xff, (height >> 8) & 0xff, height & 0xff];
+    const rest = [bitDepth, colorType, 0, 0, 0];
+    const crc = [0, 0, 0, 0];
+    return [...sig, ...ihdrLen, ...ihdrType, ...w, ...h, ...rest, ...crc];
   }
 
   it("tries the Google zoom=0 https URL first and returns its bytes", async () => {
@@ -55,6 +65,16 @@ describe("fetchCoverBytes", () => {
 
     const result = await fetchCoverBytes(BOOK);
     expect(result).toBeNull();
+  });
+
+  it("rejects the Google Books 575x750 grayscale placeholder and falls back to Open Library", async () => {
+    const placeholder = pngHeader(575, 750, 0);
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(imageResponse(placeholder, "image/png"))
+      .mockResolvedValueOnce(imageResponse(Array.from({ length: 5000 }, () => 1), "image/jpeg"));
+
+    const result = await fetchCoverBytes(BOOK);
+    expect(result?.source).toBe("openlibrary");
   });
 
   it("returns null when both sources fail", async () => {

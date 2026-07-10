@@ -7,6 +7,42 @@ export interface CoverResult {
 const MIN_VALID_BYTES = 1000; // Open Library serves an ~800-byte 1x1 placeholder
 const FETCH_TIMEOUT_MS = 8000;
 
+// Google Books returns a generic "image not available" placeholder as a
+// 575x750 8-bit grayscale PNG. Detect it by parsing the PNG IHDR chunk so we
+// can fall back to Open Library instead of mirroring a useless grey box.
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+function parsePngDimensions(bytes: Buffer): {
+  width: number;
+  height: number;
+  bitDepth: number;
+  colorType: number;
+} | null {
+  if (
+    bytes.length < 33 ||
+    !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)
+  ) {
+    return null;
+  }
+  return {
+    width: bytes.readUInt32BE(16),
+    height: bytes.readUInt32BE(20),
+    bitDepth: bytes[24],
+    colorType: bytes[25],
+  };
+}
+
+function isGooglePlaceholder(bytes: Buffer): boolean {
+  const dims = parsePngDimensions(bytes);
+  return (
+    !!dims &&
+    dims.width === 575 &&
+    dims.height === 750 &&
+    dims.colorType === 0 &&
+    dims.bitDepth === 8
+  );
+}
+
 interface CoverSource {
   url: string;
   source: "google" | "openlibrary";
@@ -71,9 +107,9 @@ export async function fetchCoverBytes(book: {
 }): Promise<CoverResult | null> {
   for (const source of sourcesFor(book)) {
     const got = await fetchImage(source.url);
-    if (got) {
-      return { ...got, source: source.source };
-    }
+    if (!got) continue;
+    if (source.source === "google" && isGooglePlaceholder(got.bytes)) continue;
+    return { ...got, source: source.source };
   }
   return null;
 }
