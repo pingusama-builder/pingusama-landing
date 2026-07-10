@@ -25,9 +25,9 @@ export default function BenchWagon({ books, isOpen, onOpen }: BenchWagonProps) {
         <span className="wagon-covers" aria-hidden="true">
           {covers.map((book, i) => (
             <span key={book.googleBooksId ?? i} className={`wagon-cover tilt-${i}`}>
-              {book.thumbnail ? (
+              {(book.coverUrl ?? book.thumbnail) ? (
                 <Image
-                  src={book.thumbnail}
+                  src={(book.coverUrl ?? book.thumbnail)!}
                   alt={book.title}
                   width={42}
                   height={96}
