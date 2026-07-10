@@ -303,20 +303,26 @@ export default function BenchOverlay({
 
             {hasBooks ? (
               <>
-                {openCount > 0 && (
+                {(openCount > 0 || waitingCount > 0) && (
                   <div
                     className="bench-cover-row"
                     aria-labelledby="bench-shelf-title"
                   >
-                    {shelf.currentlyReading.map((book, i) => (
-                      <Cover
-                        key={book.googleBooksId}
-                        book={book}
-                        className={
-                          i === 0 ? "tilt-l" : i === 2 ? "tilt-r" : "lift"
-                        }
-                      />
-                    ))}
+                    {[...shelf.currentlyReading, ...shelf.tbr].map((book, i, arr) => {
+                      let className = "lift";
+                      const total = arr.length;
+                      if (total > 1) {
+                        if (i === 0) className = "tilt-l";
+                        else if (i === total - 1) className = "tilt-r";
+                      }
+                      return (
+                        <Cover
+                          key={book.googleBooksId}
+                          book={book}
+                          className={className}
+                        />
+                      );
+                    })}
                   </div>
                 )}
                 <div className="bench-shelf-divider" />
