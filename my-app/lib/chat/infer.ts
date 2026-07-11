@@ -17,6 +17,7 @@ import { mistralTurn } from "@/lib/chat/mistral"
 import { MODEL_TIERS } from "@/lib/chat/models"
 import {
   getMessages,
+  getThread,
   listAllMemories,
   recallMemories,
   saveMemory,
@@ -29,6 +30,7 @@ import {
 
 const INFERENCE_MODEL = process.env.MISTRAL_INFER_MODEL || MODEL_TIERS.large
 const MAX_TRANSCRIPT_CHARS = 100000
+const INCREMENTAL_CONTEXT_TAIL = 6
 
 export interface InferenceSummary {
   threadId: string
@@ -36,6 +38,7 @@ export interface InferenceSummary {
   saved: { name: string; type: MemoryType }[]
   dropped: number
   skipped: number
+  scanned: number
   inferredAt: string
 }
 
@@ -72,26 +75,57 @@ function parseJsonArray(raw: string): unknown[] {
   }
 }
 
-function shapeTranscript(rows: ChatMessageRow[]): { transcript: string; enough: boolean } {
+function renderRows(rows: ChatMessageRow[]): string[] {
   const lines: string[] = []
-  let nonTool = 0
   for (const r of rows) {
     if (r.role === "user") {
-      nonTool++
       lines.push(`user: ${r.content ?? ""}`)
     } else if (r.role === "assistant") {
-      nonTool++
       lines.push(`companion: ${r.content ?? ""}`)
     } else if (r.role === "tool") {
       const name = (r.tool_calls as { name?: string } | null)?.name ?? "tool"
       lines.push(`[tool: ${name}]`)
     }
   }
-  let transcript = lines.join("\n")
-  if (transcript.length > MAX_TRANSCRIPT_CHARS) {
-    transcript = transcript.slice(transcript.length - MAX_TRANSCRIPT_CHARS)
+  return lines
+}
+
+function nonToolCount(rows: ChatMessageRow[]): number {
+  return rows.filter((r) => r.role === "user" || r.role === "assistant").length
+}
+
+function capTranscript(s: string): string {
+  return s.length > MAX_TRANSCRIPT_CHARS ? s.slice(s.length - MAX_TRANSCRIPT_CHARS) : s
+}
+
+// Builds the pass-1 conversation transcript. Full path (since === null) = the
+// whole transcript unlabeled. Incremental path = a labeled "earlier context"
+// tail + "new messages" slice, so the model extracts only from the new slice.
+function buildPass1Input(
+  rows: ChatMessageRow[],
+  since: string | null
+): { transcript: string; scanned: number; enough: boolean } {
+  if (!since) {
+    const scanned = nonToolCount(rows)
+    return { transcript: capTranscript(renderRows(rows).join("\n")), scanned, enough: scanned >= 2 }
   }
-  return { transcript, enough: nonTool >= 2 }
+  const idx = rows.findIndex((r) => (r.created_at ?? "") > since)
+  if (idx === -1) return { transcript: "", scanned: 0, enough: false }
+  const slice = rows.slice(idx)
+  const tail = rows.slice(Math.max(0, idx - INCREMENTAL_CONTEXT_TAIL), idx)
+  const scanned = nonToolCount(slice)
+  const blocks: string[] = []
+  if (tail.length > 0) {
+    blocks.push(
+      "--- Earlier conversation (already processed — for context ONLY, do NOT extract from this) ---\n" +
+        renderRows(tail).join("\n")
+    )
+  }
+  blocks.push(
+    "--- New messages since last save (extract from THESE only) ---\n" +
+      renderRows(slice).join("\n")
+  )
+  return { transcript: capTranscript(blocks.join("\n\n")), scanned, enough: scanned >= 2 }
 }
 
 function titleFrom(rows: ChatMessageRow[]): string {
@@ -101,20 +135,25 @@ function titleFrom(rows: ChatMessageRow[]): string {
   return s.length > 60 ? s.slice(0, 60) + "…" : s
 }
 
-export async function inferMemoriesFromThread(threadId: string): Promise<InferenceSummary> {
+export async function inferMemoriesFromThread(
+  threadId: string,
+  opts?: { forceFull?: boolean }
+): Promise<InferenceSummary> {
   const inferredAt = new Date().toISOString()
-  const rows = await getMessages(threadId)
+  const [rows, thread] = await Promise.all([getMessages(threadId), getThread(threadId)])
   const threadTitle = titleFrom(rows)
+  const since = opts?.forceFull ? null : (thread?.last_inferred_at ?? null)
+  const { transcript, scanned, enough } = buildPass1Input(rows, since)
   const empty: InferenceSummary = {
     threadId,
     threadTitle,
     saved: [],
     dropped: 0,
     skipped: 0,
+    scanned,
     inferredAt,
   }
 
-  const { transcript, enough } = shapeTranscript(rows)
   if (!enough) {
     await touchInferredAt(threadId)
     return empty
@@ -122,6 +161,8 @@ export async function inferMemoriesFromThread(threadId: string): Promise<Inferen
 
   const existing = (await listAllMemories({ activeOnly: true })).filter((m) => m.type !== "site")
   const existingNames = existing.map((m) => m.name)
+  const existingBlock =
+    existing.map((m) => `- ${m.name}: ${m.description}`).join("\n") || "(none)"
 
   // Pass 1 — extract (generous).
   const pass1 = await mistralTurn({
@@ -131,7 +172,7 @@ export async function inferMemoriesFromThread(threadId: string): Promise<Inferen
       { role: "system", content: PASS1_SYSTEM },
       {
         role: "user",
-        content: `Existing memory names to reuse: ${existingNames.join(", ") || "(none)"}\n\nConversation:\n${transcript}`,
+        content: `Existing memories (already known — refine, don't duplicate):\n${existingBlock}\n\n${transcript}`,
       },
     ],
   })
@@ -197,5 +238,5 @@ export async function inferMemoriesFromThread(threadId: string): Promise<Inferen
   }
 
   await touchInferredAt(threadId)
-  return { threadId, threadTitle, saved, dropped, skipped, inferredAt }
+  return { threadId, threadTitle, saved, dropped, skipped, scanned, inferredAt }
 }

@@ -82,17 +82,21 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
         setInferStatus(`Error: ${res.error}`);
         return;
       }
-      const { saved, dropped, skipped } = res.summary;
+      const { saved, dropped, skipped, scanned } = res.summary;
+      if (scanned === 0) {
+        setInferStatus("No new messages since last save.");
+        return;
+      }
       if (saved.length === 0) {
         setInferStatus("No new memories worth keeping.");
-      } else {
-        const names = saved.map((s) => s.name).join(", ");
-        setInferStatus(
-          `Saved ${saved.length} memories: ${names}.${dropped ? ` Dropped ${dropped}.` : ""}${
-            skipped ? ` Skipped ${skipped}.` : ""
-          }`
-        );
+        return;
       }
+      const names = saved.map((s) => s.name).join(", ");
+      setInferStatus(
+        `Saved ${saved.length} memories: ${names}.${dropped ? ` Dropped ${dropped}.` : ""}${
+          skipped ? ` Skipped ${skipped}.` : ""
+        }`
+      );
     });
   };
 

@@ -115,11 +115,12 @@ export async function setThreadModelPreferenceAction(
 }
 
 export async function inferFromThreadAction(
-  threadId: string
+  threadId: string,
+  opts?: { forceFull?: boolean }
 ): Promise<{ success: true; summary: InferenceSummary } | { success: false; error: string }> {
   try {
     await requireAdmin();
-    const summary = await inferMemoriesFromThread(threadId);
+    const summary = await inferMemoriesFromThread(threadId, opts);
     return { success: true, summary };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Inference failed" };

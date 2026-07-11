@@ -54,12 +54,12 @@ describe("inferFromThreadAction", () => {
 
   it("returns the summary after requireAdmin", async () => {
     authMock.requireAdmin.mockResolvedValue({ id: "admin-1" })
-    const summary = { threadId: "t1", threadTitle: "hi", saved: [{ name: "x", type: "user" }], dropped: 0, skipped: 0, inferredAt: "x" }
+    const summary = { threadId: "t1", threadTitle: "hi", saved: [{ name: "x", type: "user" }], dropped: 0, skipped: 0, scanned: 2, inferredAt: "x" }
     inferMock.inferMemoriesFromThread.mockResolvedValue(summary)
     const res = await inferFromThreadAction("t1")
     expect(res.success).toBe(true)
     if (res.success) expect(res.summary).toBe(summary)
-    expect(inferMock.inferMemoriesFromThread).toHaveBeenCalledWith("t1")
+    expect(inferMock.inferMemoriesFromThread).toHaveBeenCalledWith("t1", undefined)
   })
 
   it("returns failure if requireAdmin throws", async () => {
@@ -75,6 +75,21 @@ describe("inferFromThreadAction", () => {
     const res = await inferFromThreadAction("t1")
     expect(res.success).toBe(false)
   })
+
+  it("passes forceFull through to inferMemoriesFromThread", async () => {
+    authMock.requireAdmin.mockResolvedValue({ id: "admin-1" })
+    inferMock.inferMemoriesFromThread.mockResolvedValue({
+      threadId: "t1",
+      threadTitle: "hi",
+      saved: [],
+      dropped: 0,
+      skipped: 0,
+      scanned: 4,
+      inferredAt: "x",
+    })
+    await inferFromThreadAction("t1", { forceFull: true })
+    expect(inferMock.inferMemoriesFromThread).toHaveBeenCalledWith("t1", { forceFull: true })
+  })
 })
 
 describe("inferIdleThreadsAction", () => {
@@ -87,8 +102,8 @@ describe("inferIdleThreadsAction", () => {
       { id: "b", title: "b", updated_at: "x", last_inferred_at: null },
     ])
     inferMock.inferMemoriesFromThread
-      .mockResolvedValueOnce({ threadId: "a", threadTitle: "a", saved: [], dropped: 0, skipped: 0, inferredAt: "x" })
-      .mockResolvedValueOnce({ threadId: "b", threadTitle: "b", saved: [{ name: "y", type: "user" }], dropped: 0, skipped: 0, inferredAt: "x" })
+      .mockResolvedValueOnce({ threadId: "a", threadTitle: "a", saved: [], dropped: 0, skipped: 0, scanned: 0, inferredAt: "x" })
+      .mockResolvedValueOnce({ threadId: "b", threadTitle: "b", saved: [{ name: "y", type: "user" }], dropped: 0, skipped: 0, scanned: 0, inferredAt: "x" })
     const res = await inferIdleThreadsAction()
     expect(res.success).toBe(true)
     if (res.success) expect(res.summaries).toHaveLength(2)
@@ -118,7 +133,7 @@ describe("inferIdleThreadsAction", () => {
     ])
     inferMock.inferMemoriesFromThread
       .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce({ threadId: "b", threadTitle: "b", saved: [], dropped: 0, skipped: 0, inferredAt: "x" })
+      .mockResolvedValueOnce({ threadId: "b", threadTitle: "b", saved: [], dropped: 0, skipped: 0, scanned: 0, inferredAt: "x" })
     const res = await inferIdleThreadsAction()
     expect(res.success).toBe(true)
     if (res.success) expect(res.summaries).toHaveLength(1) // only the survivor

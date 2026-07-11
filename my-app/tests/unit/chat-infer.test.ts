@@ -7,6 +7,7 @@ vi.mock("@/lib/chat/mistral", () => ({ mistralTurn: mistralMock.turn }))
 // Mock the data layer — track saves + stamps.
 const dbMock = vi.hoisted(() => ({
   getMessages: vi.fn(),
+  getThread: vi.fn(),
   listAllMemories: vi.fn(),
   recallMemories: vi.fn(),
   saveMemory: vi.fn(),
@@ -16,6 +17,7 @@ const dbMock = vi.hoisted(() => ({
 }))
 vi.mock("@/lib/db/chat", () => ({
   getMessages: dbMock.getMessages,
+  getThread: dbMock.getThread,
   listAllMemories: dbMock.listAllMemories,
   recallMemories: dbMock.recallMemories,
   saveMemory: dbMock.saveMemory,
@@ -30,8 +32,12 @@ import { inferMemoriesFromThread } from "@/lib/chat/infer"
 const msg = (role: "user" | "assistant" | "tool", content: string) =>
   ({ id: `${role}-${content.slice(0,4)}`, thread_id: "t1", role, content, tool_calls: null, model: null, created_at: "x" })
 
+const msgAt = (role: "user" | "assistant" | "tool", content: string, created_at: string) =>
+  ({ id: `${role}-${content.slice(0, 4)}`, thread_id: "t1", role, content, tool_calls: null, model: null, created_at })
+
 beforeEach(() => {
   vi.clearAllMocks()
+  dbMock.getThread.mockResolvedValue(null)
   dbMock.listAllMemories.mockResolvedValue([])
   dbMock.recallMemories.mockResolvedValue([])
   dbMock.assertMemoryInput.mockImplementation(() => {})
@@ -140,5 +146,76 @@ describe("inferMemoriesFromThread", () => {
     // Both keeps are attempted (the bank's upsert-by-name dedupes); both reported.
     expect(summary.saved).toHaveLength(2)
     expect(dbMock.saveMemory).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("inferMemoriesFromThread (incremental checkpoints)", () => {
+  it("sends only new messages + a recent tail to pass 1, labeled", async () => {
+    dbMock.getThread.mockResolvedValue({ id: "t1", last_inferred_at: "2026-07-11T10:00:00Z" })
+    dbMock.getMessages.mockResolvedValue([
+      msgAt("user", "old question", "2026-07-11T09:00:00Z"),
+      msgAt("assistant", "old answer", "2026-07-11T09:05:00Z"),
+      msgAt("user", "I now prefer walnut accents", "2026-07-11T10:05:00Z"),
+      msgAt("assistant", "noted, walnut it is", "2026-07-11T10:06:00Z"),
+    ])
+    // pass 1 returns no candidates so pass 2 never runs; we only assert pass-1 input.
+    mistralMock.turn.mockResolvedValueOnce({ role: "assistant", content: "[]", tool_calls: [], finish_reason: "stop" })
+
+    const summary = await inferMemoriesFromThread("t1")
+
+    const pass1Content = mistralMock.turn.mock.calls[0][0].messages[1].content as string
+    expect(pass1Content).toContain("New messages since last save")
+    expect(pass1Content).toContain("I now prefer walnut accents")
+    expect(pass1Content).toContain("Earlier conversation")
+    expect(pass1Content).toContain("old question") // tail included for context
+    expect(summary.scanned).toBe(2) // only the 2 new non-tool messages
+    expect(summary.saved).toEqual([])
+    expect(dbMock.touchInferredAt).toHaveBeenCalledWith("t1")
+  })
+
+  it("makes no Mistral call when there are no new messages since the checkpoint", async () => {
+    dbMock.getThread.mockResolvedValue({ id: "t1", last_inferred_at: "2026-07-11T10:00:00Z" })
+    dbMock.getMessages.mockResolvedValue([
+      msgAt("user", "old question", "2026-07-11T09:00:00Z"),
+      msgAt("assistant", "old answer", "2026-07-11T09:30:00Z"),
+    ])
+    const summary = await inferMemoriesFromThread("t1")
+    expect(mistralMock.turn).not.toHaveBeenCalled()
+    expect(summary.scanned).toBe(0)
+    expect(summary.saved).toEqual([])
+    expect(dbMock.touchInferredAt).toHaveBeenCalledWith("t1")
+  })
+
+  it("forceFull ignores the checkpoint and scans the whole transcript", async () => {
+    dbMock.getThread.mockResolvedValue({ id: "t1", last_inferred_at: "2026-07-11T10:00:00Z" })
+    dbMock.getMessages.mockResolvedValue([
+      msgAt("user", "old question", "2026-07-11T09:00:00Z"),
+      msgAt("assistant", "old answer", "2026-07-11T09:05:00Z"),
+      msgAt("user", "new question", "2026-07-11T10:05:00Z"),
+      msgAt("assistant", "new answer", "2026-07-11T10:06:00Z"),
+    ])
+    mistralMock.turn.mockResolvedValueOnce({ role: "assistant", content: "[]", tool_calls: [], finish_reason: "stop" })
+
+    const summary = await inferMemoriesFromThread("t1", { forceFull: true })
+
+    const pass1Content = mistralMock.turn.mock.calls[0][0].messages[1].content as string
+    expect(pass1Content).not.toContain("New messages since last save")
+    expect(pass1Content).not.toContain("Earlier conversation")
+    expect(pass1Content).toContain("old question")
+    expect(summary.scanned).toBe(4) // all messages
+  })
+
+  it("full path (last_inferred_at null) has no incremental labels", async () => {
+    dbMock.getThread.mockResolvedValue({ id: "t1", last_inferred_at: null })
+    dbMock.getMessages.mockResolvedValue([
+      msgAt("user", "hello there", "2026-07-11T09:00:00Z"),
+      msgAt("assistant", "hi", "2026-07-11T09:05:00Z"),
+    ])
+    mistralMock.turn.mockResolvedValueOnce({ role: "assistant", content: "[]", tool_calls: [], finish_reason: "stop" })
+    await inferMemoriesFromThread("t1")
+    const pass1Content = mistralMock.turn.mock.calls[0][0].messages[1].content as string
+    expect(pass1Content).not.toContain("New messages since last save")
+    expect(pass1Content).not.toContain("Earlier conversation")
+    expect(pass1Content).toContain("hello there")
   })
 })
