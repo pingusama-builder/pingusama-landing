@@ -1,0 +1,135 @@
+// Model registry + difficulty routing for the companion.
+// Resolves which Mistral model answers a turn: a one-turn override wins,
+// then a pinned per-thread preference, then difficulty-based auto-routing
+// on `auto`, then the default tier. The hybrid classifier scores a message
+// with a cheap heuristic and only spends a mistral-small call when the
+// score lands in a borderline band.
+
+import { mistralTurn } from "@/lib/chat/mistral"
+
+export type ModelTier = "small" | "medium" | "large"
+export type ModelPreference = "auto" | ModelTier
+export type DifficultyBand = "easy" | "medium" | "hard"
+
+export const MODEL_TIERS: Record<ModelTier, string> = {
+  small: "mistral-small-latest",
+  medium: "mistral-medium-latest",
+  large: "mistral-large-latest",
+}
+
+export const DEFAULT_TIER: ModelTier = "medium"
+
+export const MODEL_PREFERENCES: ModelPreference[] = ["auto", "small", "medium", "large"]
+
+// Difficulty verbs that push a message toward harder bands.
+const HARD_VERBS = ["explain", "compare", "architect", "prove", "debug", "refactor", "design", "analyze", "derive"]
+const MEDIUM_VERBS = ["why", "how", "tradeoff", "review", "outline", "summarize"]
+
+// Band score thresholds. The borderline band straddles the medium/hard line.
+const EASY_MAX = 6
+const MEDIUM_MAX = 14
+const BORDERLINE_LO = 10 // below this → not borderline (clearly easy or medium)
+const BORDERLINE_HI = 18 // above this → not borderline (clearly hard)
+
+export function bandToTier(band: DifficultyBand): ModelTier {
+  if (band === "easy") return "small"
+  if (band === "hard") return "large"
+  return "medium"
+}
+
+export function classifyDifficulty(message: string): {
+  score: number
+  band: DifficultyBand
+  borderline: boolean
+} {
+  const text = message.toLowerCase()
+  let score = 0
+
+  // Length signal.
+  const len = message.length
+  if (len > 120) score += 4
+  if (len > 400) score += 4
+  if (len > 900) score += 4
+
+  // Code blocks / inline code push toward harder.
+  if (/```/.test(message)) score += 5
+  if (/`[^`]+`/.test(message)) score += 1
+
+  // Multi-step verbs.
+  for (const v of HARD_VERBS) if (text.includes(v)) score += 3
+  for (const v of MEDIUM_VERBS) if (text.includes(v)) score += 2
+
+  // Multi-part requests ("then", "and then", numbered lists).
+  if (/\bthen\b/.test(text)) score += 2
+  if (/\b\d+\.\s/.test(text)) score += 2 // numbered steps
+
+  let band: DifficultyBand
+  if (score <= EASY_MAX) band = "easy"
+  else if (score <= MEDIUM_MAX) band = "medium"
+  else band = "hard"
+
+  const borderline = score >= BORDERLINE_LO && score <= BORDERLINE_HI
+  return { score, band, borderline }
+}
+
+/** Parse a difficulty label out of a small-model response. */
+function parseBand(raw: string): DifficultyBand | null {
+  const t = raw.toLowerCase()
+  if (t.includes("easy")) return "easy"
+  if (t.includes("hard")) return "hard"
+  if (t.includes("medium")) return "medium"
+  return null
+}
+
+export async function classifyDifficultyHybrid(message: string): Promise<{
+  band: DifficultyBand
+  via: "heuristic" | "mistral-small"
+}> {
+  const h = classifyDifficulty(message)
+  if (!h.borderline) return { band: h.band, via: "heuristic" }
+  try {
+    const acc = await mistralTurn({
+      model: MODEL_TIERS.small,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You classify the difficulty of a user's request for a chat assistant. Reply with exactly one word: easy, medium, or hard. easy = quick factual/greeting; medium = a focused explanation or single debug; hard = multi-step design, compare, prove, or long code-heavy tasks.",
+        },
+        { role: "user", content: message.slice(0, 1000) },
+      ],
+      maxTokens: 8,
+    })
+    const label = parseBand(acc.content)
+    if (label) return { band: label, via: "mistral-small" }
+    return { band: h.band, via: "heuristic" } // unparsable → trust heuristic
+  } catch {
+    return { band: h.band, via: "heuristic" } // never block the turn
+  }
+}
+
+export function resolveModel(opts: {
+  preference?: ModelPreference | null
+  override?: ModelTier | null
+  message: string
+}): { tier: ModelTier; modelId: string; reason: string } {
+  const override = opts.override ?? null
+  if (override && (override === "small" || override === "medium" || override === "large")) {
+    return { tier: override, modelId: MODEL_TIERS[override], reason: `override (${override})` }
+  }
+  const pref = opts.preference ?? "auto"
+  if (pref === "small" || pref === "medium" || pref === "large") {
+    return { tier: pref, modelId: MODEL_TIERS[pref], reason: `pinned (${pref})` }
+  }
+  if (pref === "auto") {
+    // Synchronous path is unavailable (the hybrid classifier is async); resolveModel
+    // uses the pure heuristic for auto so the resolver stays sync. The route calls
+    // classifyDifficultyHybrid directly on the auto path and passes the resolved tier
+    // back in via the override mechanism (see route pipeline).
+    const h = classifyDifficulty(opts.message)
+    const tier = bandToTier(h.band)
+    return { tier, modelId: MODEL_TIERS[tier], reason: `auto → ${tier} (heuristic)` }
+  }
+  // Unknown preference → default.
+  return { tier: DEFAULT_TIER, modelId: MODEL_TIERS[DEFAULT_TIER], reason: `default (${DEFAULT_TIER})` }
+}
