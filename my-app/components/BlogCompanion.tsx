@@ -1,0 +1,447 @@
+"use client"
+
+import { useState, useRef, useCallback, useEffect } from "react"
+import { setThreadModelPreferenceAction } from "@/app/admin/chat/actions"
+import {
+  validateProposal,
+  type Proposal,
+  type DraftSnapshot,
+  type UndoTarget,
+  type ApplyResult,
+} from "@/lib/blog/proposals"
+
+type Scope = "title" | "sentence" | "opening" | "section" | "full"
+
+export interface QuickAction {
+  label: string
+  scope: Scope
+  hint: string
+}
+
+// Spec §9 quick actions. Each declares a scope → tier (resolved server-side).
+export const QUICK_ACTIONS: QuickAction[] = [
+  { label: "Review this draft", scope: "full", hint: "Full structural review" },
+  { label: "Omit needless words", scope: "full", hint: "Tighten prose (SW1)" },
+  { label: "Flag passive voice & stale phrases", scope: "full", hint: "O4 / SW2 pass" },
+  { label: "Suggest title options", scope: "title", hint: "Title alternatives" },
+  { label: "Check the opening", scope: "opening", hint: "Opening paragraph" },
+]
+
+export const SCOPE_LABELS: Record<Scope, string> = {
+  title: "title",
+  sentence: "sentence",
+  opening: "opening",
+  section: "section",
+  full: "full",
+}
+
+type ProposalStatus = "pending" | "applicable" | "applied" | "stale" | "rejected"
+
+interface ProposalCard {
+  proposal: Proposal
+  status: ProposalStatus
+  undo?: UndoTarget
+}
+
+interface ChatLine {
+  role: "user" | "assistant"
+  text: string
+}
+
+export interface BlogCompanionProps {
+  draft: DraftSnapshot
+  subjectType: "post" | "draft"
+  subjectKey: string
+  threadId?: string
+  saveInProgress: boolean
+  onThreadReady: (threadId: string) => void
+  onApply: (proposal: Proposal) => Promise<ApplyResult>
+  onUndo: (undoTarget: UndoTarget) => void
+}
+
+const MODEL_OPTIONS: { value: "auto" | "small" | "medium" | "large"; label: string }[] = [
+  { value: "auto", label: "auto" },
+  { value: "small", label: "small" },
+  { value: "medium", label: "medium" },
+  { value: "large", label: "large" },
+]
+
+function fieldLabel(field: Proposal["field"]): string {
+  switch (field) {
+    case "body":
+      return "body"
+    case "title":
+      return "title"
+    case "excerpt":
+      return "excerpt"
+    case "meta_description":
+      return "meta description"
+  }
+}
+
+export default function BlogCompanion(props: BlogCompanionProps) {
+  const { draft, subjectType, subjectKey, threadId, saveInProgress, onThreadReady, onApply, onUndo } =
+    props
+  const [input, setInput] = useState("")
+  const [scope, setScope] = useState<Scope>("full")
+  const [lines, setLines] = useState<ChatLine[]>([])
+  const [cards, setCards] = useState<ProposalCard[]>([])
+  const [log, setLog] = useState<string[]>([])
+  const [streaming, setStreaming] = useState(false)
+  const [modelTier, setModelTier] = useState<string>("")
+  const [error, setError] = useState<{ message: string; partial: boolean } | null>(null)
+  const [liveRegion, setLiveRegion] = useState("")
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const abortRef = useRef<AbortController | null>(null)
+
+  // Cancel any in-flight stream if the panel unmounts.
+  useEffect(() => {
+    return () => abortRef.current?.abort()
+  }, [])
+
+  const send = useCallback(
+    async (message: string, chosenScope: Scope) => {
+      const text = message.trim()
+      if (!text || streaming) return
+      setError(null)
+      setStreaming(true)
+      setLiveRegion("Reviewing…")
+      setLines((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "" }])
+
+      const ac = new AbortController()
+      abortRef.current?.abort()
+      abortRef.current = ac
+
+      try {
+        const res = await fetch("/api/blog-companion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId,
+            message: text,
+            subjectType,
+            subjectKey,
+            draft,
+            scope: chosenScope,
+          }),
+          signal: ac.signal,
+        })
+        if (!res.body) throw new Error("No response body")
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buf = ""
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          let sep: number
+          while ((sep = buf.indexOf("\n\n")) >= 0) {
+            const chunk = buf.slice(0, sep)
+            buf = buf.slice(sep + 2)
+            for (const line of chunk.split("\n")) {
+              const t = line.trim()
+              if (!t.startsWith("data:")) continue
+              let evt: Record<string, unknown>
+              try {
+                evt = JSON.parse(t.slice(5).trim())
+              } catch {
+                continue
+              }
+              handleEvent(evt)
+            }
+          }
+        }
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return
+        setError({ message: (e as Error).message || "Connection lost", partial: true })
+        setLiveRegion("Connection lost — suggestions may be incomplete.")
+        markPendingRejected()
+      } finally {
+        setStreaming(false)
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [streaming, threadId, subjectType, subjectKey, draft]
+  )
+
+  function markPendingRejected() {
+    setCards((prev) =>
+      prev.map((c) => (c.status === "pending" ? { ...c, status: "rejected" } : c))
+    )
+  }
+
+  function handleEvent(evt: Record<string, unknown>) {
+    const type = evt.type as string
+    switch (type) {
+      case "thread":
+        if (typeof evt.threadId === "string") onThreadReady(evt.threadId)
+        break
+      case "model":
+        setModelTier(String(evt.tier ?? ""))
+        break
+      case "content":
+        if (typeof evt.delta === "string") {
+          setLines((prev) => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last && last.role === "assistant") last.text += evt.delta as string
+            return next
+          })
+        }
+        break
+      case "proposal": {
+        const p = validateProposal(evt)
+        if (p) {
+          setCards((prev) => [...prev, { proposal: p, status: "pending" }])
+        } else {
+          setLiveRegion("Rejected an invalid proposal event.")
+        }
+        break
+      }
+      case "tool":
+        if (typeof evt.name === "string" && typeof evt.result === "string") {
+          setLog((prev) => [...prev, `${evt.name}: ${evt.result}`])
+        }
+        break
+      case "done":
+        setCards((prev) =>
+          prev.map((c) => (c.status === "pending" ? { ...c, status: "applicable" } : c))
+        )
+        setLiveRegion("Review complete.")
+        break
+      case "error":
+        setError({
+          message: typeof evt.message === "string" ? evt.message : "Error",
+          partial: evt.partial === true,
+        })
+        markPendingRejected()
+        setLiveRegion(
+          evt.partial === true
+            ? "Connection lost — suggestions may be incomplete."
+            : "Review failed."
+        )
+        break
+    }
+  }
+
+  async function handleApply(idx: number) {
+    const card = cards[idx]
+    if (!card || card.status !== "applicable" || saveInProgress) return
+    const res = await onApply(card.proposal)
+    setCards((prev) =>
+      prev.map((c, i) =>
+        i === idx
+          ? res.ok
+            ? { ...c, status: "applied", undo: res.undo }
+            : { ...c, status: "stale" }
+          : c
+      )
+    )
+    setLiveRegion(
+      res.ok
+        ? `Applied ${fieldLabel(card.proposal.field)} edit.`
+        : "Draft changed — proposal no longer applies."
+    )
+  }
+
+  function handleUndo(idx: number) {
+    const card = cards[idx]
+    if (!card || card.status !== "applied" || !card.undo) return
+    onUndo(card.undo)
+    setCards((prev) =>
+      prev.map((c, i) => (i === idx ? { ...c, status: "applicable" } : c))
+    )
+    setLiveRegion("Undid edit.")
+  }
+
+  async function handleCopy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setLiveRegion("Copied to clipboard.")
+    } catch {
+      setLiveRegion("Copy failed.")
+    }
+  }
+
+  function handleQuickAction(qa: QuickAction) {
+    setScope(qa.scope)
+    void send(qa.label, qa.scope)
+  }
+
+  function handleRefresh(card: ProposalCard) {
+    const anchor = card.proposal.original ?? card.proposal.originalValue ?? ""
+    void send(`Take another look at: "${anchor.slice(0, 160)}"`, "sentence")
+  }
+
+  async function handleModelChange(value: "auto" | "small" | "medium" | "large") {
+    if (!threadId) return
+    setModelMenuOpen(false)
+    const res = await setThreadModelPreferenceAction(threadId, value)
+    if (!res.success) setLiveRegion("Could not change model.")
+  }
+
+  const open = streaming || lines.length > 0
+
+  return (
+    <section className="companion" aria-label="Writing companion">
+      <div className="companion-head">
+        <span className="companion-title">Writing companion</span>
+        {modelTier && <span className="companion-model">model: {modelTier}</span>}
+        <button
+          type="button"
+          className="companion-model-btn"
+          aria-haspopup="listbox"
+          aria-expanded={modelMenuOpen}
+          disabled={streaming || !threadId}
+          onClick={() => setModelMenuOpen((o) => !o)}
+        >
+          model {modelMenuOpen ? "▲" : "▼"}
+        </button>
+        {modelMenuOpen && (
+          <ul className="companion-model-menu" role="listbox">
+            {MODEL_OPTIONS.map((o) => (
+              <li key={o.value} role="option" aria-selected={false}>
+                <button type="button" onClick={() => handleModelChange(o.value)}>
+                  {o.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="companion-quick">
+        {QUICK_ACTIONS.map((qa) => (
+          <button
+            key={qa.label}
+            type="button"
+            className="companion-quick-btn"
+            disabled={streaming}
+            onClick={() => handleQuickAction(qa)}
+            title={qa.hint}
+          >
+            {qa.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="companion-transcript" aria-live="off">
+        {lines.map((l, i) => (
+          <p
+            key={i}
+            className={l.role === "user" ? "companion-user" : "companion-assistant"}
+            style={{ whiteSpace: "pre-wrap" }}
+          >
+            {l.text}
+          </p>
+        ))}
+        {log.map((l, i) => (
+          <p key={`log-${i}`} className="companion-log" style={{ whiteSpace: "pre-wrap" }}>
+            {l}
+          </p>
+        ))}
+        {error && (
+          <p className="companion-error" style={{ whiteSpace: "pre-wrap" }} role="alert">
+            {error.partial ? "Connection lost — suggestions may be incomplete. " : ""}
+            {error.message}
+          </p>
+        )}
+      </div>
+
+      <div className="companion-cards">
+        {cards.map((card, idx) => {
+          const p = card.proposal
+          const current = p.field === "body" ? p.original : p.originalValue
+          const applyLabel = `Apply: replace ${current ?? ""} in ${fieldLabel(p.field)}`
+          return (
+            <div
+              key={p.id}
+              className={`companion-card companion-card--${card.status}`}
+              data-status={card.status}
+            >
+              <p className="companion-card-field">{fieldLabel(p.field)}</p>
+              <p className="companion-card-diff" style={{ whiteSpace: "pre-wrap" }}>
+                <span className="companion-current">{current}</span>
+                {" → "}
+                <span className="companion-proposed">{p.replacement}</span>
+              </p>
+              <p className="companion-card-principle">{p.principleId}</p>
+              <p className="companion-card-rationale" style={{ whiteSpace: "pre-wrap" }}>
+                {p.rationale}
+              </p>
+              {card.status === "stale" && (
+                <p className="companion-stale-msg" role="status">
+                  Draft changed — this proposal no longer applies.
+                </p>
+              )}
+              <div className="companion-card-actions">
+                {card.status === "applied" ? (
+                  <button type="button" onClick={() => handleUndo(idx)} disabled={saveInProgress}>
+                    Undo
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleApply(idx)}
+                    disabled={
+                      card.status !== "applicable" || streaming || saveInProgress
+                    }
+                    aria-disabled={card.status !== "applicable"}
+                    aria-label={applyLabel}
+                  >
+                    Apply
+                  </button>
+                )}
+                <button type="button" onClick={() => handleCopy(p.replacement)}>
+                  Copy
+                </button>
+                {card.status === "stale" && (
+                  <button type="button" onClick={() => handleRefresh(card)}>
+                    Refresh
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <form
+        className="companion-input"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void send(input, scope)
+          setInput("")
+        }}
+      >
+        <select
+          value={scope}
+          onChange={(e) => setScope(e.target.value as Scope)}
+          disabled={streaming}
+          aria-label="Review scope"
+        >
+          <option value="full">full</option>
+          <option value="section">section</option>
+          <option value="opening">opening</option>
+          <option value="sentence">sentence</option>
+          <option value="title">title</option>
+        </select>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask the companion…"
+          disabled={streaming}
+        />
+        <button type="submit" disabled={streaming || !input.trim()}>
+          {streaming ? "…" : "Send"}
+        </button>
+      </form>
+
+      {/* live region: announces streamed errors + applied/stale states (not by color alone) */}
+      <div className="companion-live" aria-live="polite">
+        {liveRegion}
+      </div>
+    </section>
+  )
+}
