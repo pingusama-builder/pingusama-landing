@@ -57,3 +57,21 @@ ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS model text;
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS last_inferred_at timestamptz NULL;
 -- source: provenance — 'chat' (in-turn save_memory tool) vs 'inference' (inference pass).
 ALTER TABLE public.chat_memories ADD COLUMN IF NOT EXISTS source text NULL DEFAULT 'chat';
+
+-- Blog writing companion (companion feature 2/3) — additive, discriminated threads.
+-- Backfill existing rows FIRST, then add the discriminator column + tighten.
+UPDATE chat_threads SET purpose = 'chat' WHERE purpose IS NULL;
+ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS purpose text NULL DEFAULT 'chat';
+ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS subject_type text NULL;
+ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS subject_key text NULL;
+-- Make the discriminator real:
+ALTER TABLE public.chat_threads ALTER COLUMN purpose SET DEFAULT 'chat';
+ALTER TABLE public.chat_threads ALTER COLUMN purpose SET NOT NULL;
+DO $$ BEGIN
+  ALTER TABLE public.chat_threads ADD CONSTRAINT chat_threads_purpose_check
+    CHECK (purpose IN ('chat', 'blog-companion'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- One companion thread per post (or per draft).
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_companion_thread_subject
+  ON public.chat_threads (subject_type, subject_key)
+  WHERE purpose = 'blog-companion' AND subject_key IS NOT NULL;
