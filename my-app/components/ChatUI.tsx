@@ -9,6 +9,7 @@ import {
   type ThreadSummary,
 } from "@/app/admin/chat/actions";
 import type { ModelPreference } from "@/lib/chat/models";
+import { appendAssistantDelta } from "@/lib/chat/stream-updater";
 
 interface UIMessage {
   id: string;
@@ -155,12 +156,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
           }
           case "content": {
             const delta = (evt.delta as string) ?? "";
-            setMessages((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              if (last && last.role === "assistant") last.content += delta;
-              return next;
-            });
+            setMessages((prev) => appendAssistantDelta(prev, "content", delta));
             break;
           }
           case "tool": {

@@ -9,6 +9,7 @@ import {
   type UndoTarget,
   type ApplyResult,
 } from "@/lib/blog/proposals"
+import { appendAssistantDelta } from "@/lib/chat/stream-updater"
 
 type Scope = "title" | "sentence" | "opening" | "section" | "full"
 
@@ -239,12 +240,7 @@ export default function BlogCompanion(props: BlogCompanionProps) {
         break
       case "content":
         if (typeof evt.delta === "string") {
-          setLines((prev) => {
-            const next = [...prev]
-            const last = next[next.length - 1]
-            if (last && last.role === "assistant") last.text += evt.delta as string
-            return next
-          })
+          setLines((prev) => appendAssistantDelta(prev, "text", evt.delta as string))
         }
         break
       case "proposal": {
