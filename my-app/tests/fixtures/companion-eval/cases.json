@@ -1,0 +1,53 @@
+[
+  {
+    "id": "repetitive-opening",
+    "name": "Repetitive opening (should propose a surgical edit)",
+    "draft": {
+      "content_markdown": "# On patience\n\nThe opening repeats the title. The opening repeats the title. Patience is a discipline, not a feeling, and it is built by small repaid attentions.",
+      "title": "On patience",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": false,
+      "principleUse": "SW1"
+    }
+  },
+  {
+    "id": "deliberate-baroque",
+    "name": "Deliberately baroque voice (should recommend NO CHANGE)",
+    "draft": {
+      "content_markdown": "# A reverie\n\nThe twilight, gilded and slow, draped itself across the rooftops like a remembered hymn, and I let it.",
+      "title": "A reverie",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": true,
+      "principleUse": "V2"
+    }
+  },
+  {
+    "id": "bureaucratic-passive",
+    "name": "Bureaucratic passive voice (should propose active voice)",
+    "draft": {
+      "content_markdown": "# Ship notes\n\nIt was decided by the team that the feature would be shipped by Friday, and the announcement was drafted by someone.",
+      "title": "Ship notes",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": false,
+      "principleUse": "O4"
+    }
+  }
+]
