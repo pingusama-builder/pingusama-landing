@@ -8,6 +8,14 @@ import { PostFormData, savePostAction } from "@/app/admin/blog/actions"
 import { previewMarkdown } from "@/app/admin/blog/preview"
 import { uploadBlogImage } from "@/lib/supabase/storage"
 import PostBody from "./PostBody"
+import BlogCompanion from "./BlogCompanion"
+import {
+  applyProposalToForm,
+  type Proposal,
+  type DraftSnapshot,
+  type UndoTarget,
+  type ApplyResult,
+} from "@/lib/blog/proposals"
 
 const EMPTY_FORM: PostFormData = {
   title: "",
@@ -72,6 +80,44 @@ export default function PostEditor({
   const [isPending, startTransition] = useTransition()
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // ── Writing companion ──
+  // Stable subject key: the post id for saved posts, or a per-mount draft UUID
+  // for unsaved drafts (spec §4 — never the mutable slug). Generated once.
+  const subjectKeyRef = useRef<string | null>(null)
+  if (subjectKeyRef.current === null) {
+    subjectKeyRef.current = post ? post.id : `draft:${crypto.randomUUID()}`
+  }
+  const subjectType: "post" | "draft" = post ? "post" : "draft"
+  const [companionThreadId, setCompanionThreadId] = useState<string | undefined>(undefined)
+
+  // Apply a proposal by mutating ONLY form state (never savePostAction).
+  async function applyProposal(proposal: Proposal): Promise<ApplyResult> {
+    const current: DraftSnapshot = {
+      content_markdown: form.content_markdown,
+      title: form.title,
+      excerpt: form.excerpt ?? "",
+      meta_description: form.meta_description ?? "",
+    }
+    const res = applyProposalToForm(current, proposal)
+    if (res.ok) {
+      // res.form is a DraftSnapshot (the 4 editable fields); merge into the
+      // full PostFormData, preserving slug/category/tags/status/dates/cover.
+      setForm((prev) => ({ ...prev, ...res.form }))
+    }
+    return res
+  }
+
+  // Undo a previously-applied proposal: restore the exact previous field value.
+  function undoProposal(undo: UndoTarget) {
+    setForm((prev) => {
+      if (undo.field === "body") {
+        return { ...prev, content_markdown: undo.prevMarkdown ?? prev.content_markdown }
+      }
+      const key = undo.field as "title" | "excerpt" | "meta_description"
+      return { ...prev, [key]: undo.prevScalar ?? prev[key] }
+    })
+  }
 
   function updateField(field: keyof PostFormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -172,14 +218,22 @@ export default function PostEditor({
     })
   }
 
+  const draftSnapshot: DraftSnapshot = {
+    content_markdown: form.content_markdown,
+    title: form.title,
+    excerpt: form.excerpt ?? "",
+    meta_description: form.meta_description ?? "",
+  }
+
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        handleSubmit()
-      }}
-      className="flex flex-col gap-4"
-    >
+    <>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          handleSubmit()
+        }}
+        className="flex flex-col gap-4"
+      >
       {error && (
         <div className="detail" style={{ borderColor: "var(--terracotta)" }}>
           <p className="detail-desc" style={{ color: "var(--terracotta-d)" }}>
@@ -431,6 +485,18 @@ export default function PostEditor({
           <PostBody html={previewHtml} />
         </div>
       )}
-    </form>
+      </form>
+
+      <BlogCompanion
+        draft={draftSnapshot}
+        subjectType={subjectType}
+        subjectKey={subjectKeyRef.current!}
+        threadId={companionThreadId}
+        saveInProgress={isPending}
+        onThreadReady={setCompanionThreadId}
+        onApply={applyProposal}
+        onUndo={undoProposal}
+      />
+    </>
   )
 }
