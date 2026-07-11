@@ -45,6 +45,21 @@ const TOOL_NOTE = `## Your tools (narrow)
 You have three tools: propose_edit (a proposed edit the author accepts or rejects), save_writing_preference (ONLY when the author has EXPLICITLY stated a durable preference — never infer one from a single draft), and set_model (change the answering model tier).
 propose_edit: only call it when the user has explicitly requested an edit, OR when a violation is unambiguous (a grammar error, a factual error, or a clear O/SW/Z-rule breach with evidence). Do NOT propose rewrites of passages that may be stylistic choices. When uncertain, ask or recommend no change. You cannot touch slug, status, published_at, cover_image_url, tags, or category — they are not in the tool. Field must be body, title, excerpt, or meta_description.`
 
+export type ReviewMode = "auto" | "prose" | "fiction" | "line-edit"
+
+function modeLine(reviewMode: ReviewMode | undefined): string {
+  if (reviewMode === "fiction") {
+    return `\nReview mode: fiction. The author has declared this a fiction draft. Apply the fiction lenses (F1–F6) below, subordinate to voice preservation (level 1).`
+  }
+  if (reviewMode === "line-edit") {
+    return `\nReview mode: line-edit. Focus on grammar, clarity, and exact local defects only. Do not give structural, plot, character, or title advice unless the author explicitly asks.`
+  }
+  if (reviewMode === "prose") {
+    return `\nReview mode: prose. This is nonfiction (essay, technical, criticism). Do not apply fiction lenses. Use the prose-economy rules (O/SW/Z) only.`
+  }
+  return `\nReview mode: auto. Use the prose-economy rules. If this draft is fiction and the author wants narrative craft feedback, ask them to switch to Fiction mode for the fiction lenses.`
+}
+
 function formatWritingMemories(memories: MemoryRow[]): string {
   const writing = memories.filter(
     (m) => m.name.startsWith("writing-") || m.type === "feedback"
@@ -58,8 +73,9 @@ export function buildCompanionPrompt(opts: {
   memories: MemoryRow[]
   draft: DraftSnapshot
   scope?: string
+  reviewMode?: ReviewMode
 }): string {
-  const { writingContext, memories, draft, scope } = opts
+  const { writingContext, memories, draft, scope, reviewMode } = opts
   const scopeLine = scope
     ? `\nThis request's scope: ${scope}. A \`full\` review returns a short structural overview + offers to proceed section-by-section (a few propose_edit calls per turn), not 30 simultaneous edits.`
     : `\nNo explicit scope — treat this as a focused medium review; prefer a few sharp findings over an exhaustive list.`
@@ -82,6 +98,7 @@ ${TOOL_NOTE}
 
 ${HARD_SCOPE}
 ${scopeLine}
+${modeLine(reviewMode)}
 
 ${writingContext}
 

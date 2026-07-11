@@ -79,3 +79,11 @@ describe("BlogCompanion.tsx — visibility + reveal (advisor §A)", () => {
     expect(file).toContain("onReveal")
   })
 })
+
+describe("BlogCompanion.tsx — review mode (advisor §B)", () => {
+  it("declares the four review modes and sends reviewMode in the fetch body", () => {
+    expect(file).toContain("ReviewMode")
+    expect(file).toMatch(/"auto" \| "prose" \| "fiction" \| "line-edit"/)
+    expect(file).toContain("reviewMode")
+  })
+})

@@ -1786,6 +1786,7 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
 }
 .companion-model-btn,
 .companion-model-select,
+.companion-mode-select,
 .companion-quick-btn,
 .companion-card-actions button,
 .companion-input button,
@@ -1940,6 +1941,7 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
 /* Keyboard a11y — visible focus on every interactive control. */
 .companion-model-btn:focus-visible,
 .companion-model-select:focus-visible,
+.companion-mode-select:focus-visible,
 .companion-quick-btn:focus-visible,
 .companion-card-actions button:focus-visible,
 .companion-input button:focus-visible,

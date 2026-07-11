@@ -67,6 +67,14 @@ const MODEL_OPTIONS: { value: "auto" | "small" | "medium" | "large"; label: stri
   { value: "large", label: "large" },
 ]
 
+export type ReviewMode = "auto" | "prose" | "fiction" | "line-edit"
+const REVIEW_MODE_OPTIONS: { value: ReviewMode; label: string }[] = [
+  { value: "auto", label: "auto" },
+  { value: "prose", label: "prose" },
+  { value: "fiction", label: "fiction" },
+  { value: "line-edit", label: "line-edit" },
+]
+
 function fieldLabel(field: Proposal["field"]): string {
   switch (field) {
     case "body":
@@ -102,6 +110,7 @@ export default function BlogCompanion(props: BlogCompanionProps) {
   const [error, setError] = useState<{ message: string; partial: boolean } | null>(null)
   const [liveRegion, setLiveRegion] = useState("")
   const [modelValue, setModelValue] = useState<"auto" | "small" | "medium" | "large">("auto")
+  const [reviewMode, setReviewMode] = useState<ReviewMode>("auto")
   const [visible, setVisible] = useState(true)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -138,6 +147,7 @@ export default function BlogCompanion(props: BlogCompanionProps) {
             subjectKey,
             draft,
             scope: chosenScope,
+            reviewMode,
           }),
           signal: ac.signal,
         })
@@ -330,6 +340,17 @@ export default function BlogCompanion(props: BlogCompanionProps) {
             onChange={(e) => void handleModelChange(e.target.value as "auto" | "small" | "medium" | "large")}
           >
             {MODEL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <select
+            className="companion-mode-select"
+            aria-label="Review mode"
+            value={reviewMode}
+            disabled={streaming}
+            onChange={(e) => setReviewMode(e.target.value as ReviewMode)}
+          >
+            {REVIEW_MODE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>

@@ -185,4 +185,13 @@ describe("buildCompanionPrompt", () => {
     expect(p).toContain("writing-prefers-fragments")
     expect(p).toContain("Keep sentences short and rhythmic.")
   })
+
+  it("accepts reviewMode and emits a mode line (fiction lenses wired in Task 6)", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    expect(p).toMatch(/fiction/i)
+  })
+  it("omits fiction lenses in prose mode", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "prose" })
+    expect(p).not.toContain("F1 — Narrative promise")
+  })
 })

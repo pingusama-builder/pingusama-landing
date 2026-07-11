@@ -407,3 +407,32 @@ describe("POST /api/blog-companion — failure handling (partial-aware)", () => 
     expect((err as any).partial).toBe(false)
   })
 })
+
+describe("POST /api/blog-companion — review mode (advisor §B)", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("accepts reviewMode 'fiction' (200) and persists a [mode: fiction] note", async () => {
+    setupOk()
+    const res = await POST(makeRequest({ message: "review this story", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full", reviewMode: "fiction" }))
+    expect(res.status).toBe(200)
+    const events = await drainSSE(res)
+    expect(events.some((e) => e.type === "done")).toBe(true)
+    const userAppend = chatMock.appendMessage.mock.calls.find((c) => c[0].role === "user")
+    expect(userAppend?.[0].content).toBe("review this story [scope: full] [mode: fiction]")
+  })
+
+  it("rejects an invalid reviewMode (400)", async () => {
+    setupOk()
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "screenplay" }))
+    expect(res.status).toBe(400)
+  })
+
+  it("auto mode omits the [mode:] note (no mode stored for the default)", async () => {
+    setupOk()
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full", reviewMode: "auto" }))
+    expect(res.status).toBe(200)
+    await drainSSE(res)
+    const userAppend = chatMock.appendMessage.mock.calls.find((c) => c[0].role === "user")
+    expect(userAppend?.[0].content).toBe("review [scope: full]")
+  })
+})

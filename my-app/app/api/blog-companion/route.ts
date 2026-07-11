@@ -45,6 +45,9 @@ const MAX_MESSAGE_CHARS = 4000
 
 type CompanionScope = "title" | "sentence" | "opening" | "section" | "full"
 
+type ReviewMode = "auto" | "prose" | "fiction" | "line-edit"
+const REVIEW_MODES: ReviewMode[] = ["auto", "prose", "fiction", "line-edit"]
+
 /** Scope → tier (spec §5.4). title/sentence → small; opening/section → medium; full → large; none → default(medium). */
 function scopeToTier(scope: CompanionScope | undefined): ModelTier {
   if (scope === "title" || scope === "sentence") return "small"
@@ -103,6 +106,7 @@ export async function POST(request: Request) {
     subjectKey?: string
     draft?: DraftSnapshot
     scope?: CompanionScope
+    reviewMode?: ReviewMode
     modelPreference?: ModelPreference
   }
   try {
@@ -173,6 +177,10 @@ export async function POST(request: Request) {
 
   // ── Model resolution: override → pinned (≠auto) → scope → default ──
   const scope = body.scope
+  const reviewMode = body.reviewMode
+  if (reviewMode !== undefined && !REVIEW_MODES.includes(reviewMode)) {
+    return Response.json({ error: "Invalid reviewMode" }, { status: 400 })
+  }
   const override = await consumeOneTurnOverride(threadId)
   let tier: ModelTier
   let reason: string
@@ -190,7 +198,8 @@ export async function POST(request: Request) {
 
   // ── Persist the REQUEST only (not the draft) (spec §5.5) ──
   const scopeNote = scope ? ` [scope: ${scope}]` : ""
-  await appendMessage({ threadId, role: "user", content: message + scopeNote })
+  const modeNote = reviewMode && reviewMode !== "auto" ? ` [mode: ${reviewMode}]` : ""
+  await appendMessage({ threadId, role: "user", content: message + scopeNote + modeNote })
 
   // ── Build prompt context (once) ──
   const [writingContext, memories, historyRows] = await Promise.all([
@@ -203,13 +212,14 @@ export async function POST(request: Request) {
     memories,
     draft: companionDraft,
     scope,
+    reviewMode,
   })
 
   const history = historyRows.map(rowToMistral).filter((m): m is MistralMessage => m !== null)
   const mistralMessages: MistralMessage[] = [
     { role: "system", content: systemPrompt },
     ...history.slice(0, -1),
-    { role: "user", content: message + scopeNote },
+    { role: "user", content: message + scopeNote + modeNote },
   ]
 
   // ── SSE stream + agent loop (MAX_TURNS=3) ──
