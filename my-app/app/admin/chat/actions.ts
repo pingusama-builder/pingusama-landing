@@ -9,6 +9,7 @@ import {
   setMemoryActive,
   updateMemoryContent,
   setThreadModelPreference,
+  listIdleUnprocessedThreads,
   type MemoryType,
   type ChatThread,
   type ChatMessageRow,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/db/chat";
 import { refreshAwareness, type SiteCategory } from "@/lib/chat/awareness";
 import { MODEL_PREFERENCES, type ModelPreference } from "@/lib/chat/models";
+import { inferMemoriesFromThread, type InferenceSummary } from "@/lib/chat/infer";
 
 export interface ThreadSummary {
   id: string;
@@ -109,5 +111,37 @@ export async function setThreadModelPreferenceAction(
     return { success: true };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Failed" };
+  }
+}
+
+export async function inferFromThreadAction(
+  threadId: string
+): Promise<{ success: true; summary: InferenceSummary } | { success: false; error: string }> {
+  try {
+    await requireAdmin();
+    const summary = await inferMemoriesFromThread(threadId);
+    return { success: true, summary };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Inference failed" };
+  }
+}
+
+export async function inferIdleThreadsAction(): Promise<
+  { success: true; summaries: InferenceSummary[] } | { success: false; error: string }
+> {
+  try {
+    await requireAdmin();
+    const idle = await listIdleUnprocessedThreads({ idleMinutes: 15, limit: 2 });
+    const summaries: InferenceSummary[] = [];
+    for (const t of idle) {
+      try {
+        summaries.push(await inferMemoriesFromThread(t.id));
+      } catch {
+        // one thread failing must not abort the rest
+      }
+    }
+    return { success: true, summaries };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Inference failed" };
   }
 }
