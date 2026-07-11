@@ -30,7 +30,7 @@ The plan *numbers* tasks 1–14 but the **build order** must satisfy import deps
 | 10 | BlogCompanion.tsx + UI test | ✅ done | b533b67 | LARGE — static-grep UI test (7 tests). Checkpoint: full suite 299 pass + tsc clean. No deviation |
 | 11 | PostEditor integration + test | ✅ done | ba41910 | static-grep integration test (5 tests) + 4 PostEditor edits. Full suite 304 pass + tsc clean. 1 impl fix (see deviations) |
 | 12 | Companion CSS + test | ✅ done | 2036549 | append .companion* to globals.css; static-grep css test (6 tests). Checkpoint: full suite 310 pass. 1 token fix (see deviations) |
-| 13 | XSS publish-boundary + eval corpus | ⬜ pending | — | xss-publish.test.ts + companion-eval.test.ts + fixtures |
+| 13 | XSS publish-boundary + eval corpus | ✅ done | e7b1d02 | verification task — 17 new tests (11 XSS payloads + 2 propose_edit→render + 1 no-dangerouslySetInnerHTML + 3 eval corpus). Existing parseMarkdown boundary CONFIRMED; no impl change. No deviation |
 | 14 | static-deps test + verify + HANDOFF | ⬜ pending | — | companion-static-deps.test.ts; npm test / tsc / build; final HANDOFF section |
 
 Baseline before branch: 198 tests. After T1–T6: 219 + 19 (blog-proposals) + ... (running total updated each task).
@@ -49,21 +49,24 @@ Baseline before branch: 198 tests. After T1–T6: 219 + 19 (blog-proposals) + ..
 
 ## RESUME HERE
 
-**Current in-flight task: Task 13 (publish-boundary XSS verification + companion eval corpus).** No work started yet on Task 13. Tasks 1–12 done. After T12: full suite **310 pass / 25 files**, `npx tsc --noEmit` clean. HEAD = 2036549. (T12 had 1 token fix — deviation #9: `--paper` wasn't in `:root`; added `--paper: #FAF3E0;`.)
+**Current in-flight task: Task 14 (static dependency guard + final verify + HANDOFF "BUILT" section).** No work started yet on Task 14. Tasks 1–13 done. After T13: full suite still **310 pass / 25 files** (+17 new in the two T13 files; the T13 run only executed the 2 new files = 17 tests, the combined suite total is 310+17 = 327 — confirm with the full `npm test` in Step 2 below), `npx tsc --noEmit` last clean at T12. HEAD = e7b1d02. T13 had NO deviation (verification task; existing boundary confirmed).
 
-Task 13 (plan lines 4341–4616) is a VERIFICATION task (no new implementation expected — confirms the existing `parseMarkdown` XSS boundary holds + stands up the eval corpus). Creates 3 files:
-- `my-app/tests/unit/xss-publish.test.ts` — adversarial payloads through `parseMarkdown` + through `applyProposalToForm` (body + title replacements) + a static-grep that `BlogCompanion.tsx` + `app/api/blog-companion/route.ts` never use `dangerouslySetInnerHTML`.
-- `my-app/tests/fixtures/companion-eval/cases.json` — 3 eval cases (repetitive-opening→surgical SW1, deliberate-baroque→NO CHANGE V2, bureaucratic-passive→active O4). Each has `expectations: { voicePreservation, noPraise, surgical, noChangeWilling, principleUse }`.
-- `my-app/tests/unit/companion-eval.test.ts` — corpus shape + a NO-CHANGE case exists + each draft embedded as UNTRUSTED data via `buildCompanionPrompt` (asserts prompt contains `UNTRUSTED TEXT TO ANALYZE`, `<draft>`, `</draft>`, `V1`/`V2`/`V3`, + first 20 chars of the draft body).
+Task 14 (plan lines 4617–4805) is the FINAL task — extra-careful checkpoint. 3 deliverables:
+1. **`my-app/tests/unit/companion-static-deps.test.ts`** — static-grep guard asserting the companion path imports NO site-write module / NO generic service client / NO `dangerouslySetInnerHTML`, + the `COMPANION_ALLOWED` allowlist source is correct (3 tools, no chat-only tools). Files scanned: `route.ts`, `companion-tools.ts`, `writing-context.ts`, `companion-prompt.ts`, `proposals.ts`, `BlogCompanion.tsx`. FORBIDDEN_IDENTIFIERS = `savePostAction|createPost|updatePost|deletePost|deletePostAction`. FORBIDDEN_IMPORTS = `@/app/admin/blog/actions`, `@/lib/supabase/server`, `@/lib/supabase/storage`, `/(shelf|vault|bench).*write`.
+2. **Final verify gate (the checkpoint):** from `my-app/` run `npm test` (capture total count for HANDOFF), `npx tsc --noEmit` (clean), `npm run build` (green; build includes `/api/blog-companion` + the admin blog pages rendering `BlogCompanion`). Fix any failure at the source; log any plan/impl deviation in `## Deviations from plan`.
+3. **HANDOFF.md "BUILT" section** — append the plan's `## Blog writing companion: BUILT (awaiting user review + deploy) — 2026-07-11` block (plan lines 4740–4796) AFTER the existing "DESIGN COMPLETE" section; fill the `npm test` total in the "Verify" line. Then commit HANDOFF: `git commit -m "docs: HANDOFF — blog writing companion built on feat/blog-companion (awaiting review+deploy)"`.
 
-**Pre-verified (no anticipated deviations):** the plan's Task 13 snippets are shape-correct against the real codebase — `buildCompanionPrompt({ writingContext, memories, draft })` matches its signature (companion-prompt.ts:56-61); the prompt contains all asserted markers (line 92 `UNTRUSTED TEXT TO ANALYZE`, 93 `<draft>`, 99 `</draft>`, 15 `V1`/`V2`/`V3`); `Proposal` type accepts the body shape (`original`+`range`) and the title shape (`originalValue`) used in the XSS test (proposals.ts:15-29); `applyProposalToForm` drift check passes because the test sets `baseRevision: draftRevision(draft)` and applies to the same `draft`. `parseMarkdown` already runs `remarkRehype({allowDangerousHtml:false}) + rehypeSanitize` (markdown.ts:40-41), so the XSS suite is expected to PASS immediately — that's the point (verifies the existing boundary).
+**Pre-verified notes for Task 14:**
+- The static-deps test should PASS — the companion path was built deny-by-default (T7) + no site-write import (T9) + plain-text UI (T10). But it's a real assertion: if any forbidden identifier slipped in (e.g. `savePostAction` referenced in BlogCompanion or route), the test catches it. Watch the FORBIDDEN_IMPORTS regex `/(shelf|vault|bench)[^"']*write[^"']*["']/` — it could false-positive on a comment mentioning "shelf write" etc.; if it does, narrow the regex minimally and log it.
+- `companion-tools.ts` defines `COMPANION_ALLOWED` with the 3 tools — confirmed at T7. The test asserts `COMPANION_ALLOWED` block doesn't contain `refresh_awareness`/`read_code` (chat-only tools) — those names should NOT appear anywhere in companion-tools.ts (verify when writing).
 
 Next actions, in order:
-1. Read plan §Task 13 from disk (lines 4341–4616) — the exact test/fixture source.
-2. Write the 3 files verbatim from the plan (xss-publish.test.ts, cases.json, companion-eval.test.ts).
-3. `cd my-app && npx vitest run tests/unit/xss-publish.test.ts tests/unit/companion-eval.test.ts` → expected PASS (verification task). If any XSS assertion FAILS, do NOT broaden the assertion — that's a real boundary gap per spec §10; investigate + fix the boundary (tighten rehypeSanitize URL scheme allowlist), then re-run. Log any such fix in `## Deviations from plan`.
-4. Commit Task 13: `git add my-app/tests/unit/xss-publish.test.ts my-app/tests/unit/companion-eval.test.ts my-app/tests/fixtures/companion-eval/cases.json && git commit -m "test(blog): publish-boundary XSS verification + companion eval corpus"`; capture SHA.
-5. Cadence: mark T13 ✅ + SHA in table; rewrite RESUME HERE → Task 14 (lines 4617–end); `git commit -m "docs(blog): execution progress — Task 13 done"`; append HANDOFF one-liner.
+1. Read plan §Task 14 from disk (lines 4617–4805) — the exact test source + the HANDOFF block to append.
+2. Write `tests/unit/companion-static-deps.test.ts` verbatim.
+3. `cd my-app && npx vitest run tests/unit/companion-static-deps.test.ts` → expect PASS. If a FORBIDDEN assertion trips on a real import, that's a genuine security-boundary finding — fix the import (remove the site-write dep from the companion file), don't weaken the test. If it trips on a comment/false-positive, narrow the regex + log deviation.
+4. **Checkpoint verify gate:** `cd my-app && npm test` (capture total) → `npx tsc --noEmit` (clean) → `npm run build` (green). This is the extra-careful checkpoint — all three must pass.
+5. Append the "BUILT" block to HANDOFF.md (fill the test count) + commit HANDOFF.
+6. Cadence: mark T14 ✅ + SHA in table; rewrite RESUME HERE → "ALL TASKS DONE — awaiting user review + deploy"; `git commit -m "docs(blog): execution progress — Task 14 done"`; append HANDOFF one-liner. This is the final checkpoint — be extra-careful.
 
 ## After every task (cadence)
 
