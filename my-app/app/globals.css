@@ -1331,7 +1331,8 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   .chat-scroll { max-height: 50vh; padding: 16px; }
   .chat-msg { max-width: 92%; }
   .chat-composer { padding: 12px; }
-  .chat-head { flex-direction: column; align-items: flex-start; }
+  .chat-head { flex-direction: column; align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+  .chat-infer-btn { width: 100%; }
 }
 
 /* ── Chat model pill + per-message tag ─────────────────────────────────── */
@@ -1395,6 +1396,36 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
 .chat-msg-model {
   color: var(--sage-deep);
   font-weight: 400;
+}
+
+.chat-infer-btn {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--walnut);
+  cursor: pointer;
+}
+.chat-infer-btn:hover:not(:disabled) {
+  border-color: var(--terracotta);
+  color: var(--terracotta);
+}
+.chat-infer-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.chat-infer-status {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--walnut-soft);
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  margin-bottom: 8px;
 }
 
 @media (max-width: 560px) {

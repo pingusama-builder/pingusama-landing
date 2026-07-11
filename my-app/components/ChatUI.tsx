@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useTransition } from "react";
 import {
   listThreadsAction,
   getThreadAction,
   setThreadModelPreferenceAction,
+  inferFromThreadAction,
   type ThreadSummary,
 } from "@/app/admin/chat/actions";
 import type { ModelPreference } from "@/lib/chat/models";
@@ -29,6 +30,8 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
   const [modelPref, setModelPref] = useState<ModelPreference>("auto");
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [liveModel, setLiveModel] = useState<string | null>(null); // tier shown while streaming
+  const [inferPending, startInferTransition] = useTransition();
+  const [inferStatus, setInferStatus] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
   const nextId = () => `m${++idCounter.current}`;
@@ -68,6 +71,29 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     setError(null);
     setModelPref("auto");
     setLiveModel(null);
+  };
+
+  const inferNow = () => {
+    if (!activeId || streaming || inferPending) return;
+    setInferStatus(null);
+    startInferTransition(async () => {
+      const res = await inferFromThreadAction(activeId);
+      if (!res.success) {
+        setInferStatus(`Error: ${res.error}`);
+        return;
+      }
+      const { saved, dropped, skipped } = res.summary;
+      if (saved.length === 0) {
+        setInferStatus("No new memories worth keeping.");
+      } else {
+        const names = saved.map((s) => s.name).join(", ");
+        setInferStatus(
+          `Saved ${saved.length} memories: ${names}.${dropped ? ` Dropped ${dropped}.` : ""}${
+            skipped ? ` Skipped ${skipped}.` : ""
+          }`
+        );
+      }
+    });
   };
 
   const send = async () => {
@@ -272,7 +298,18 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
               </div>
             )}
           </div>
+          <button
+            type="button"
+            className="chat-infer-btn"
+            onClick={inferNow}
+            disabled={streaming || !activeId || inferPending}
+            title="Read this conversation and save durable memories to the bank"
+          >
+            {inferPending ? "Inferring…" : "Save memories now"}
+          </button>
         </div>
+
+        {inferStatus && <div className="chat-infer-status">{inferStatus}</div>}
 
         <div className="chat-scroll" ref={scrollRef}>
           {messages.length === 0 && (
