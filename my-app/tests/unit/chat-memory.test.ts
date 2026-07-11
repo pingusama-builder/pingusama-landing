@@ -415,6 +415,9 @@ const baseThread = (over: Partial<ChatThread> = {}): ChatThread => ({
   model_preference: null,
   one_turn_override: null,
   last_inferred_at: null,
+  purpose: "chat",
+  subject_type: null,
+  subject_key: null,
   ...over,
 })
 

@@ -76,10 +76,17 @@ export async function POST(request: Request) {
   }
 
   // ── Thread ──────────────────────────────────────────────────────────────
+  // A supplied threadId must be an existing CHAT thread. A companion thread
+  // (purpose='blog-companion') is rejected with 400 — the client cannot
+  // repurpose a companion thread as a chat thread (spec §11/§13). A nonexistent
+  // thread id falls through to createThread (preserves the first-turn UX).
   let threadId = body.threadId
   let modelPreference = body.modelPreference // optional, unused by the UI today (reserved)
   if (threadId) {
     const t = await getThread(threadId)
+    if (t && t.purpose !== "chat") {
+      return Response.json({ error: "Thread not available for chat" }, { status: 400 })
+    }
     if (!t) threadId = undefined
     else modelPreference = t.model_preference ?? "auto"
   }

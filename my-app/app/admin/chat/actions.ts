@@ -3,7 +3,7 @@
 import { requireAdmin } from "@/lib/auth";
 import {
   listThreads,
-  getThread,
+  getChatThread,
   getMessages,
   listAllMemories,
   setMemoryActive,
@@ -48,7 +48,9 @@ export async function getThreadAction(threadId: string): Promise<{
   messages: ChatMessageRow[];
 }> {
   await requireAdmin();
-  const [thread, messages] = await Promise.all([getThread(threadId), getMessages(threadId)]);
+  // Chat UI only: a companion-purpose thread returns null so the UI never
+  // renders one (companion threads don't appear in listThreadsAction either).
+  const [thread, messages] = await Promise.all([getChatThread(threadId), getMessages(threadId)]);
   return { thread, messages };
 }
 

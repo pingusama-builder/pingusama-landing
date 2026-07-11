@@ -111,6 +111,9 @@ function setupOk() {
     updated_at: "2026-07-11",
     model_preference: null,
     one_turn_override: null,
+    purpose: "chat",
+    subject_type: null,
+    subject_key: null,
   })
   chatMock.getThread.mockResolvedValue({
     id: "t-new",
@@ -119,6 +122,9 @@ function setupOk() {
     updated_at: "2026-07-11",
     model_preference: null,
     one_turn_override: null,
+    purpose: "chat",
+    subject_type: null,
+    subject_key: null,
   })
   chatMock.consumeOneTurnOverride.mockResolvedValue(null)
   chatMock.appendMessage.mockResolvedValue({
@@ -294,6 +300,9 @@ describe("POST /api/chat — model resolution", () => {
       updated_at: "2026-07-11",
       model_preference: "small",
       one_turn_override: null,
+      purpose: "chat",
+      subject_type: null,
+      subject_key: null,
     })
     mistralMock.mistralStream.mockImplementation(async (opts: any) => {
       opts.onContent?.("ok")
@@ -315,6 +324,9 @@ describe("POST /api/chat — model resolution", () => {
       updated_at: "2026-07-11",
       model_preference: "auto",
       one_turn_override: null,
+      purpose: "chat",
+      subject_type: null,
+      subject_key: null,
     })
     chatMock.consumeOneTurnOverride.mockResolvedValue("large")
     mistralMock.mistralStream.mockImplementation(async (opts: any) => {
@@ -327,5 +339,40 @@ describe("POST /api/chat — model resolution", () => {
     expect((modelEvt as any).tier).toBe("large")
     expect(modelsMock.classifyDifficultyHybrid).not.toHaveBeenCalled()
     expect(chatMock.consumeOneTurnOverride).toHaveBeenCalledWith("t-new")
+  })
+})
+
+describe("POST /api/chat — companion-thread rejection", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("rejects a purpose='blog-companion' thread id with 400 and does not append", async () => {
+    authMock.getCurrentUser.mockResolvedValue({ id: "admin-1" })
+    authMock.isAdmin.mockReturnValue(true)
+    chatMock.getThread.mockResolvedValue({
+      id: "c1",
+      title: "Companion: post post-1",
+      created_at: "2026-07-11",
+      updated_at: "2026-07-11",
+      model_preference: null,
+      one_turn_override: null,
+      purpose: "blog-companion",
+      subject_type: "post",
+      subject_key: "post-1",
+    })
+    const res = await POST(makeRequest({ threadId: "c1", message: "hi" }))
+    expect(res.status).toBe(400)
+    expect(chatMock.appendMessage).not.toHaveBeenCalled()
+    expect(chatMock.createThread).not.toHaveBeenCalled()
+  })
+
+  it("still creates a new chat thread when threadId is absent (first turn)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "hi" }))
+    expect(res.status).toBe(200)
+    expect(chatMock.createThread).toHaveBeenCalledTimes(1)
   })
 })
