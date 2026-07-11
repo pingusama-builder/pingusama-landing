@@ -125,11 +125,11 @@ describe("buildCompanionPrompt", () => {
 
   it("contains the 5-level hierarchy, voice first", () => {
     const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
-    expect(p).toMatch(/1\.\s*\**Preserve meaning and deliberate voice/)
-    expect(p).toMatch(/2\.\s*\**Identify weaknesses honestly/)
+    expect(p).toMatch(/1\.\s*\**Preserve meaning, deliberate voice/)
+    expect(p).toMatch(/2\.\s*\**Identify failures honestly/)
     expect(p).toMatch(/3\.\s*\**Prefer the smallest effective intervention/)
-    expect(p).toMatch(/4\.\s*\**Apply clarity and economy rules/)
-    expect(p).toMatch(/5\.\s*\**Break those rules/)
+    expect(p).toMatch(/4\.\s*\**Apply the relevant craft lens/)
+    expect(p).toMatch(/5\.\s*\**Break any craft rule/)
   })
 
   it("instructs that no change is a valid result", () => {
@@ -193,5 +193,35 @@ describe("buildCompanionPrompt", () => {
   it("omits fiction lenses in prose mode", () => {
     const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "prose" })
     expect(p).not.toContain("F1 — Narrative promise")
+  })
+
+  it("in fiction mode emits the six fiction lenses (F1–F6)", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    for (const id of ["F1", "F2", "F3", "F4", "F5", "F6"]) {
+      expect(p).toContain(id)
+    }
+    expect(p).toContain("F1 — Narrative promise")
+    expect(p).toContain("F6 — Worldbuilding through consequence")
+    expect(p).toMatch(/diagnostic lenses, not universal laws/)
+  })
+
+  it("in fiction mode emits the fiction propose_edit restriction", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    expect(p).toMatch(/issue propose_edit only when the failure is locally repairable and unambiguous/i)
+    expect(p).toMatch(/Never replace a title solely to make it darker, higher-stakes, or more genre-conventional/)
+  })
+
+  it("places fiction rules below voice preservation in the hierarchy", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    const vIdx = p.search(/Preserve meaning, deliberate voice/)
+    const fIdx = p.search(/Apply the relevant craft lens/)
+    expect(vIdx).toBeGreaterThan(-1)
+    expect(fIdx).toBeGreaterThan(vIdx) // voice first, craft lens below
+  })
+
+  it("omits the fiction lenses + restriction in prose mode", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "prose" })
+    expect(p).not.toContain("F1 — Narrative promise")
+    expect(p).not.toMatch(/issue propose_edit only when the failure is locally repairable/i)
   })
 })
