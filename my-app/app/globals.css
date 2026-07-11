@@ -1560,9 +1560,61 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
 .mem-edit-content { min-height: 120px; }
 .mem-edit-actions { display: flex; gap: 8px; }
 
+.mem-picker {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+}
+.mem-picker-head { font-family: var(--font-body); font-size: 13px; color: var(--walnut-soft); }
+.mem-picker-empty { font-family: var(--font-body); font-size: 13px; color: var(--walnut-soft); }
+.mem-picker-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--walnut);
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+.mem-picker-item:hover:not(:disabled) { border-color: var(--terracotta); }
+.mem-picker-title { font-weight: 600; }
+.mem-picker-meta { font-size: 12px; color: var(--walnut-soft); }
+.mem-inferred-badge { font-size: 12px; color: var(--walnut-soft); }
+.mem-infer-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--terracotta);
+  background: var(--bg-card);
+  color: var(--walnut);
+  font-family: var(--font-body);
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.mem-banner-dismiss {
+  background: none;
+  border: none;
+  color: var(--walnut-soft);
+  cursor: pointer;
+  font-size: 14px;
+}
+
 @media (max-width: 560px) {
   .mem-toolbar { flex-direction: column; align-items: stretch; }
   .mem-card-foot { flex-direction: column; align-items: flex-start; }
+  .mem-picker-item { flex-direction: column; gap: 2px; }
 }
 
 /* ── Admin-only chat FAB (floating trigger to /admin/chat) ──────────────── */
