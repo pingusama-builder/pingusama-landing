@@ -325,6 +325,7 @@ export default function BlogCompanion(props: BlogCompanionProps) {
         ))}
       </div>
 
+      <div className="companion-scroll">
       <div className="companion-transcript" aria-live="off">
         {lines.map((l, i) => (
           <p
@@ -404,6 +405,7 @@ export default function BlogCompanion(props: BlogCompanionProps) {
             </div>
           )
         })}
+      </div>
       </div>
 
       <form

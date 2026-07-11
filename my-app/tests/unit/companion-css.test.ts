@@ -33,4 +33,10 @@ describe("companion CSS (spec §9 + mobile rule)", () => {
     expect(file).toContain("var(--terracotta)")
     expect(file).toContain("var(--walnut)")
   })
+  it("defines a single companion-scroll region and a 3-row grid companion", () => {
+    expect(file).toContain(".companion-scroll")
+    expect(file).toMatch(/\.companion\s*\{[\s\S]*?display:\s*grid/)
+    expect(file).toMatch(/grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/)
+    expect(file).toMatch(/\.companion-scroll[\s\S]*?overflow-y:\s*auto/)
+  })
 })
