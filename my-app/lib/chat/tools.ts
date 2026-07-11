@@ -2,10 +2,13 @@ import {
   saveMemory,
   updateMemory,
   deleteMemory,
+  setThreadModelPreference,
+  setOneTurnOverride,
   assertMemoryInput,
   assertPersonalName,
   type MemoryType,
 } from "@/lib/db/chat"
+import type { ModelPreference, ModelTier } from "@/lib/chat/models"
 import { refreshAwareness, readCode, type SiteCategory } from "@/lib/chat/awareness"
 import type { MistralTool } from "@/lib/chat/mistral"
 
@@ -127,6 +130,29 @@ export const CHAT_TOOLS: MistralTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "set_model",
+      description: `Switch which Mistral model answers this thread. Use it when the user asks to change model in natural language ('use the biggest model for this', 'switch to small', 'use a cheaper model'). tier: small (cheapest, quick factual), medium (balanced default), large (strongest, hard multi-step/code), or auto (route by difficulty). scope: 'persistent' (from now on, this thread) when the user says 'from now on / always / switch to'; 'turn' (just the next response) when the user says 'for this one / just this turn / this time'. This only changes the answering model — it cannot edit site content.`,
+      parameters: {
+        type: "object",
+        properties: {
+          tier: {
+            type: "string",
+            enum: ["small", "medium", "large", "auto"],
+            description: "Which model tier to use.",
+          },
+          scope: {
+            type: "string",
+            enum: ["persistent", "turn"],
+            description: "persistent = keep for this thread; turn = just the next response. Defaults to persistent.",
+          },
+        },
+        required: ["tier"],
+      },
+    },
+  },
 ]
 
 function tryParseArgs(raw: string): Record<string, unknown> {
@@ -225,6 +251,33 @@ export async function executeToolCall(
         const path = args.path != null ? asString(args.path) : undefined
         const out = readCode({ feature: feature || undefined, path: path || undefined })
         return { content: out, memoryWrite: false }
+      }
+
+      case "set_model": {
+        const tier = asString(args.tier)
+        const scope = asString(args.scope) || "persistent"
+        const TIERS = ["small", "medium", "large", "auto"] as const
+        const SCOPES = ["persistent", "turn"] as const
+        if (!TIERS.includes(tier as (typeof TIERS)[number])) {
+          return { content: `Tool error: invalid tier "${tier}".`, memoryWrite: false }
+        }
+        if (!SCOPES.includes(scope as (typeof SCOPES)[number])) {
+          return { content: `Tool error: invalid scope "${scope}".`, memoryWrite: false }
+        }
+        const t = tier as ModelPreference
+        if (scope === "turn") {
+          if (t === "auto") {
+            return { content: "Tool error: 'auto' is not a valid tier for scope 'turn' (pick small/medium/large).", memoryWrite: false }
+          }
+          await setOneTurnOverride(ctx.sourceThreadId!, t as ModelTier)
+          return {
+            content: `Model set to ${t} (turn). Your next response uses mistral-${t}-latest.`,
+            memoryWrite: false,
+          }
+        }
+        await setThreadModelPreference(ctx.sourceThreadId!, t)
+        const note = t === "auto" ? "auto-routing by difficulty" : `mistral-${t}-latest`
+        return { content: `Model set to ${t} (persistent). Your next response uses ${note}.`, memoryWrite: false }
       }
 
       default:

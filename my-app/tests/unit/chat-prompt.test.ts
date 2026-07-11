@@ -30,10 +30,14 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt({ siteContext: "ctx", memories: [] })
     expect(prompt).toMatch(/can ONLY write to your own memory bank/i)
     expect(prompt).toMatch(/cannot edit the site/i)
-    // The five tools are enumerated.
+    // Six tools are enumerated.
     expect(prompt).toContain("save_memory")
     expect(prompt).toContain("refresh_awareness")
     expect(prompt).toContain("read_code")
+    expect(prompt).toContain("set_model")
+    expect(prompt).toMatch(/six tools/)
+    // set_model is explicitly scoped away from site edits.
+    expect(prompt).toMatch(/set_model tool only changes which Mistral model/)
   })
 
   it("separates site awareness from personal memories and renders links", () => {

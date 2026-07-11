@@ -7,6 +7,8 @@ const chatMock = vi.hoisted(() => ({
   saveMemory: vi.fn(),
   updateMemory: vi.fn(),
   deleteMemory: vi.fn(),
+  setThreadModelPreference: vi.fn(),
+  setOneTurnOverride: vi.fn(),
 }))
 const awarenessMock = vi.hoisted(() => ({
   refreshAwareness: vi.fn(),
@@ -20,6 +22,8 @@ vi.mock("@/lib/db/chat", async () => {
     saveMemory: chatMock.saveMemory,
     updateMemory: chatMock.updateMemory,
     deleteMemory: chatMock.deleteMemory,
+    setThreadModelPreference: chatMock.setThreadModelPreference,
+    setOneTurnOverride: chatMock.setOneTurnOverride,
   }
 })
 
@@ -208,5 +212,59 @@ describe("executeToolCall — unknown tool", () => {
     const res = await executeToolCall("publish_post", "{}", ctx())
     expect(res.memoryWrite).toBe(false)
     expect(res.content).toMatch(/Unknown tool/)
+  })
+})
+
+describe("executeToolCall — set_model", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("persistently sets the thread model preference", async () => {
+    chatMock.setThreadModelPreference.mockResolvedValue(undefined)
+    const res = await executeToolCall(
+      "set_model",
+      JSON.stringify({ tier: "large", scope: "persistent" }),
+      ctx()
+    )
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toMatch(/large/)
+    expect(res.content).toMatch(/persistent/i)
+    expect(chatMock.setThreadModelPreference).toHaveBeenCalledWith("t1", "large")
+    expect(chatMock.setOneTurnOverride).not.toHaveBeenCalled()
+  })
+
+  it("sets a one-turn override when scope is 'turn'", async () => {
+    chatMock.setOneTurnOverride.mockResolvedValue(undefined)
+    const res = await executeToolCall(
+      "set_model",
+      JSON.stringify({ tier: "small", scope: "turn" }),
+      ctx()
+    )
+    expect(res.memoryWrite).toBe(false)
+    expect(chatMock.setOneTurnOverride).toHaveBeenCalledWith("t1", "small")
+    expect(chatMock.setThreadModelPreference).not.toHaveBeenCalled()
+  })
+
+  it("defaults scope to 'persistent'", async () => {
+    chatMock.setThreadModelPreference.mockResolvedValue(undefined)
+    await executeToolCall("set_model", JSON.stringify({ tier: "auto" }), ctx())
+    expect(chatMock.setThreadModelPreference).toHaveBeenCalledWith("t1", "auto")
+  })
+
+  it("rejects an invalid tier (no throw, no DB write)", async () => {
+    const res = await executeToolCall("set_model", JSON.stringify({ tier: "enormous" }), ctx())
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toMatch(/Tool error/i)
+    expect(chatMock.setThreadModelPreference).not.toHaveBeenCalled()
+    expect(chatMock.setOneTurnOverride).not.toHaveBeenCalled()
+  })
+
+  it("is not counted against the memory-write cap", async () => {
+    chatMock.setThreadModelPreference.mockResolvedValue(undefined)
+    const c = ctx()
+    c.memoryWrites = c.maxMemoryWrites // at cap
+    const res = await executeToolCall("set_model", JSON.stringify({ tier: "large" }), c)
+    expect(res.memoryWrite).toBe(false)
+    expect(c.memoryWrites).toBe(c.maxMemoryWrites) // unchanged
+    expect(chatMock.setThreadModelPreference).toHaveBeenCalled()
   })
 })
