@@ -33,6 +33,20 @@ describe("companion CSS (spec §9 + mobile rule)", () => {
     expect(file).toContain("var(--terracotta)")
     expect(file).toContain("var(--walnut)")
   })
+  it("defines the editor rail layout classes", () => {
+    expect(file).toContain(".editor-wrap")
+    expect(file).toContain(".editor-layout")
+    expect(file).toContain(".companion-rail")
+    expect(file).toContain(".companion-scroll")
+  })
+  it("the rail is sticky on wide desktop and static below 1120px", () => {
+    expect(file).toMatch(/\.companion-rail[\s\S]*?position:\s*sticky/)
+    expect(file).toMatch(/max-width:\s*1119px/)
+  })
+  it("keeps the 720px mobile drawer and the 390px narrow check", () => {
+    expect(file).toMatch(/max-width:\s*720px/)
+    expect(file).toMatch(/max-width:\s*390px/)
+  })
   it("defines a single companion-scroll region and a 3-row grid companion", () => {
     expect(file).toContain(".companion-scroll")
     expect(file).toMatch(/\.companion\s*\{[\s\S]*?display:\s*grid/)

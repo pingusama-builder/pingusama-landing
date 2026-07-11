@@ -119,6 +119,9 @@ export default function PostEditor({
     })
   }
 
+  // Added in Task 4; no-op placeholder so the layout compiles here.
+  function revealInDraft(_original: string) {}
+
   function updateField(field: keyof PostFormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
@@ -226,13 +229,13 @@ export default function PostEditor({
   }
 
   return (
-    <>
+    <div className="editor-layout">
       <form
         onSubmit={(event) => {
           event.preventDefault()
           handleSubmit()
         }}
-        className="flex flex-col gap-4"
+        className="editor-main flex flex-col gap-4"
       >
       {error && (
         <div className="detail" style={{ borderColor: "var(--terracotta)" }}>
@@ -487,16 +490,19 @@ export default function PostEditor({
       )}
       </form>
 
-      <BlogCompanion
-        draft={draftSnapshot}
-        subjectType={subjectType}
-        subjectKey={subjectKeyRef.current!}
-        threadId={companionThreadId}
-        saveInProgress={isPending}
-        onThreadReady={setCompanionThreadId}
-        onApply={applyProposal}
-        onUndo={undoProposal}
-      />
-    </>
+      <aside className="companion-rail" aria-label="Writing companion">
+        <BlogCompanion
+          draft={draftSnapshot}
+          subjectType={subjectType}
+          subjectKey={subjectKeyRef.current!}
+          threadId={companionThreadId}
+          saveInProgress={isPending}
+          onThreadReady={setCompanionThreadId}
+          onApply={applyProposal}
+          onUndo={undoProposal}
+          onReveal={revealInDraft}
+        />
+      </aside>
+    </div>
   )
 }

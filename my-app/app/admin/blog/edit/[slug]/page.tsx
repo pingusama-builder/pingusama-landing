@@ -21,7 +21,7 @@ export default async function EditPostPage({ params }: EditPageProps) {
   return (
     <>
       <AdminHeader />
-      <main className="wrap py-8">
+      <main className="editor-wrap py-8">
         <div className="mb-6">
           <p className="eyebrow">workshop admin</p>
           <h1

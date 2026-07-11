@@ -9,7 +9,7 @@ export default async function NewPostPage() {
   return (
     <>
       <AdminHeader />
-      <main className="wrap py-8">
+      <main className="editor-wrap py-8">
         <div className="mb-6">
           <p className="eyebrow">workshop admin</p>
           <h1

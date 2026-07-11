@@ -1657,6 +1657,62 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   .chat-fab { right: 12px; bottom: 12px; padding: 11px 14px 11px 12px; font-size: 13px; }
 }
 
+/* ── Admin editor layout — editor-specific wide wrapper + right rail ──────
+   Scope the wider layout to the editor only; do NOT alter normal site pages
+   (which use .wrap). Fraunces/Nunito tokens only. */
+.editor-wrap {
+  width: min(100% - 56px, 1320px);
+  margin-inline: auto;
+}
+.editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: clamp(1.25rem, 2.5vw, 2rem);
+  align-items: start;
+}
+.editor-main { min-width: 0; }
+.companion-rail {
+  position: sticky;
+  top: 1rem;
+  height: calc(100dvh - 2rem);
+  min-height: 0;
+}
+/* The section fills the rail; its own .companion-scroll child is the one
+   scrolling region (Task 1). max-height:none here; the 720px drawer overrides. */
+.companion-rail > .companion {
+  max-height: none;
+  height: 100%;
+}
+
+/* Middle range: single-column editor; rail reverts to static block below the form. */
+@media (max-width: 1119px) {
+  .editor-wrap { width: min(100% - 56px, 1040px); }
+  .editor-layout { display: block; }
+  .companion-rail {
+    position: static;
+    height: auto;
+    margin-top: 1rem;
+  }
+  .companion-rail > .companion { max-height: 70vh; height: auto; }
+}
+
+/* Mobile: sticky bottom drawer, collapsible (Task 4 adds the collapsed bar). */
+@media (max-width: 720px) {
+  .editor-wrap { width: min(100% - 32px, 1040px); }
+  .companion-rail {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    max-height: 60dvh;
+    margin-top: 1rem;
+  }
+  .companion-rail > .companion {
+    max-height: 60dvh;
+    border-radius: var(--radius) var(--radius) 0 0;
+    border-bottom: none;
+  }
+}
+
 /* ── Blog writing companion (companion feature 2/3) ──────────────────────
    Mobile-first. Desktop: a panel beside/below the editor. ≤720px: a sticky
    bottom panel over the form (NOT inline-below-form). Fraunces/Nunito tokens
@@ -1863,17 +1919,6 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
 .companion-input input:focus-visible {
   outline: 2px solid var(--terracotta);
   outline-offset: 1px;
-}
-
-/* ≤720px: sticky bottom panel over the form (not inline-below-form). */
-@media (max-width: 720px) {
-  .companion {
-    position: sticky;
-    bottom: 0;
-    max-height: 60vh;
-    border-radius: var(--radius) var(--radius) 0 0;
-    border-bottom: none;
-  }
 }
 
 /* ≤390px: tighten padding so before/after text wraps without overflow. */

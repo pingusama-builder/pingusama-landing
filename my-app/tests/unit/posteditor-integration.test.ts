@@ -28,4 +28,9 @@ describe("PostEditor — BlogCompanion integration (spec §3/§9)", () => {
   it("passes saveInProgress from the save/publish transition (isPending)", () => {
     expect(file).toMatch(/saveInProgress=\{isPending\}|saveInProgress={isPending}/)
   })
+  it("wraps the form + companion in the editor-layout grid", () => {
+    expect(file).toContain("editor-layout")
+    expect(file).toContain("editor-main")
+    expect(file).toContain('companion-rail')
+  })
 })

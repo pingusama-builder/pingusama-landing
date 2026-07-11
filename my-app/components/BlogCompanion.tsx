@@ -57,6 +57,8 @@ export interface BlogCompanionProps {
   onThreadReady: (threadId: string) => void
   onApply: (proposal: Proposal) => Promise<ApplyResult>
   onUndo: (undoTarget: UndoTarget) => void
+  /** Reveal the original text in the draft. Added in Task 4; optional placeholder for Task 3 layout. */
+  onReveal?: (original: string) => void
 }
 
 const MODEL_OPTIONS: { value: "auto" | "small" | "medium" | "large"; label: string }[] = [
