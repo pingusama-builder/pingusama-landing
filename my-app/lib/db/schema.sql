@@ -306,9 +306,11 @@ ALTER TABLE public.chat_memories ENABLE ROW LEVEL SECURITY;
 -- This is what keeps the memory bank (and thus the bot) off the public surface.
 
 -- 10b. Blog writing companion (companion feature 2/3) — additive, discriminated threads.
--- Backfill existing rows FIRST, then add the discriminator column + tighten.
-UPDATE chat_threads SET purpose = 'chat' WHERE purpose IS NULL;
+-- Add the discriminator column (its DEFAULT 'chat' backfills existing rows in
+-- Postgres), sweep any remaining NULLs, then tighten. Order matters: the UPDATE
+-- must run AFTER the column exists, so ADD COLUMN comes first.
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS purpose text NULL DEFAULT 'chat';
+UPDATE chat_threads SET purpose = 'chat' WHERE purpose IS NULL;
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS subject_type text NULL;
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS subject_key text NULL;
 ALTER TABLE public.chat_threads ALTER COLUMN purpose SET DEFAULT 'chat';

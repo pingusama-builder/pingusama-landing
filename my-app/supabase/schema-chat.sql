@@ -59,9 +59,11 @@ ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS last_inferred_at timest
 ALTER TABLE public.chat_memories ADD COLUMN IF NOT EXISTS source text NULL DEFAULT 'chat';
 
 -- Blog writing companion (companion feature 2/3) — additive, discriminated threads.
--- Backfill existing rows FIRST, then add the discriminator column + tighten.
-UPDATE chat_threads SET purpose = 'chat' WHERE purpose IS NULL;
+-- Add the discriminator column (its DEFAULT 'chat' backfills existing rows in
+-- Postgres), sweep any remaining NULLs, then tighten. Order matters: the UPDATE
+-- must run AFTER the column exists, so ADD COLUMN comes first.
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS purpose text NULL DEFAULT 'chat';
+UPDATE chat_threads SET purpose = 'chat' WHERE purpose IS NULL;
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS subject_type text NULL;
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS subject_key text NULL;
 -- Make the discriminator real:
