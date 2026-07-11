@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server"
+import type { ModelPreference, ModelTier } from "@/lib/chat/models"
 
 // ── Memory + conversation store for the site-aware chatbot ──────────────
 // Service-role only (RLS enabled, no public policies). The bot's writes are
@@ -45,6 +46,8 @@ export interface ChatThread {
   title: string
   created_at: string
   updated_at: string
+  model_preference: ModelPreference | null
+  one_turn_override: ModelTier | null
 }
 
 export interface ChatMessageRow {
@@ -53,6 +56,7 @@ export interface ChatMessageRow {
   role: MessageRole
   content: string | null
   tool_calls: unknown | null
+  model: string | null
   created_at: string
 }
 
@@ -338,11 +342,16 @@ export async function getSiteAwareness(
 }
 
 // ── Threads + messages ───────────────────────────────────────────────────
-export async function createThread(title = "New conversation"): Promise<ChatThread> {
+export async function createThread(
+  title = "New conversation",
+  modelPreference?: ModelPreference
+): Promise<ChatThread> {
   const c = client()
+  const insert: Record<string, unknown> = { title }
+  if (modelPreference) insert.model_preference = modelPreference
   const { data, error } = await c
     .from("chat_threads")
-    .insert({ title })
+    .insert(insert)
     .select("*")
     .single()
   handle(error)
@@ -389,11 +398,57 @@ export async function touchThread(id: string): Promise<void> {
   handle(error)
 }
 
+export async function setThreadModelPreference(
+  threadId: string,
+  preference: ModelPreference
+): Promise<void> {
+  const c = client()
+  const { error } = await c
+    .from("chat_threads")
+    .update({ model_preference: preference, updated_at: new Date().toISOString() })
+    .eq("id", threadId)
+  handle(error)
+}
+
+export async function setOneTurnOverride(
+  threadId: string,
+  tier: ModelTier
+): Promise<void> {
+  const c = client()
+  const { error } = await c
+    .from("chat_threads")
+    .update({ one_turn_override: tier, updated_at: new Date().toISOString() })
+    .eq("id", threadId)
+  handle(error)
+}
+
+/** Read the one-turn override (if any) and clear it, atomically for this turn. */
+export async function consumeOneTurnOverride(threadId: string): Promise<ModelTier | null> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_threads")
+    .select("one_turn_override")
+    .eq("id", threadId)
+    .maybeSingle()
+  handle(error)
+  const row = data as { one_turn_override: ModelTier | null } | null
+  const tier = row?.one_turn_override ?? null
+  if (tier) {
+    const { error: e } = await c
+      .from("chat_threads")
+      .update({ one_turn_override: null, updated_at: new Date().toISOString() })
+      .eq("id", threadId)
+    handle(e)
+  }
+  return tier
+}
+
 export async function appendMessage(input: {
   threadId: string
   role: MessageRole
   content?: string | null
   toolCalls?: unknown
+  model?: string | null
 }): Promise<ChatMessageRow> {
   const c = client()
   const { data, error } = await c
@@ -403,6 +458,7 @@ export async function appendMessage(input: {
       role: input.role,
       content: input.content ?? null,
       tool_calls: input.toolCalls ?? null,
+      model: input.model ?? null,
     })
     .select("*")
     .single()

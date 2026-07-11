@@ -95,6 +95,15 @@ import {
   type MemoryRow,
 } from "@/lib/db/chat"
 
+import {
+  setThreadModelPreference,
+  setOneTurnOverride,
+  consumeOneTurnOverride,
+  createThread,
+  appendMessage,
+  type ChatThread,
+} from "@/lib/db/chat"
+
 const baseRow = (over: Partial<MemoryRow> = {}): MemoryRow => ({
   id: "row-1",
   type: "user",
@@ -388,5 +397,93 @@ describe("upsertSiteAwareness (fingerprint + delta diff)", () => {
     expect(res.changed).toBe(true)
     expect(res.added).toEqual(["p3"])
     expect(res.removed).toEqual(["p2"])
+  })
+})
+
+const baseThread = (over: Partial<ChatThread> = {}): ChatThread => ({
+  id: "t1",
+  title: "New conversation",
+  created_at: "2026-07-11T00:00:00Z",
+  updated_at: "2026-07-11T00:00:00Z",
+  model_preference: null,
+  one_turn_override: null,
+  ...over,
+})
+
+describe("setThreadModelPreference", () => {
+  beforeEach(() => {
+    holder.current = new FakeClient()
+  })
+  it("writes model_preference on the thread", async () => {
+    const fake = holder.current!
+    fake.push(null, null) // update(...).then → { error: null }
+    await setThreadModelPreference("t1", "large")
+    expect(fake.calls[0].table).toBe("chat_threads")
+    expect(fake.calls[0].payload).toMatchObject({ model_preference: "large" })
+    expect(fake.calls[0].filters.id).toContain("t1")
+  })
+})
+
+describe("setOneTurnOverride", () => {
+  beforeEach(() => {
+    holder.current = new FakeClient()
+  })
+  it("writes one_turn_override on the thread", async () => {
+    const fake = holder.current!
+    fake.push(null, null)
+    await setOneTurnOverride("t1", "large")
+    expect(fake.calls[0].payload).toMatchObject({ one_turn_override: "large" })
+  })
+})
+
+describe("consumeOneTurnOverride", () => {
+  beforeEach(() => {
+    holder.current = new FakeClient()
+  })
+  it("returns the stored override and clears it", async () => {
+    const fake = holder.current!
+    // select(...).eq(...).maybeSingle() → the stored row
+    fake.push(baseThread({ id: "t1", one_turn_override: "large" }))
+    // update(...).eq(...) clearing it → { error: null } via .then
+    fake.push(null, null)
+    const out = await consumeOneTurnOverride("t1")
+    expect(out).toBe("large")
+    // The clearing update set one_turn_override = null.
+    expect(fake.calls[1].payload).toMatchObject({ one_turn_override: null })
+  })
+  it("returns null when no override is stored", async () => {
+    const fake = holder.current!
+    fake.push(baseThread({ id: "t1", one_turn_override: null }))
+    const out = await consumeOneTurnOverride("t1")
+    expect(out).toBeNull()
+    // No clearing update needed when already null.
+    expect(fake.calls).toHaveLength(1)
+  })
+})
+
+describe("createThread (with modelPreference)", () => {
+  beforeEach(() => {
+    holder.current = new FakeClient()
+  })
+  it("persists model_preference when provided", async () => {
+    const fake = holder.current!
+    fake.push(baseThread({ id: "t-new", model_preference: "large" })) // insert.single
+    const t = await createThread("Hi", "large")
+    expect(t.model_preference).toBe("large")
+    expect(fake.calls[0].payload).toMatchObject({ title: "Hi", model_preference: "large" })
+  })
+})
+
+describe("appendMessage (with model)", () => {
+  beforeEach(() => {
+    holder.current = new FakeClient()
+  })
+  it("persists model on the row and touches the thread", async () => {
+    const fake = holder.current!
+    fake.push({ id: "m1", thread_id: "t1", role: "assistant", content: "hi", tool_calls: null, model: "mistral-large-latest", created_at: "x" }) // insert.single
+    fake.push(null, null) // touchThread update .then
+    const row = await appendMessage({ threadId: "t1", role: "assistant", content: "hi", model: "mistral-large-latest" })
+    expect(row.model).toBe("mistral-large-latest")
+    expect(fake.calls[0].payload).toMatchObject({ model: "mistral-large-latest" })
   })
 })
