@@ -50,6 +50,9 @@ export interface ChatThread {
   model_preference: ModelPreference | null
   one_turn_override: ModelTier | null
   last_inferred_at: string | null
+  purpose: string
+  subject_type: string | null
+  subject_key: string | null
 }
 
 export interface ChatMessageRow {
@@ -115,6 +118,24 @@ export function assertPersonalName(name: string): void {
   if (name.startsWith("site:")) {
     throw new Error(
       `Names starting with "site:" are managed by refresh_awareness, not save_memory/update_memory`
+    )
+  }
+}
+
+// Writing-preference names live in the "writing-" namespace (companion only).
+// They must NOT collide with the chat's personal memories and must never touch
+// the site:* namespace. assertPersonalName rejects site:*; isValidName enforces
+// the kebab format so a malformed name (spaces, caps) can never reach the DB.
+export function assertWritingPrefName(name: string): void {
+  assertPersonalName(name)
+  if (!name.startsWith("writing-")) {
+    throw new Error(
+      `Writing-preference names must start with "writing-" (got "${name}")`
+    )
+  }
+  if (!isValidName(name)) {
+    throw new Error(
+      `Invalid writing-preference name: must be lowercase kebab (a-z 0-9 - :), ≤80 chars`
     )
   }
 }
@@ -378,6 +399,7 @@ export async function listThreads(limit = 50): Promise<ChatThread[]> {
   const { data, error } = await c
     .from("chat_threads")
     .select("*")
+    .eq("purpose", "chat")
     .order("updated_at", { ascending: false })
     .limit(limit)
   handle(error)
@@ -536,6 +558,7 @@ export async function listIdleUnprocessedThreads(opts: {
   const { data, error } = await c
     .from("chat_threads")
     .select("id,title,updated_at,last_inferred_at")
+    .eq("purpose", "chat")
     .lt("updated_at", cutoff)
     .order("updated_at", { ascending: false })
     .limit(opts.limit)
@@ -547,4 +570,100 @@ export async function listIdleUnprocessedThreads(opts: {
     if (!r.last_inferred_at) return true
     return new Date(r.last_inferred_at) < new Date(r.updated_at)
   })
+}
+
+// ── Purpose-specific thread helpers (companion feature 2/3) ───────────────
+// Companion threads are discriminated by purpose = 'blog-companion' and
+// keyed by stable subject (post.id or "draft:<uuid>"). These helpers keep
+// the discriminator checks in one place so chat and companion cannot leak
+// into each other.
+
+export async function getChatThread(id: string): Promise<ChatThread | null> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_threads")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle()
+  handle(error)
+  const row = (data as ChatThread | null) ?? null
+  if (!row || row.purpose !== "chat") return null
+  return row
+}
+
+export async function getCompanionThread(
+  id: string,
+  opts: { subjectType: string; subjectKey: string }
+): Promise<ChatThread | null> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_threads")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle()
+  handle(error)
+  const row = (data as ChatThread | null) ?? null
+  if (!row || row.purpose !== "blog-companion") return null
+  if (row.subject_type !== opts.subjectType || row.subject_key !== opts.subjectKey) {
+    return null
+  }
+  return row
+}
+
+export async function getOrCreateCompanionThread(opts: {
+  subjectType: "post" | "draft"
+  subjectKey: string
+}): Promise<ChatThread> {
+  const c = client()
+  // 1) Try to find an existing companion thread for this subject.
+  const { data: existing, error: qErr } = await c
+    .from("chat_threads")
+    .select("*")
+    .eq("purpose", "blog-companion")
+    .eq("subject_type", opts.subjectType)
+    .eq("subject_key", opts.subjectKey)
+    .maybeSingle()
+  handle(qErr)
+  if (existing) return existing as ChatThread
+
+  // 2) None found — insert. Two concurrent first-turns can both reach here;
+  //    the unique partial index uniq_companion_thread_subject arbitrates.
+  const now = new Date().toISOString()
+  const row = {
+    title: `Companion: ${opts.subjectType} ${opts.subjectKey}`,
+    purpose: "blog-companion",
+    subject_type: opts.subjectType,
+    subject_key: opts.subjectKey,
+    updated_at: now,
+  }
+  const { data: inserted, error: insErr } = await c
+    .from("chat_threads")
+    .insert(row)
+    .select("*")
+    .single()
+  if (insErr) {
+    // Concurrent insert raced us — reselect the winner.
+    const { data: raced, error: rErr } = await c
+      .from("chat_threads")
+      .select("*")
+      .eq("purpose", "blog-companion")
+      .eq("subject_type", opts.subjectType)
+      .eq("subject_key", opts.subjectKey)
+      .maybeSingle()
+    handle(rErr)
+    if (!raced) throw new Error(`Companion thread insert failed: ${insErr.message}`)
+    return raced as ChatThread
+  }
+  return inserted as ChatThread
+}
+
+export async function listChatThreads(limit = 50): Promise<ChatThread[]> {
+  return listThreads(limit)
+}
+
+export async function listIdleChatThreads(opts: {
+  idleMinutes: number
+  limit: number
+}): Promise<Pick<ChatThread, "id" | "title" | "updated_at" | "last_inferred_at">[]> {
+  return listIdleUnprocessedThreads(opts)
 }
