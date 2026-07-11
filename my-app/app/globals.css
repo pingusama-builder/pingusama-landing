@@ -1885,10 +1885,11 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   color: var(--walnut);
 }
 .companion-card-principle {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-weight: 600;
   font-size: 0.7rem;
   color: var(--terracotta);
+  opacity: 0.85;
   margin: 0;
 }
 .companion-card-rationale {

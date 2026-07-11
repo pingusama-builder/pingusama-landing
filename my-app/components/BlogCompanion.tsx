@@ -35,6 +35,23 @@ export const SCOPE_LABELS: Record<Scope, string> = {
   full: "full",
 }
 
+export const CRAFT_NOTE_LABELS: Record<string, string> = {
+  // Voice (always first-class)
+  V1: "Voice", V2: "Voice", V3: "Voice",
+  // Prose economy
+  O1: "Stale metaphor", O2: "Short words", O3: "Cut words", O4: "Active voice",
+  O5: "Everyday words", O6: "Break the rule",
+  SW1: "Omit needless words", SW2: "Active voice", SW3: "Positive form", SW4: "Loose sentences",
+  Z1: "Simplicity", Z2: "Unity", Z3: "Voice",
+  // Fiction lenses
+  F1: "Narrative promise", F2: "Desire & stakes", F3: "Scene movement",
+  F4: "POV & distance", F5: "Dialogue as action", F6: "Worldbuilding",
+}
+
+function craftNote(principleId: string): string {
+  return CRAFT_NOTE_LABELS[principleId] ?? principleId
+}
+
 type ProposalStatus = "pending" | "applicable" | "applied" | "stale" | "rejected"
 
 interface ProposalCard {
@@ -422,7 +439,9 @@ export default function BlogCompanion(props: BlogCompanionProps) {
                 {" → "}
                 <span className="companion-proposed">{p.replacement}</span>
               </p>
-              <p className="companion-card-principle">{p.principleId}</p>
+              <p className="companion-card-principle" title={`principle: ${p.principleId}`}>
+                {craftNote(p.principleId)}
+              </p>
               <p className="companion-card-rationale" style={{ whiteSpace: "pre-wrap" }}>
                 {p.rationale}
               </p>
@@ -446,7 +465,7 @@ export default function BlogCompanion(props: BlogCompanionProps) {
                     aria-disabled={card.status !== "applicable"}
                     aria-label={applyLabel}
                   >
-                    Apply
+                    {reviewMode === "fiction" && p.field === "title" ? "Try title" : "Apply"}
                   </button>
                 )}
                 <button type="button" onClick={() => handleCopy(p.replacement)}>

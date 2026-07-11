@@ -87,3 +87,14 @@ describe("BlogCompanion.tsx — review mode (advisor §B)", () => {
     expect(file).toContain("reviewMode")
   })
 })
+
+describe("BlogCompanion.tsx — craft note + title card (advisor §B)", () => {
+  it("maps principle IDs to plain-language craft notes", () => {
+    expect(file).toContain("CRAFT_NOTE_LABELS")
+    expect(file).toMatch(/F3[\s\S]*Scene movement/)
+    expect(file).toMatch(/F1[\s\S]*Narrative promise/)
+  })
+  it("labels fiction title proposals 'Try title' instead of Apply", () => {
+    expect(file).toContain("Try title")
+  })
+})
