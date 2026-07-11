@@ -1334,6 +1334,76 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   .chat-head { flex-direction: column; align-items: flex-start; }
 }
 
+/* ── Chat model pill + per-message tag ─────────────────────────────────── */
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 16px 0;
+}
+.chat-model-pill-wrap {
+  position: relative;
+}
+.chat-model-pill {
+  font-family: var(--font-body);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--walnut);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  text-transform: lowercase;
+}
+.chat-model-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.chat-model-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card-hi);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  min-width: 150px;
+  overflow: hidden;
+}
+.chat-model-option {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--walnut);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-transform: lowercase;
+}
+.chat-model-option:hover {
+  background: var(--bg-card);
+}
+.chat-model-option.active {
+  color: var(--terracotta-d);
+  font-weight: 600;
+}
+.chat-msg-model {
+  color: var(--sage-deep);
+  font-weight: 400;
+}
+
+@media (max-width: 560px) {
+  .chat-model-menu {
+    left: 0;
+    right: auto;
+  }
+}
+
 /* =====================================================
    MEMORIES — management UI
    ===================================================== */

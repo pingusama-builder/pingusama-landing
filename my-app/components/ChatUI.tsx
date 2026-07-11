@@ -4,8 +4,10 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import {
   listThreadsAction,
   getThreadAction,
+  setThreadModelPreferenceAction,
   type ThreadSummary,
 } from "@/app/admin/chat/actions";
+import type { ModelPreference } from "@/lib/chat/models";
 
 interface UIMessage {
   id: string;
@@ -13,6 +15,7 @@ interface UIMessage {
   content: string;
   toolName?: string;
   streaming?: boolean;
+  model?: string | null;
 }
 
 export default function ChatUI({ initialThreads }: { initialThreads: ThreadSummary[] }) {
@@ -23,6 +26,9 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toolLog, setToolLog] = useState<string[]>([]);
+  const [modelPref, setModelPref] = useState<ModelPreference>("auto");
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [liveModel, setLiveModel] = useState<string | null>(null); // tier shown while streaming
   const scrollRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
   const nextId = () => `m${++idCounter.current}`;
@@ -36,7 +42,9 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
       setActiveId(id);
       setError(null);
       setToolLog([]);
-      const { messages: rows } = await getThreadAction(id);
+      setLiveModel(null);
+      const { thread, messages: rows } = await getThreadAction(id);
+      setModelPref(thread?.model_preference ?? "auto");
       setMessages(
         rows.map((r) => ({
           id: r.id,
@@ -46,6 +54,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
             r.role === "tool"
               ? ((r.tool_calls as { name?: string } | null)?.name ?? "tool")
               : undefined,
+          model: r.role === "assistant" ? r.model ?? null : null,
         }))
       );
     },
@@ -57,6 +66,8 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     setMessages([]);
     setToolLog([]);
     setError(null);
+    setModelPref("auto");
+    setLiveModel(null);
   };
 
   const send = async () => {
@@ -99,6 +110,19 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
           case "thread":
             threadId = (evt.threadId as string) ?? threadId;
             break;
+          case "model": {
+            const tier = (evt.tier as string) ?? null;
+            setLiveModel(tier);
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (last && last.role === "assistant") {
+                last.model = (evt.modelId as string) ?? last.model;
+              }
+              return next;
+            });
+            break;
+          }
           case "content": {
             const delta = (evt.delta as string) ?? "";
             setMessages((prev) => {
@@ -208,6 +232,48 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
       </aside>
 
       <section className="chat-main">
+        <div className="chat-head">
+          <div className="chat-model-pill-wrap">
+            <button
+              type="button"
+              className="chat-model-pill"
+              onClick={() => setModelMenuOpen((o) => !o)}
+              disabled={streaming || !activeId}
+              aria-haspopup="menu"
+              aria-expanded={modelMenuOpen}
+              title="Change the Mistral model for this thread"
+            >
+              Model: {modelPref === "auto" ? `auto → ${liveModel ?? "medium"}` : modelPref}
+            </button>
+            {modelMenuOpen && (
+              <div className="chat-model-menu" role="menu">
+                {(["auto", "small", "medium", "large"] as ModelPreference[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`chat-model-option${p === modelPref ? " active" : ""}`}
+                    role="menuitem"
+                    onClick={async () => {
+                      if (!activeId) return;
+                      setModelMenuOpen(false);
+                      const prev = modelPref;
+                      setModelPref(p);
+                      const res = await setThreadModelPreferenceAction(activeId, p);
+                      if (!res.success) {
+                        setModelPref(prev);
+                        setError(res.error);
+                      }
+                    }}
+                  >
+                    {p}
+                    {p === "auto" ? " (route by difficulty)" : ""}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="chat-scroll" ref={scrollRef}>
           {messages.length === 0 && (
             <div className="chat-empty">
@@ -230,7 +296,12 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
               </div>
             ) : (
               <div key={m.id} className={`chat-msg ${m.role}`}>
-                <div className="chat-msg-role">{m.role === "user" ? "you" : "companion"}</div>
+                <div className="chat-msg-role">
+                  {m.role === "user" ? "you" : "companion"}
+                  {m.role === "assistant" && m.model && (
+                    <span className="chat-msg-model"> · {m.model.replace("mistral-", "").replace("-latest", "")}</span>
+                  )}
+                </div>
                 <div className="chat-msg-body">
                   {m.content || (m.streaming ? <span className="chat-typing">…</span> : "")}
                 </div>
