@@ -216,18 +216,32 @@ export async function executeToolCall(
       }
 
       case "update_memory": {
+        if (ctx.memoryWrites >= ctx.maxMemoryWrites) {
+          return {
+            content: `Memory write skipped: per-turn cap (${ctx.maxMemoryWrites}) reached. Continue the conversation; you can save more next turn.`,
+            memoryWrite: false,
+          }
+        }
         const nm = asString(args.name)
         assertPersonalName(nm)
         const content = asString(args.content)
         const description = args.description != null ? asString(args.description) : undefined
         const row = await updateMemory(nm, { content, description })
+        ctx.memoryWrites += 1
         return { content: `Updated memory "${row.name}".`, memoryWrite: true }
       }
 
       case "delete_memory": {
+        if (ctx.memoryWrites >= ctx.maxMemoryWrites) {
+          return {
+            content: `Memory write skipped: per-turn cap (${ctx.maxMemoryWrites}) reached. Continue the conversation; you can save more next turn.`,
+            memoryWrite: false,
+          }
+        }
         const nm = asString(args.name)
         assertPersonalName(nm)
         await deleteMemory(nm)
+        ctx.memoryWrites += 1
         return { content: `Deleted memory "${nm}" (set inactive).`, memoryWrite: true }
       }
 

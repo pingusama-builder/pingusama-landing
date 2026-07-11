@@ -269,3 +269,74 @@ describe("executeToolCall — set_model", () => {
     expect(chatMock.setThreadModelPreference).toHaveBeenCalled()
   })
 })
+
+describe("executeToolCall — shared mutation cap (bug fix)", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("counts update_memory against the cap and refuses once reached", async () => {
+    chatMock.updateMemory.mockResolvedValue(baseRow({ name: "n" }))
+    const c = ctx()
+    c.memoryWrites = c.maxMemoryWrites
+    const res = await executeToolCall(
+      "update_memory",
+      JSON.stringify({ name: "n", content: "x" }),
+      c
+    )
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toMatch(/cap/)
+    expect(chatMock.updateMemory).not.toHaveBeenCalled()
+  })
+
+  it("increments the cap on a successful update_memory", async () => {
+    chatMock.updateMemory.mockResolvedValue(baseRow({ name: "n" }))
+    const c = ctx()
+    await executeToolCall("update_memory", JSON.stringify({ name: "n", content: "x" }), c)
+    expect(c.memoryWrites).toBe(1)
+  })
+
+  it("counts delete_memory against the cap and refuses once reached", async () => {
+    const c = ctx()
+    c.memoryWrites = c.maxMemoryWrites
+    const res = await executeToolCall("delete_memory", JSON.stringify({ name: "n" }), c)
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toMatch(/cap/)
+    expect(chatMock.deleteMemory).not.toHaveBeenCalled()
+  })
+
+  it("increments the cap on a successful delete_memory", async () => {
+    chatMock.deleteMemory.mockResolvedValue(undefined)
+    const c = ctx()
+    await executeToolCall("delete_memory", JSON.stringify({ name: "n" }), c)
+    expect(c.memoryWrites).toBe(1)
+  })
+
+  it("after N saves, an update_memory is refused (shared cap)", async () => {
+    chatMock.saveMemory.mockResolvedValue(baseRow({ name: "a" }))
+    chatMock.updateMemory.mockResolvedValue(baseRow({ name: "a" }))
+    const c = ctx()
+    await executeToolCall(
+      "save_memory",
+      JSON.stringify({ type: "user", name: "a", description: "d", content: "c" }),
+      c
+    )
+    await executeToolCall(
+      "save_memory",
+      JSON.stringify({ type: "user", name: "b", description: "d", content: "c" }),
+      c
+    )
+    await executeToolCall(
+      "save_memory",
+      JSON.stringify({ type: "user", name: "c", description: "d", content: "c" }),
+      c
+    )
+    expect(c.memoryWrites).toBe(3)
+    const res = await executeToolCall(
+      "update_memory",
+      JSON.stringify({ name: "a", content: "x" }),
+      c
+    )
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toMatch(/cap/)
+    expect(chatMock.updateMemory).not.toHaveBeenCalled()
+  })
+})
