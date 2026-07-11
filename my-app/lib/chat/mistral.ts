@@ -60,13 +60,14 @@ interface CallOptions {
   tools?: MistralTool[]
   toolChoice?: ToolChoice
   maxTokens?: number
+  model?: string
   signal?: AbortSignal
   onContent?: (chunk: string) => void
 }
 
 async function callMistral(opts: CallOptions, stream: boolean): Promise<AccumulatedMessage> {
   const body: Record<string, unknown> = {
-    model: getMistralModel(),
+    model: opts.model ?? getMistralModel(),
     messages: opts.messages,
     max_tokens: opts.maxTokens ?? 1000,
     temperature: 0.4,
