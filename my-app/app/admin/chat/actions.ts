@@ -8,12 +8,14 @@ import {
   listAllMemories,
   setMemoryActive,
   updateMemoryContent,
+  setThreadModelPreference,
   type MemoryType,
   type ChatThread,
   type ChatMessageRow,
   type MemoryRow,
 } from "@/lib/db/chat";
 import { refreshAwareness, type SiteCategory } from "@/lib/chat/awareness";
+import { MODEL_PREFERENCES, type ModelPreference } from "@/lib/chat/models";
 
 export interface ThreadSummary {
   id: string;
@@ -89,6 +91,22 @@ export async function refreshAwarenessAction(
     await requireAdmin();
     const results = await refreshAwareness({ category });
     return { success: true, results };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed" };
+  }
+}
+
+export async function setThreadModelPreferenceAction(
+  threadId: string,
+  preference: ModelPreference
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    await requireAdmin();
+    if (!MODEL_PREFERENCES.includes(preference)) {
+      return { success: false, error: `Invalid model preference: ${preference}` };
+    }
+    await setThreadModelPreference(threadId, preference);
+    return { success: true };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Failed" };
   }
