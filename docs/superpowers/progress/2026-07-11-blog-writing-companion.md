@@ -27,7 +27,7 @@ The plan *numbers* tasks 1–14 but the **build order** must satisfy import deps
 | 7 | companion-tools.ts | ✅ done | 3d49078 | deny-by-default allowlist + pure propose_edit + save_writing_preference + set_model delegate. 1 test bug fixed (see deviations) |
 | 8 | chat scoping (chat route + actions) | ✅ done | a78dcfc | route 400s on purpose!=chat; getThreadAction→getChatThread. Checkpoint: full suite 271 pass + tsc clean. 1 latent test-mock fix (see deviations) |
 | 9 | /api/blog-companion route + route test | ✅ done | 647dd67 | LARGE — SSE route + companion-route.test.ts (21 tests). Checkpoint: full suite 292 pass + tsc clean. 1 test fixture fix (see deviations) |
-| 10 | BlogCompanion.tsx + UI test | ⬜ pending | — | LARGE — static-grep UI test |
+| 10 | BlogCompanion.tsx + UI test | ✅ done | b533b67 | LARGE — static-grep UI test (7 tests). Checkpoint: full suite 299 pass + tsc clean. No deviation |
 | 11 | PostEditor integration + test | ⬜ pending | — | static-grep integration test |
 | 12 | Companion CSS + test | ⬜ pending | — | append .companion* to globals.css; static-grep css test |
 | 13 | XSS publish-boundary + eval corpus | ⬜ pending | — | xss-publish.test.ts + companion-eval.test.ts + fixtures |
@@ -47,24 +47,29 @@ Baseline before branch: 198 tests. After T1–T6: 219 + 19 (blog-proposals) + ..
 
 ## RESUME HERE
 
-**Current in-flight task: Task 10 (BlogCompanion client component).** No work started yet on Task 10. Tasks 1–9 done. Checkpoint after T9 (LARGE): full suite **292 pass / 22 files**, `npx tsc --noEmit` clean. HEAD = 647dd67.
+**Current in-flight task: Task 11 (integrate BlogCompanion into PostEditor).** No work started yet on Task 11. Tasks 1–10 done. Checkpoint after T10 (LARGE): full suite **299 pass / 23 files**, `npx tsc --noEmit` clean. HEAD = b533b67. No deviation on T10.
 
-Task 10 is LARGE (plan lines 3829–4020). Read that whole section from disk before starting — it has the full static-grep `companion-ui.test.ts` and the full `components/BlogCompanion.tsx` (mobile-first sticky bar → overlay drawer ≤720px; quick actions declare a scope; model pill reuses `setThreadModelPreferenceAction`; streams plain-text critique; renders proposals as cards; runtime-validates every `proposal` event via `validateProposal`; Apply disabled while `saveInProgress`; all model text plain text `white-space: pre-wrap`, NEVER `dangerouslySetInnerHTML`; a11y live region + aria-labels).
+Task 11 (plan lines 3829–4020) modifies `my-app/components/PostEditor.tsx` + creates `my-app/tests/unit/posteditor-integration.test.ts` (static-grep).
 
-Creates 2 files:
-- `my-app/components/BlogCompanion.tsx` — `"use client"` component. Props (consumed by PostEditor in T11): `draft: DraftSnapshot`, `subjectType: "post"|"draft"`, `subjectKey: string`, `threadId?: string`, `saveInProgress: boolean`, `onThreadReady: (threadId: string) => void`, `onApply: (proposal: Proposal) => Promise<ApplyResult>`, `onUndo: (undoTarget: UndoTarget) => void`. Also exports `QUICK_ACTIONS: QuickAction[]` and `SCOPE_LABELS` for the static test.
-- `my-app/tests/unit/companion-ui.test.ts` — static-grep (NO DOM testing lib in the repo). Reads `components/BlogCompanion.tsx` as text and asserts: the five spec quick actions + scopes present; NO `dangerouslySetInnerHTML`; `pre-wrap`; the spec props; `validateProposal` import; `aria-label` + live region; `saveInProgress`.
+Modifications to PostEditor.tsx (4 edits — read the current file first to find exact anchors):
+- **3a.** Imports after `import PostBody from "./PostBody"`: add `import BlogCompanion from "./BlogCompanion"` + `applyProposalToForm, Proposal, DraftSnapshot, UndoTarget, ApplyResult` from `@/lib/blog/proposals`.
+- **3b.** After the existing state declarations (`const [uploading, setUploading] = useState(false)` + `const fileInputRef = useRef<HTMLInputElement>(null)`): add companion state — stable subject key (`subjectKeyRef` = `post?.id ?? draft:${crypto.randomUUID()}`, generated once via ref), `subjectType`, `companionThreadId` state, `applyProposal(proposal)` (builds a DraftSnapshot from `form`, calls `applyProposalToForm`, merges `res.form` into `form` via `setForm` — mutates ONLY form, never `savePostAction`), `undoProposal(undo)` (restores prev field value).
+- **3c.** Change `return (` + opening `<form ...>` to wrap in a fragment: build `draftSnapshot` from `form`, `return ( <> <form ...>` (form body unchanged).
+- **3d.** After the closing `</form>` (the one after the `{showPreview && ...}` block, before the final `)}`), insert `<BlogCompanion draft={draftSnapshot} subjectType={subjectType} subjectKey={subjectKeyRef.current!} threadId={companionThreadId} saveInProgress={isPending} onThreadReady={setCompanionThreadId} onApply={applyProposal} onUndo={undoProposal} />` + close the fragment `</> )}`.
 
-Consumes (all exist from T6): `validateProposal`, `applyProposalToForm`, `Proposal`, `DraftSnapshot`, `UndoTarget`, `ApplyResult` from `@/lib/blog/proposals`; `setThreadModelPreferenceAction` from `@/app/admin/chat/actions`.
+Test asserts (static-grep): `<BlogCompanion` present; the spec prop names present; `applyProposalToForm`; `post.id|randomUUID|draft:`; `saveInProgress={isPending}`.
+
+Consumes (all exist from T6/T10): `BlogCompanion`+`BlogCompanionProps` (@/components/BlogCompanion); `applyProposalToForm`/`Proposal`/`DraftSnapshot`/`UndoTarget`/`ApplyResult` (@/lib/blog/proposals). PostEditor already has `form`, `setForm`, `post`, `isPending` — verify those names exist in the current file before editing (the plan assumes them; if names differ, adapt + log a deviation).
 
 Next actions, in order:
-1. Read plan §Task 10 from disk (lines 3829–4020) — the whole thing, it's large.
-2. Write `tests/unit/companion-ui.test.ts` (failing test first — readFileSync ENOENT).
-3. `cd my-app && npx vitest run tests/unit/companion-ui.test.ts` → expect FAIL (component missing).
-4. Write `components/BlogCompanion.tsx`.
-5. Re-run → expect pass. If a plan test/impl mismatch appears, fix minimally and **log it in `## Deviations from plan`** above (append a numbered item). Watch for: static-grep regex expectations vs actual JSX (e.g. `scope: "full"` vs `scope:"full"` spacing), the same fixture/regex bugs seen before.
-6. Commit Task 10: `git add my-app/components/BlogCompanion.tsx my-app/tests/unit/companion-ui.test.ts && git commit -m "feat(blog-companion): BlogCompanion client component — mobile-first, plain-text-only, a11y"`; capture SHA.
-7. Cadence: mark T10 ✅ + SHA in table; rewrite RESUME HERE → Task 11 (lines 4021–4340); `git commit -m "docs(blog): execution progress — Task 10 done"`; append HANDOFF one-liner. **Task 10 is a LARGE checkpoint boundary** — run the full suite + tsc after, extra-careful progress + HANDOFF commits.
+1. Read plan §Task 11 from disk (lines 3829–4020).
+2. Read the current `components/PostEditor.tsx` to find the exact anchors (the `import PostBody` line, the state-declaration block, the `return (` + `<form`, the final `</form> )}` after `showPreview`). **Verify `form`/`setForm`/`post`/`isPending`/`showPreview`/`previewHtml`/`handleSubmit` exist with those names** — if any differ, adapt the plan's edits + log a deviation.
+3. Write `tests/unit/posteditor-integration.test.ts` (failing test first).
+4. `cd my-app && npx vitest run tests/unit/posteditor-integration.test.ts` → expect FAIL.
+5. Apply the 4 edits to `PostEditor.tsx`.
+6. `npx vitest run tests/unit/posteditor-integration.test.ts && npx tsc --noEmit` → expect PASS + tsc clean. If a plan test/impl mismatch appears, fix minimally and **log it in `## Deviations from plan`** above (append a numbered item).
+7. Commit Task 11: `git add my-app/components/PostEditor.tsx my-app/tests/unit/posteditor-integration.test.ts && git commit -m "feat(blog): wire BlogCompanion into PostEditor — apply mutates form only, saveInProgress gates Apply"`; capture SHA.
+8. Cadence: mark T11 ✅ + SHA in table; rewrite RESUME HERE → Task 12 (lines 4021–4340); `git commit -m "docs(blog): execution progress — Task 11 done"`; append HANDOFF one-liner. (Task 11 is not a checkpoint boundary, but the next one — Task 12 — is.)
 
 ## After every task (cadence)
 
