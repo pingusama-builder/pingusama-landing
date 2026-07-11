@@ -21,6 +21,9 @@ const cases = JSON.parse(
     principleUse: string
     reviewMode?: "auto" | "prose" | "fiction" | "line-edit"
     expectedRules?: string[]
+    noChangePreferred?: boolean
+    mustNotAssert?: string[]
+    mustNotAggregateOverview?: boolean
   }
 }>
 
@@ -119,5 +122,35 @@ describe("companion eval corpus (spec §13)", () => {
     })
     expect(p).toContain("UNTRUSTED TEXT TO ANALYZE")
     expect(p).toContain(c!.draft.content_markdown.slice(0, 20))
+  })
+
+  it("the Summon case documents the refinement-03 behavioral bar (A–D must-not-assert + NO CHANGE preferred)", () => {
+    // Advisor verdict §"What to build" #6 + §"Structural-overview problem": the
+    // regression is stronger than "must-not-appear-as-assertive-defects" — the
+    // review must be ABLE to return a specific NO CHANGE assessment and must not
+    // aggregate unanchored findings into an authoritative "stumbles on…" verdict.
+    // A unit test cannot deterministically pin live model output without a
+    // second model pass (rejected); this documents the bar the live gate enforces.
+    const c = cases.find((x) => x.id === "fiction-intentional-hard-cut-bilingual-title-foreshadow")
+    expect(c).toBeDefined()
+    expect(c!.expectations.noChangePreferred).toBe(true)
+    expect(c!.expectations.mustNotAggregateOverview).toBe(true)
+    const mustNot = c!.expectations.mustNotAssert ?? []
+    expect(mustNot).toContain("typography")
+    expect(mustNot).toContain("over-explanation")
+    expect(mustNot).toContain("clinical-inventory")
+    expect(mustNot).toContain("tell")
+    // And the prompt that would run this case carries the suppressors: the
+    // pre-emission gate, the typography routing line, the positive NO CHANGE
+    // example, and the revised backstop pairs.
+    const p = buildCompanionPrompt({
+      writingContext: "ctx",
+      memories: [] as MemoryRow[],
+      draft: c!.draft,
+      reviewMode: "fiction",
+    })
+    expect(p).toMatch(/Before emitting each finding, verify all three/)
+    expect(p).toMatch(/do not report ordinary spelling, punctuation, typography/)
+    expect(p).toContain("NO CHANGE: the precise threat inventory creates grotesque, hyper-literal pressure")
   })
 })

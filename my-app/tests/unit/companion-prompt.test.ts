@@ -126,7 +126,7 @@ describe("buildCompanionPrompt", () => {
   it("contains the 5-level hierarchy, voice first", () => {
     const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
     expect(p).toMatch(/1\.\s*\**Preserve meaning, deliberate voice/)
-    expect(p).toMatch(/2\.\s*\**Identify failures honestly/)
+    expect(p).toMatch(/2\.\s*\**Assess honestly, then act/)
     expect(p).toMatch(/3\.\s*\**Prefer the smallest effective intervention/)
     expect(p).toMatch(/4\.\s*\**Apply the relevant craft lens/)
     expect(p).toMatch(/5\.\s*\**Break any craft rule/)
@@ -140,8 +140,56 @@ describe("buildCompanionPrompt", () => {
   it("prohibits praise preamble / hedging", () => {
     const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
     expect(p).toMatch(/no praise/i)
-    expect(p).toMatch(/begin with findings/i)
+    expect(p).toMatch(/begin with an honest assessment/i)
     expect(p).toMatch(/this is great, but/i) // the banned phrase is named
+  })
+
+  it("emits the assessment contract — honest assessment, not a predetermined list of faults", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
+    // OUTPUT opening reframed away from "Begin with FINDINGS — a list of the
+    // specific weaknesses you see" (which presupposed defects). NO CHANGE is
+    // now an equally legitimate outcome, not a conditional fallback.
+    expect(p).toMatch(/Begin with an honest assessment, not a predetermined list of faults/)
+    // Advisor "best wording" (refinement-03 follow-up): the evidence-check is
+    // folded into the OUTPUT opening so it applies in every mode, not just fiction.
+    expect(p).toMatch(/Before calling a choice a weakness, determine whether it produces a specific reader effect/)
+    expect(p).toMatch(/If it works, name one concrete\s+effect it achieves and recommend NO CHANGE/)
+    expect(p).toMatch(/evidence-based assessment, not praise/)
+    expect(p).toMatch(/Do not manufacture defects/i)
+  })
+
+  it("Principle 2 permits earned NO CHANGE, not defect-finding only", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
+    // The load-bearing "no sugar-coating" principle was reframed so it does not
+    // read as "you may not approve a good draft." Earned recognition is licensed.
+    expect(p).toMatch(/if a passage works, name one concrete effect it achieves and recommend NO CHANGE/)
+    expect(p).toMatch(/Identify the failure first only when there is one/)
+  })
+
+  it("hierarchy level 2 reframes to assess-honestly-then-act (NO CHANGE is level-2 legitimate)", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
+    expect(p).toMatch(/2\.\s*\**Assess honestly, then act\.\*\*/)
+    expect(p).toMatch(/If it works, name one concrete\s+effect it achieves and recommend NO CHANGE/)
+  })
+
+  it("the per-turn closing reminder no longer presupposes findings", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
+    // Was: "Begin with findings. Remember: no change is a valid result."
+    // Now leads with the honest-assessment frame so NO CHANGE is reachable.
+    expect(p).toMatch(/Begin with an honest assessment\. If a passage works, recommend NO CHANGE/)
+  })
+
+  it("OUTPUT routes publishing metadata to full review only, neutral wording", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
+    // Finding G: empty excerpt/meta is publishing-readiness, not craft. Allowed
+    // once in a `full` review with neutral wording; barred from craft/section
+    // scopes and from reader-facing framing.
+    expect(p).toMatch(/Publishing-metadata fields/)
+    expect(p).toMatch(/only in a `full` review/)
+    expect(p).toMatch(/Excerpt and meta description are blank/)
+    // The banned reader-facing framing is NAMED as a banned example (the same
+    // pattern as naming "this is great, but…"), not endorsed as a finding.
+    expect(p).toMatch(/never with reader-facing framing such as "leaving the reader with no orienting hook/)
   })
 
   it("embeds the draft as UNTRUSTED data inside <draft> delimiters", () => {
@@ -249,5 +297,58 @@ describe("buildCompanionPrompt", () => {
     const pAuto = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
     expect(pAuto).not.toContain("## Fiction contrastive examples")
     expect(pAuto).not.toContain("unexplained intervention is suspense")
+  })
+
+  it("in fiction mode emits the typography routing line in the fiction restriction", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    // Pair 1 (em-dash) was dropped; replaced by a bright-line routing rule that
+    // moves surface typography out of fiction review (advisor verdict §1).
+    expect(p).toMatch(/do not report ordinary spelling, punctuation, typography/)
+    expect(p).toMatch(/Route them to line-edit mode/)
+    expect(p).toMatch(/only when they make the scene's meaning, chronology, speaker, or intended reading genuinely unclear/)
+  })
+
+  it("in fiction mode emits the pre-emission gate (the harder mechanism)", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    // Not a second model pass — a 3-check rule the model must verify before
+    // each finding (advisor verdict §"Will examples hold?").
+    expect(p).toMatch(/Before emitting each finding, verify all three/)
+    expect(p).toMatch(/specific reader-level failure, not merely an unusual choice/)
+    expect(p).toMatch(/deliberate voice, rhythm, ambiguity, or form/)
+    expect(p).toMatch(/Do not surface line-edit or publishing-readiness issues during a fiction-craft review/)
+    expect(p).toMatch(/If any check fails, do not emit the finding/)
+  })
+
+  it("in fiction mode emits the positive NO CHANGE example", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    // The most important new example (advisor verdict §"Add one positive
+    // example"): models that a review can end after a specific positive
+    // diagnosis without finding a compensatory flaw.
+    expect(p).toContain("NO CHANGE: the precise threat inventory creates grotesque, hyper-literal pressure")
+    expect(p).toMatch(/do not invent a defect to balance the assessment/)
+  })
+
+  it("in fiction mode emits the revised over-explanation / clinical / tell pairs (backstops)", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    // Advisor-revised thresholds (not the originally submitted versions).
+    expect(p).toMatch(/repeats an inference already secure to the reader without adding pressure, character, rhythm, or consequence/)
+    expect(p).toMatch(/Do not call vivid specificity clinical merely because it is unusual/)
+    expect(p).toMatch(/do not treat one-line interiority as an automatic defect/)
+  })
+
+  it("in fiction mode does NOT emit the dropped em-dash contrastive pair", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    // The submitted em-dash pair was replaced by the typography routing line.
+    // Its GOOD clause wording must not appear as a contrastive example.
+    expect(p).not.toContain("never a finding in fiction review")
+    expect(p).not.toContain("Spacing of an em-dash")
+  })
+
+  it("omits the typography routing + pre-emission gate in prose / line-edit / auto modes", () => {
+    for (const mode of ["prose", "line-edit", "auto"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).not.toMatch(/Before emitting each finding, verify all three/)
+      expect(p).not.toMatch(/do not report ordinary spelling, punctuation, typography/)
+    }
   })
 })

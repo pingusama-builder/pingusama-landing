@@ -256,7 +256,10 @@
       "noChangeWilling": true,
       "principleUse": "F3",
       "reviewMode": "fiction",
-      "expectedRules": ["F3", "F5", "F1"]
+      "expectedRules": ["F3", "F5", "F1"],
+      "noChangePreferred": true,
+      "mustNotAssert": ["typography", "over-explanation", "clinical-inventory", "tell"],
+      "mustNotAggregateOverview": true
     }
   }
 ]
