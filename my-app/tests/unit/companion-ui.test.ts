@@ -98,3 +98,16 @@ describe("BlogCompanion.tsx — craft note + title card (advisor §B)", () => {
     expect(file).toContain("Try title")
   })
 })
+
+describe("BlogCompanion.tsx — mode-aware quick actions (advisor §B)", () => {
+  it("keeps the prose quick actions and adds fiction quick actions", () => {
+    expect(file).toContain("PROSE_QUICK_ACTIONS")
+    expect(file).toContain("FICTION_QUICK_ACTIONS")
+    expect(file).toContain("Review this story")
+    expect(file).toContain("Check scene movement")
+    expect(file).toContain("Offer title directions")
+  })
+  it("caps the visible quick actions at five", () => {
+    expect(file).toMatch(/\.slice\(0,\s*5\)|slice\(0, 5\)/)
+  })
+})

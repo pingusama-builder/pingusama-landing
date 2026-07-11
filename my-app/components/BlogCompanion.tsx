@@ -19,13 +19,26 @@ export interface QuickAction {
 }
 
 // Spec §9 quick actions. Each declares a scope → tier (resolved server-side).
-export const QUICK_ACTIONS: QuickAction[] = [
+export const PROSE_QUICK_ACTIONS: QuickAction[] = [
   { label: "Review this draft", scope: "full", hint: "Full structural review" },
   { label: "Omit needless words", scope: "full", hint: "Tighten prose (SW1)" },
   { label: "Flag passive voice & stale phrases", scope: "full", hint: "O4 / SW2 pass" },
   { label: "Suggest title options", scope: "title", hint: "Title alternatives" },
   { label: "Check the opening", scope: "opening", hint: "Opening paragraph" },
 ]
+
+export const FICTION_QUICK_ACTIONS: QuickAction[] = [
+  { label: "Review this story", scope: "full", hint: "Promise, stakes, movement, POV" },
+  { label: "Check the opening promise", scope: "opening", hint: "Tone, intrigue, orientation" },
+  { label: "Check scene movement", scope: "section", hint: "Transitions and forward curiosity" },
+  { label: "Check POV and distance", scope: "section", hint: "Who perceives this moment?" },
+  { label: "Check dialogue and beats", scope: "section", hint: "Speaker, intent, relation" },
+  { label: "Offer title directions", scope: "title", hint: "Options with tradeoffs" },
+]
+
+function quickActionsFor(reviewMode: ReviewMode): QuickAction[] {
+  return reviewMode === "fiction" ? FICTION_QUICK_ACTIONS : PROSE_QUICK_ACTIONS
+}
 
 export const SCOPE_LABELS: Record<Scope, string> = {
   title: "title",
@@ -383,7 +396,7 @@ export default function BlogCompanion(props: BlogCompanionProps) {
         </div>
 
         <div className="companion-quick">
-          {QUICK_ACTIONS.map((qa) => (
+          {quickActionsFor(reviewMode).slice(0, 5).map((qa) => (
             <button
               key={qa.label}
               type="button"
