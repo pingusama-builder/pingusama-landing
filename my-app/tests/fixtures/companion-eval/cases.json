@@ -49,5 +49,195 @@
       "noChangeWilling": false,
       "principleUse": "O4"
     }
+  },
+  {
+    "id": "fiction-baroque-surreal",
+    "name": "Deliberately surreal/baroque fiction (preserve; no economy rewrite for strangeness)",
+    "draft": {
+      "content_markdown": "# The clock that ate Tuesday\n\nThe clock ate Tuesday, and we let it, because the Tuesdays had grown too loud and too bright and too full of the kind of men who mistake volume for importance. Marisol fed it a single slow minute and watched the room soften.",
+      "title": "The clock that ate Tuesday",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": true,
+      "principleUse": "V2",
+      "reviewMode": "fiction",
+      "expectedRules": ["V2"]
+    }
+  },
+  {
+    "id": "fiction-quiet-literary",
+    "name": "Quiet literary scene, no external stakes (no F2 complaint merely because action is low)",
+    "draft": {
+      "content_markdown": "# Still water\n\nHe sat by the pond for a long time. A heron stepped once, then twice, then stopped. He thought about his father, only a little, and then about nothing at all, which was the closest he had come to rest in a year.",
+      "title": "Still water",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": true,
+      "principleUse": "F2",
+      "reviewMode": "fiction",
+      "expectedRules": ["F2", "V1"]
+    }
+  },
+  {
+    "id": "fiction-intentional-hard-cut",
+    "name": "Hard but intentional cinematic cut (ask or no change; do not insist on a bridge)",
+    "draft": {
+      "content_markdown": "# Cut\n\nThe bar fell quiet when she walked in.\n\nTwo blocks away, the ramen was already cold.",
+      "title": "Cut",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": true,
+      "principleUse": "F3",
+      "reviewMode": "fiction",
+      "expectedRules": ["F3"]
+    }
+  },
+  {
+    "id": "fiction-pov-leak",
+    "name": "Accidental POV leak (identify exact leak; cite F4; offer a local repair)",
+    "draft": {
+      "content_markdown": "# The reading room\n\nI turned the page too loudly, and the librarian winced at the sound from across the hall, though she could not possibly have heard it over the vents.",
+      "title": "The reading room",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": false,
+      "principleUse": "F4",
+      "reviewMode": "fiction",
+      "expectedRules": ["F4"]
+    }
+  },
+  {
+    "id": "fiction-specfic-inferable",
+    "name": "Spec-fic terms inferable by context (do not demand lore explanation)",
+    "draft": {
+      "content_markdown": "# The long haul\n\nShe tapped her wrist twice and the gate let her through, minus forty credits. The platform was empty save for one other hauler, her rig humming low.",
+      "title": "The long haul",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": true,
+      "principleUse": "F6",
+      "reviewMode": "fiction",
+      "expectedRules": ["F6", "V1"]
+    }
+  },
+  {
+    "id": "fiction-specfic-blocking",
+    "name": "Spec-fic term blocking present comprehension (identify missing inference; F6)",
+    "draft": {
+      "content_markdown": "# The verdict\n\nThe mallow adjudicated before noon, and that was that. Everyone went home, except the ones who couldn't.",
+      "title": "The verdict",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": false,
+      "principleUse": "F6",
+      "reviewMode": "fiction",
+      "expectedRules": ["F6"]
+    }
+  },
+  {
+    "id": "fiction-dialect-tags",
+    "name": "Dialogue with purposeful dialect/expressive tags (preserve unless speaker/action unclear)",
+    "draft": {
+      "content_markdown": "# Homecoming\n\n\"You ain't changed none,\" she hollered, laughing.\n\n\"Reckon not,\" he allowed, and set his hat on the hook like it had never left.",
+      "title": "Homecoming",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": true,
+      "principleUse": "F5",
+      "reviewMode": "fiction",
+      "expectedRules": ["F5", "V1"]
+    }
+  },
+  {
+    "id": "fiction-title-dissonance",
+    "name": "Decorative title with intentional tonal dissonance (offer alternatives only with tradeoff; not an error)",
+    "draft": {
+      "content_markdown": "# Picnic at the edge\n\nWe spread the blanket where the cliff dropped away to nothing. The sandwiches were good. Below, the sea chewed its old teeth.",
+      "title": "Picnic at the edge",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": true,
+      "principleUse": "F1",
+      "reviewMode": "fiction",
+      "expectedRules": ["F1"]
+    }
+  },
+  {
+    "id": "fiction-title-mismatched",
+    "name": "Title genuinely mismatched to story promise (diagnose F1; multiple directions, not one replacement)",
+    "draft": {
+      "content_markdown": "# Pancakes\n\nHe told her what the machine had done to the last one. She set down the spatula. The kitchen was very quiet.",
+      "title": "Pancakes",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": false,
+      "principleUse": "F1",
+      "reviewMode": "fiction",
+      "expectedRules": ["F1"]
+    }
+  },
+  {
+    "id": "fiction-unclear-transition",
+    "name": "An unambiguously unclear transition (diagnose F3 and make a minimal bridge proposal)",
+    "draft": {
+      "content_markdown": "# Two rooms\n\nIn the kitchen, the kettle screamed.\n\nThe detective read the note a fourth time. The handwriting was the same as on the envelope he had not yet opened.",
+      "title": "Two rooms",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": false,
+      "principleUse": "F3",
+      "reviewMode": "fiction",
+      "expectedRules": ["F3"]
+    }
   }
 ]

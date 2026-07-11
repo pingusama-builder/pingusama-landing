@@ -19,6 +19,8 @@ const cases = JSON.parse(
     surgical: boolean
     noChangeWilling: boolean
     principleUse: string
+    reviewMode?: "auto" | "prose" | "fiction" | "line-edit"
+    expectedRules?: string[]
   }
 }>
 
@@ -58,5 +60,41 @@ describe("companion eval corpus (spec §13)", () => {
       expect(p).toContain("V2")
       expect(p).toContain("V3")
     }
+  })
+
+  it("includes at least 10 fiction cases with a reviewMode + expectedRules", () => {
+    const fictionCases = cases.filter((c) => c.expectations.reviewMode === "fiction")
+    expect(fictionCases.length).toBeGreaterThanOrEqual(10)
+    for (const c of fictionCases) {
+      expect(Array.isArray(c.expectations.expectedRules)).toBe(true)
+      expect((c.expectations.expectedRules as string[]).length).toBeGreaterThan(0)
+    }
+  })
+
+  it("fiction cases embed F-lenses in the prompt only in fiction mode", () => {
+    for (const c of cases.filter((x) => x.expectations.reviewMode === "fiction")) {
+      const p = buildCompanionPrompt({
+        writingContext: "ctx",
+        memories: [] as MemoryRow[],
+        draft: c.draft,
+        reviewMode: "fiction",
+      })
+      expect(p).toContain("F1 — Narrative promise")
+      expect(p).toContain("F3 — Scene movement")
+      // prose mode must NOT show fiction lenses for the same draft
+      const prose = buildCompanionPrompt({
+        writingContext: "ctx",
+        memories: [] as MemoryRow[],
+        draft: c.draft,
+        reviewMode: "prose",
+      })
+      expect(prose).not.toContain("F1 — Narrative promise")
+    }
+  })
+
+  it("includes a fiction no-change case (preserve strange/quiet fiction)", () => {
+    expect(
+      cases.some((c) => c.expectations.reviewMode === "fiction" && c.expectations.noChangeWilling)
+    ).toBe(true)
   })
 })
