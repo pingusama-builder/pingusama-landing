@@ -239,5 +239,24 @@
       "reviewMode": "fiction",
       "expectedRules": ["F3"]
     }
+  },
+  {
+    "id": "fiction-intentional-hard-cut-bilingual-title-foreshadow",
+    "name": "Intentional hard cut + bilingual gloss + title foreshadow (NO CHANGE; do not manufacture defects)",
+    "draft": {
+      "content_markdown": "# The Summon\n\nThe bullets were going to pierce me.\n\nThree bullets, aiming precisely at my head, my heart and my left eyeball. Cleverly designed to guarantee my instant death.\n\nThere is no way I can escape this. I closed my eyes.\n\nAnd yet…\n\nClink, clink, clink. The sound of metal hitting metal.\n\nI opened my eyes.\n\nA hammer. And the hand holding it. That's what saved me from immediate death.\n\n\"Es-tu blessé (Are you hurt)?\" The male's voice was deep and calm, concerned but firm.",
+      "title": "The Summon",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": true,
+      "principleUse": "F3",
+      "reviewMode": "fiction",
+      "expectedRules": ["F3", "F5", "F1"]
+    }
   }
 ]

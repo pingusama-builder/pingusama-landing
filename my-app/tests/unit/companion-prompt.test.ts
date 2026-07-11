@@ -224,4 +224,30 @@ describe("buildCompanionPrompt", () => {
     expect(p).not.toContain("F1 — Narrative promise")
     expect(p).not.toMatch(/issue propose_edit only when the failure is locally repairable/i)
   })
+
+  it("in fiction mode emits the fiction contrastive examples block", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    expect(p).toContain("## Fiction contrastive examples")
+    // Each of the three contrastive pairs (advisor-approved remedy).
+    expect(p).toContain("unexplained intervention is suspense")
+    expect(p).toContain("Treat code-switching, translation, and inline glosses as deliberate voice")
+    expect(p).toContain("meaning may remain intentionally withheld")
+  })
+
+  it("in fiction mode the F5 lens names code-switching/translation/dialect/inline glosses", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    expect(p).toContain("code-switching, translation, dialect, and inline glosses as possible voice")
+  })
+
+  it("omits the fiction contrastive examples in prose / line-edit / auto modes", () => {
+    for (const mode of ["prose", "line-edit", "auto"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).not.toContain("## Fiction contrastive examples")
+      expect(p).not.toContain("unexplained intervention is suspense")
+    }
+    // auto also = no reviewMode arg
+    const pAuto = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
+    expect(pAuto).not.toContain("## Fiction contrastive examples")
+    expect(pAuto).not.toContain("unexplained intervention is suspense")
+  })
 })

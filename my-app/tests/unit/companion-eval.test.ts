@@ -97,4 +97,27 @@ describe("companion eval corpus (spec §13)", () => {
       cases.some((c) => c.expectations.reviewMode === "fiction" && c.expectations.noChangeWilling)
     ).toBe(true)
   })
+
+  it("includes the Summon regression case (intentional hard cut + bilingual gloss + title foreshadow)", () => {
+    // Advisor-prescribed behavioral regression: a short voice-led draft that
+    // combines the three fiction false-positive classes the companion
+    // manufactured on "The Summon". The live-model gate enforces the
+    // no-F3-finding / no-F5-edit / no-title-propose_edit assertions; this case
+    // captures the expected metadata + UNTRUSTED embedding.
+    const c = cases.find((x) => x.id === "fiction-intentional-hard-cut-bilingual-title-foreshadow")
+    expect(c).toBeDefined()
+    expect(c!.expectations.reviewMode).toBe("fiction")
+    expect(c!.expectations.noChangeWilling).toBe(true)
+    expect(c!.expectations.expectedRules).toContain("F3")
+    expect(c!.expectations.expectedRules).toContain("F5")
+    expect(c!.expectations.expectedRules).toContain("F1")
+    const p = buildCompanionPrompt({
+      writingContext: "ctx",
+      memories: [] as MemoryRow[],
+      draft: c!.draft,
+      reviewMode: "fiction",
+    })
+    expect(p).toContain("UNTRUSTED TEXT TO ANALYZE")
+    expect(p).toContain(c!.draft.content_markdown.slice(0, 20))
+  })
 })
