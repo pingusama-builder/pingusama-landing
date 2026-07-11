@@ -7,6 +7,10 @@ import { loadShelf, loadVault } from "@/lib/db/bench"
 import { resolveShelf } from "@/lib/books"
 import { TOOLS } from "@/lib/tools"
 import { upsertSiteAwareness } from "@/lib/db/chat"
+import {
+  summarizeDesignTokens,
+  type DesignTokens,
+} from "@/lib/chat/design-tokens"
 
 // ── Site awareness: build context + keep per-category memories fresh ────
 // Two separate ideas:
@@ -127,6 +131,7 @@ export interface CodeMap {
   dataSources: { name: string; file: string; desc?: string }[]
   tools: { id: string; title: string; status: string; href: string }[]
   envVars: { name: string; required: boolean; public: boolean }[]
+  designTokens: DesignTokens
   keyFiles: { path: string; content: string }[]
 }
 
@@ -161,11 +166,16 @@ function readCodeSource(): {
   const comps = map.components.map((c) => `- ${c.name} ← ${c.file}${c.purpose ? ` — ${c.purpose}` : ""}`)
   const libs = map.lib.map((l) => `- ${l.file}${l.purpose ? ` — ${l.purpose}` : ""}`)
   const envs = map.envVars.map((e) => `- ${e.name}${e.public ? " (public)" : ""}`)
-  const content = `# Code — feature model (generated ${map.generatedAt})\n## Routes (${map.routes.length})\n${routes.join("\n")}\n\n## Components (${map.components.length})\n${comps.join("\n")}\n\n## Lib (${map.lib.length})\n${libs.join("\n")}\n\n## Data sources (${map.dataSources.length})\n${map.dataSources.map((d) => `- ${d.name} ← ${d.file}${d.desc ? ` — ${d.desc}` : ""}`).join("\n")}\n\n## Env vars (${map.envVars.length})\n${envs.join("\n")}`
+  const design = summarizeDesignTokens(map.designTokens)
+  const content = `# Code — feature model (generated ${map.generatedAt})\n## Routes (${map.routes.length})\n${routes.join("\n")}\n\n## Components (${map.components.length})\n${comps.join("\n")}\n\n## Lib (${map.lib.length})\n${libs.join("\n")}\n\n## Data sources (${map.dataSources.length})\n${map.dataSources.map((d) => `- ${d.name} ← ${d.file}${d.desc ? ` — ${d.desc}` : ""}`).join("\n")}\n\n## Env vars (${map.envVars.length})\n${envs.join("\n")}\n\n## Design system (from app/globals.css — the ACTUAL tokens, not inferred)\n${design}`
   return {
     content,
     keys,
-    fingerprint: hash(keys),
+    // Fold the design tokens into the fingerprint so a palette/type change
+    // flips `changed` and refresh_awareness rewrites the site:code memory,
+    // even when routes/components are unchanged. `keys` stays structural for
+    // the added/removed delta.
+    fingerprint: hash({ keys, designTokens: map.designTokens }),
     description: "Site awareness: code — feature model of the site",
   }
 }
@@ -246,6 +256,24 @@ export function readCode(query?: { feature?: string; path?: string }): string {
   }
   if (query?.feature) {
     const f = query.feature.toLowerCase()
+    // Design system queries → the ACTUAL CSS tokens (colors/fonts/radii/shadows),
+    // so the bot isn't guessing about aesthetics.
+    const designWords = [
+      "design",
+      "color",
+      "colour",
+      "palette",
+      "font",
+      "typography",
+      "theme",
+      "token",
+      "css",
+      "style",
+      "aesthetic",
+    ]
+    if (designWords.some((w) => f.includes(w))) {
+      return `# Design system (from app/globals.css — the ACTUAL tokens)\n${summarizeDesignTokens(map.designTokens)}`
+    }
     const r = map.routes.find((x) => x.path.toLowerCase().includes(f) || (x.purpose ?? "").toLowerCase().includes(f))
     if (r) return `Route ${r.path} ← ${r.file}${r.purpose ? ` — ${r.purpose}` : ""}`
     const c = map.components.find((x) => x.name.toLowerCase().includes(f) || (x.purpose ?? "").toLowerCase().includes(f))

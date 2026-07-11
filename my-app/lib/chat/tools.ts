@@ -111,17 +111,17 @@ export const CHAT_TOOLS: MistralTool[] = [
     type: "function",
     function: {
       name: "read_code",
-      description: `Look up a feature in the site's prebuilt code map to understand how the site is built (routes, components, lib modules, data sources, env var names). Use when the user asks about the site's implementation or a new feature. Returns structural info (path, purpose, exports) and, for small key files, full content. Cannot read arbitrary files or secrets.`,
+      description: `Look up how the site is built from its prebuilt code map (routes, components, lib modules, data sources, env var names) AND see the real design system. Use when the user asks about the site's implementation OR its visual design. For design/aesthetics questions, pass feature:"colors" (or "fonts"/"design"/"palette") to get the ACTUAL CSS tokens from app/globals.css — colors, fonts, radii, shadows — so you're not guessing. For component markup, pass path:"components/Wheel.tsx" (or app/globals.css) to read the real source. Returns structural info (path, purpose, exports) and, for allowlisted files, full content. Cannot read arbitrary files or secrets.`,
       parameters: {
         type: "object",
         properties: {
           feature: {
             type: "string",
-            description: "A feature name or keyword to search routes/components/lib by.",
+            description: "A feature name or keyword. Also accepts design keywords: 'colors', 'fonts', 'design', 'palette', 'typography', 'theme', 'css', 'style'.",
           },
           path: {
             type: "string",
-            description: "A specific file path to look up (e.g. 'lib/tools.ts').",
+            description: "A specific file path to read in full (e.g. 'app/globals.css', 'components/Wheel.tsx', 'lib/tools.ts').",
           },
         },
       },

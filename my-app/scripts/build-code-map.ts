@@ -12,17 +12,30 @@
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs"
 import { join, relative, extname, basename } from "node:path"
 import { TOOLS } from "../lib/tools"
+import { parseDesignTokens, type DesignTokens } from "../lib/chat/design-tokens"
 
 const ROOT = join(process.cwd())
 const OUT = join(ROOT, "lib", "data", "code-map.json")
 
-// Full-content allowlist (small, secret-free files the bot may read in full).
+// Full-content allowlist (secret-free files the bot may read in full via
+// read_code). Capped per file to bound the context blast when the bot asks for
+// one. Includes the design layer (globals.css) + the most visual components so
+// the bot can SEE the actual code/markup, not just infer from names.
 const KEY_FILES = [
   "lib/tools.ts",
   "lib/categories.ts",
   "lib/data/shelf.json",
   "lib/data/vault.json",
+  "app/globals.css",
+  "components/Wheel.tsx",
+  "components/PostCard.tsx",
+  "components/BenchWagon.tsx",
+  "components/BenchOverlay.tsx",
 ]
+
+// Cap each keyFile's stored content so a huge file (e.g. globals.css ~1.5k lines)
+// can't dump unbounded text into the model context when the bot asks for it.
+const KEY_FILE_CAP = 16000
 
 function walk(dir: string, acc: string[] = []): string[] {
   let entries: string[]
@@ -153,9 +166,28 @@ function main() {
     }
   }
 
-  const keyFiles = KEY_FILES.map((p) => ({ path: p, content: read(p) ?? "" })).filter(
-    (f) => f.content.length > 0
-  )
+  const keyFiles = KEY_FILES.map((p) => {
+    const raw = read(p) ?? ""
+    if (raw.length <= KEY_FILE_CAP) return { path: p, content: raw }
+    return {
+      path: p,
+      content:
+        raw.slice(0, KEY_FILE_CAP) +
+        `\n\n/* …truncated (${raw.length} chars total; ${KEY_FILE_CAP} shown)… */`,
+    }
+  }).filter((f) => f.content.length > 0)
+
+  // Design system: parse the REAL CSS tokens from globals.css so the bot knows
+  // the actual palette/type/radii instead of guessing.
+  let designTokens: DesignTokens = {
+    colors: [],
+    fonts: [],
+    radii: [],
+    shadows: [],
+    other: [],
+  }
+  const globalsCss = read("app/globals.css")
+  if (globalsCss) designTokens = parseDesignTokens(globalsCss)
 
   const map = {
     generatedAt: new Date().toISOString(),
@@ -165,12 +197,13 @@ function main() {
     dataSources,
     tools,
     envVars,
+    designTokens,
     keyFiles,
   }
 
   writeFileSync(OUT, JSON.stringify(map, null, 2) + "\n", "utf8")
   console.log(
-    `Wrote ${OUT}: ${routes.length} routes, ${components.length} components, ${lib.length} lib, ${tools.length} tools, ${keyFiles.length} key files, ${envVars.length} env vars`
+    `Wrote ${OUT}: ${routes.length} routes, ${components.length} components, ${lib.length} lib, ${tools.length} tools, ${keyFiles.length} key files, ${envVars.length} env vars, ${designTokens.colors.length} colors, ${designTokens.fonts.length} fonts`
   )
 }
 
