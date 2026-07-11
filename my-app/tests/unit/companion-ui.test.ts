@@ -66,3 +66,16 @@ describe("BlogCompanion.tsx — props + a11y (spec §9)", () => {
     expect(file).toMatch(/saveInProgress/)
   })
 })
+
+describe("BlogCompanion.tsx — visibility + reveal (advisor §A)", () => {
+  it("has a Hide/Show companion control and a collapsed bar with pending count", () => {
+    expect(file).toMatch(/Hide companion|Show companion/)
+    expect(file).toContain("companion-collapsed")
+    expect(file).toContain("aria-expanded")
+    expect(file).toContain("pendingCount")
+  })
+  it("renders a Reveal in draft button on body cards and accepts onReveal", () => {
+    expect(file).toContain("Reveal in draft")
+    expect(file).toContain("onReveal")
+  })
+})

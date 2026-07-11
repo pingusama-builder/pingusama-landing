@@ -119,8 +119,21 @@ export default function PostEditor({
     })
   }
 
-  // Added in Task 4; no-op placeholder so the layout compiles here.
-  function revealInDraft(_original: string) {}
+  // Reveal a body proposal's original passage in the draft textarea (scroll + select).
+  // Never automatic — only on an explicit "Reveal in draft" click. Does not edit the draft.
+  function revealInDraft(original: string) {
+    const textarea = textareaRef.current
+    if (!textarea || !original) return
+    const value = textarea.value
+    const idx = value.indexOf(original)
+    if (idx === -1) return
+    textarea.focus()
+    textarea.setSelectionRange(idx, idx + original.length)
+    // Scroll the selection into view (rough midpoint).
+    const lineHeightPx = parseFloat(getComputedStyle(textarea).lineHeight) || 20
+    const lineOffset = value.slice(0, idx).split("\n").length
+    textarea.scrollTop = Math.max(0, lineOffset * lineHeightPx - textarea.clientHeight / 2)
+  }
 
   function updateField(field: keyof PostFormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))

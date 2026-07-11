@@ -33,4 +33,7 @@ describe("PostEditor — BlogCompanion integration (spec §3/§9)", () => {
     expect(file).toContain("editor-main")
     expect(file).toContain('companion-rail')
   })
+  it("passes onReveal to BlogCompanion", () => {
+    expect(file).toContain("onReveal=")
+  })
 })

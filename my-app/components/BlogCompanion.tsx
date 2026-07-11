@@ -57,8 +57,7 @@ export interface BlogCompanionProps {
   onThreadReady: (threadId: string) => void
   onApply: (proposal: Proposal) => Promise<ApplyResult>
   onUndo: (undoTarget: UndoTarget) => void
-  /** Reveal the original text in the draft. Added in Task 4; optional placeholder for Task 3 layout. */
-  onReveal?: (original: string) => void
+  onReveal: (original: string) => void
 }
 
 const MODEL_OPTIONS: { value: "auto" | "small" | "medium" | "large"; label: string }[] = [
@@ -82,8 +81,17 @@ function fieldLabel(field: Proposal["field"]): string {
 }
 
 export default function BlogCompanion(props: BlogCompanionProps) {
-  const { draft, subjectType, subjectKey, threadId, saveInProgress, onThreadReady, onApply, onUndo } =
-    props
+  const {
+    draft,
+    subjectType,
+    subjectKey,
+    threadId,
+    saveInProgress,
+    onThreadReady,
+    onApply,
+    onUndo,
+    onReveal,
+  } = props
   const [input, setInput] = useState("")
   const [scope, setScope] = useState<Scope>("full")
   const [lines, setLines] = useState<ChatLine[]>([])
@@ -94,7 +102,12 @@ export default function BlogCompanion(props: BlogCompanionProps) {
   const [error, setError] = useState<{ message: string; partial: boolean } | null>(null)
   const [liveRegion, setLiveRegion] = useState("")
   const [modelValue, setModelValue] = useState<"auto" | "small" | "medium" | "large">("auto")
+  const [visible, setVisible] = useState(true)
   const abortRef = useRef<AbortController | null>(null)
+
+  const pendingCount = cards.filter(
+    (c) => c.status === "applicable" || c.status === "pending"
+  ).length
 
   // Cancel any in-flight stream if the panel unmounts.
   useEffect(() => {
@@ -287,8 +300,24 @@ export default function BlogCompanion(props: BlogCompanionProps) {
 
   const open = streaming || lines.length > 0
 
+  if (!visible) {
+    return (
+      <section className="companion companion-collapsed" aria-label="Writing companion">
+        <button
+          type="button"
+          className="companion-open-btn"
+          aria-expanded={false}
+          aria-controls="companion-body"
+          onClick={() => setVisible(true)}
+        >
+          Show companion{pendingCount > 0 ? ` (${pendingCount} pending)` : ""}
+        </button>
+      </section>
+    )
+  }
+
   return (
-    <section className="companion" aria-label="Writing companion">
+    <section className="companion" id="companion-body" aria-label="Writing companion">
       <div className="companion-head">
         <span className="companion-title">Writing companion</span>
         <span className="companion-model">model: {modelTier}</span>
@@ -303,6 +332,15 @@ export default function BlogCompanion(props: BlogCompanionProps) {
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
+        <button
+          type="button"
+          className="companion-hide-btn"
+          aria-expanded={true}
+          aria-controls="companion-body"
+          onClick={() => setVisible(false)}
+        >
+          Hide companion
+        </button>
       </div>
 
       <div className="companion-quick">
@@ -391,6 +429,15 @@ export default function BlogCompanion(props: BlogCompanionProps) {
                 <button type="button" onClick={() => handleCopy(p.replacement)}>
                   Copy
                 </button>
+                {p.field === "body" && p.original && (
+                  <button
+                    type="button"
+                    onClick={() => onReveal(p.original!)}
+                    disabled={streaming}
+                  >
+                    Reveal in draft
+                  </button>
+                )}
                 {card.status === "stale" && (
                   <button type="button" onClick={() => handleRefresh(card)}>
                     Refresh
