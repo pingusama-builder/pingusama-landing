@@ -255,6 +255,11 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON public.chat_messages (thr
 
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 
+-- Model visibility + control (companion feature 3/3) — additive.
+ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS model_preference text;
+ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS one_turn_override text;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS model text;
+
 -- Memory bank — the bot's own durable, self-refining scratchpad.
 -- Mirrors Claude Code's memory system: one record per durable fact,
 -- types (user/feedback/project/reference/idea), plus a `site` type for

@@ -43,3 +43,11 @@ CREATE INDEX IF NOT EXISTS idx_chat_memories_active_used
 CREATE INDEX IF NOT EXISTS idx_chat_memories_type
   ON public.chat_memories (type) WHERE active = true;
 ALTER TABLE public.chat_memories ENABLE ROW LEVEL SECURITY;
+
+-- Model visibility + control (companion feature 3/3) — additive.
+-- model_preference: per-thread 'auto'|'small'|'medium'|'large' (null→'auto').
+-- one_turn_override: a 'small'|'medium'|'large' consumed once by the next turn.
+ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS model_preference text;
+ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS one_turn_override text;
+-- model: the modelId that generated each assistant turn (null for user/tool rows).
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS model text;
