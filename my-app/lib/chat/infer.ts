@@ -5,12 +5,13 @@
 // schema validation, and upsert-by-name dedupe all still hold.
 //
 // SECURITY: this module imports only saveMemory (guarded), read-only
-// getMessages/listAllMemories/recallMemories, read-only buildSiteContext (not
-// used here but available), and mistralTurn. NO site-write function is ever
-// imported. Both Mistral passes are pure text calls with NO tools, so the
-// inference LLM has less reach than the chat LLM. A prompt-injected transcript
-// can at worst produce a memory whose text content is odd — it still cannot
-// name site:* (assertPersonalName rejects) and has zero site-write capability.
+// getMessages/listAllMemories/recallMemories, assertions
+// (assertMemoryInput/assertPersonalName), touchInferredAt, and mistralTurn.
+// NO site-write function is ever imported. Both Mistral passes are pure text
+// calls with NO tools, so the inference LLM has less reach than the chat LLM.
+// A prompt-injected transcript can at worst produce a memory whose text
+// content is odd — it still cannot name site:* (assertPersonalName rejects)
+// and has zero site-write capability.
 
 import { mistralTurn } from "@/lib/chat/mistral"
 import { MODEL_TIERS } from "@/lib/chat/models"

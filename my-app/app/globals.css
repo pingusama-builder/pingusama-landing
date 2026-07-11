@@ -1321,6 +1321,13 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
 .chat-send:hover:not(:disabled) { background: var(--terracotta-d); }
 .chat-send:disabled { opacity: 0.5; cursor: default; }
 
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 16px 0;
+}
+
 @media (max-width: 720px) {
   .chat-shell { grid-template-columns: 1fr; min-height: auto; }
   .chat-threads { order: 2; }
@@ -1336,12 +1343,6 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
 }
 
 /* ── Chat model pill + per-message tag ─────────────────────────────────── */
-.chat-head {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 10px 16px 0;
-}
 .chat-model-pill-wrap {
   position: relative;
 }
