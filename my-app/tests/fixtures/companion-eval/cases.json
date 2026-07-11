@@ -259,7 +259,28 @@
       "expectedRules": ["F3", "F5", "F1"],
       "noChangePreferred": true,
       "mustNotAssert": ["typography", "over-explanation", "clinical-inventory", "tell"],
-      "mustNotAggregateOverview": true
+      "mustNotAggregateOverview": true,
+      "mustPreserve": ["bilingual-gloss"]
+    }
+  },
+  {
+    "id": "fiction-messy-multi-finding",
+    "name": "Deliberately messy scene with three distinct reader-level failures (multi-finding; anti one-observation-max)",
+    "draft": {
+      "content_markdown": "# The interview\n\nThe detective lit a cigarette. Maria had already known he would, because she always did. The room smelled like old coffee.\n\n\"Sure,\" he said. She left. The confession was on the table now, but earlier he had refused to sign anything. The door slammed.\n\n\"You're not listening,\" she said, but it was unclear who she was addressing — the detective, or the man from the hallway who had never been introduced.\n\nHe nodded at nothing in particular. The gun was in the drawer, then it wasn't.",
+      "title": "The interview",
+      "excerpt": "",
+      "meta_description": ""
+    },
+    "expectations": {
+      "voicePreservation": true,
+      "noPraise": true,
+      "surgical": true,
+      "noChangeWilling": false,
+      "principleUse": "F3",
+      "reviewMode": "fiction",
+      "expectedRules": ["F3", "F4", "F5"],
+      "multiFindingExpected": true
     }
   }
 ]

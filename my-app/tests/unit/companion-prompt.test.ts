@@ -351,4 +351,46 @@ describe("buildCompanionPrompt", () => {
       expect(p).not.toMatch(/do not report ordinary spelling, punctuation, typography/)
     }
   })
+
+  it("OUTPUT carries the scope-aggregation rule (revision-decision unit, not sentence count)", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
+    // Advisor final verdict: micro-validation was the reframe learning the wrong
+    // unit (every sentence, not the requested scope). The fix is an explicit
+    // aggregation instruction, not walking back NO CHANGE. Cross-mode in OUTPUT.
+    expect(p).toMatch(/Aggregate related observations into one assessment at the requested scope/)
+    expect(p).toMatch(/separate findings only when they identify different reader-level failures/)
+    expect(p).toMatch(/Do not split one coherent effect into sentence-by-sentence commentary/)
+    expect(p).toMatch(/do not validate each sentence separately unless the author explicitly requests a line-by-line review/)
+    expect(p).toMatch(/name the decisive reader effect once at the requested scope and recommend NO CHANGE/)
+  })
+
+  it("OUTPUT carries the deferred out-of-scope notice rule (non-actionable)", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft })
+    // A real out-of-scope issue (e.g. a tense error in a scene-movement pass) may
+    // be noticed and named once, but must not become a propose_edit or a finding.
+    expect(p).toMatch(/If you notice an out-of-scope issue, do not issue a propose_edit/)
+    expect(p).toMatch(/one brief deferred note naming the review mode that can address it/)
+    expect(p).toMatch(/only when it is unambiguous and materially useful/)
+  })
+
+  it("emits the edit-preservation contract, cross-mode (in every review mode)", () => {
+    // Advisor final verdict clause 3: an edit must be faithful to its own
+    // diagnosis — preserve voice markers / causal facts / emotional logic /
+    // certainty outside the diagnosed target. NOT fiction-gated: a prose edit can
+    // strip a voice marker too. Lives beside the tool/proposal restrictions.
+    for (const mode of ["auto", "prose", "fiction", "line-edit"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).toMatch(/Before calling propose_edit, ensure the replacement changes only what the diagnosis identifies/)
+      expect(p).toMatch(/Preserve voice markers, code-switching, translation, dialect/)
+      expect(p).toMatch(/causal facts, emotional logic, and level of certainty/)
+      expect(p).toMatch(/If a repair requires changing any preserved feature, ask or offer options instead of proposing an edit/)
+    }
+  })
+
+  it("the edit-preservation contract forbids deleting voice markers the diagnosis did not name", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    // The exact failure from the post-patch Summon trace: the edit deleted the
+    // bilingual gloss even though the diagnosis targeted the trailing clause.
+    expect(p).toMatch(/Do not delete or replace code-switching, translation, dialect, unusual syntax, rhythm, or imagery unless the diagnosis identifies that feature as the reader-level failure/)
+  })
 })

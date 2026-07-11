@@ -24,6 +24,8 @@ const cases = JSON.parse(
     noChangePreferred?: boolean
     mustNotAssert?: string[]
     mustNotAggregateOverview?: boolean
+    mustPreserve?: string[]
+    multiFindingExpected?: boolean
   }
 }>
 
@@ -152,5 +154,51 @@ describe("companion eval corpus (spec §13)", () => {
     expect(p).toMatch(/Before emitting each finding, verify all three/)
     expect(p).toMatch(/do not report ordinary spelling, punctuation, typography/)
     expect(p).toContain("NO CHANGE: the precise threat inventory creates grotesque, hyper-literal pressure")
+  })
+
+  it("the Summon case requires the edit to preserve the bilingual gloss (edit-layer integrity)", () => {
+    // Advisor final verdict: the worst post-patch edit diagnosed the trailing
+    // "as if…" clause but silently deleted the "(Are you hurt)" translation —
+    // an edit-layer integrity failure, not a finding-layer false positive. The
+    // case now records that the edit must preserve the gloss, and the prompt
+    // that runs it carries the edit-preservation contract.
+    const c = cases.find((x) => x.id === "fiction-intentional-hard-cut-bilingual-title-foreshadow")
+    expect(c).toBeDefined()
+    expect(c!.expectations.mustPreserve).toContain("bilingual-gloss")
+    const p = buildCompanionPrompt({
+      writingContext: "ctx",
+      memories: [] as MemoryRow[],
+      draft: c!.draft,
+      reviewMode: "fiction",
+    })
+    expect(p).toMatch(/Before calling propose_edit, ensure the replacement changes only what the diagnosis identifies/)
+    expect(p).toMatch(/Preserve voice markers, code-switching, translation, dialect/)
+  })
+
+  it("includes a deliberately messy fiction case that legitimately needs multiple findings (anti one-observation-max)", () => {
+    // Advisor final verdict build-order #4: do not universalize the brevity rule
+    // from one clean voice-forward opening. "Name the decisive effect once" must
+    // not become "one observation maximum." A genuinely messy scene with three
+    // distinct reader-level failures (scrambled action chain F3, POV rupture F4,
+    // unreadable dialogue intent F5) legitimately needs separate findings — the
+    // discriminator is the revision decision, not sentence count.
+    const c = cases.find((x) => x.id === "fiction-messy-multi-finding")
+    expect(c).toBeDefined()
+    expect(c!.expectations.reviewMode).toBe("fiction")
+    expect(c!.expectations.multiFindingExpected).toBe(true)
+    expect(c!.expectations.noChangePreferred).toBeUndefined()
+    expect(c!.expectations.expectedRules).toContain("F3")
+    expect(c!.expectations.expectedRules).toContain("F4")
+    expect(c!.expectations.expectedRules).toContain("F5")
+    const p = buildCompanionPrompt({
+      writingContext: "ctx",
+      memories: [] as MemoryRow[],
+      draft: c!.draft,
+      reviewMode: "fiction",
+    })
+    expect(p).toContain("UNTRUSTED TEXT TO ANALYZE")
+    // The aggregation rule permits multiple findings when they identify
+    // different reader-level failures / revision decisions.
+    expect(p).toMatch(/separate findings only when they identify different reader-level failures/)
   })
 })
