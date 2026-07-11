@@ -1701,7 +1701,7 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   color: var(--walnut-soft);
 }
 .companion-model-btn,
-.companion-model-menu button,
+.companion-model-select,
 .companion-quick-btn,
 .companion-card-actions button,
 .companion-input button,
@@ -1722,21 +1722,6 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
 .companion-input button:disabled {
   opacity: 0.5;
   cursor: default;
-}
-.companion-model-menu {
-  list-style: none;
-  margin: 0;
-  padding: 0.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  border: 1px solid var(--line);
-  border-radius: calc(var(--radius) - 4px);
-  background: var(--bg-card);
-}
-.companion-model-menu button {
-  width: 100%;
-  text-align: left;
 }
 .companion-quick {
   display: flex;
@@ -1870,7 +1855,7 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
 }
 /* Keyboard a11y — visible focus on every interactive control. */
 .companion-model-btn:focus-visible,
-.companion-model-menu button:focus-visible,
+.companion-model-select:focus-visible,
 .companion-quick-btn:focus-visible,
 .companion-card-actions button:focus-visible,
 .companion-input button:focus-visible,

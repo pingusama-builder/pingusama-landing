@@ -31,6 +31,21 @@ describe("BlogCompanion.tsx — content safety (spec §7/§13)", () => {
   })
 })
 
+describe("BlogCompanion.tsx — model selector (native select)", () => {
+  it("uses a native <select> for the answering model, not a custom listbox", () => {
+    expect(file).toContain('companion-model-select')
+    expect(file).toMatch(/<select[\s\S]*?companion-model-select/)
+    // the old custom listbox is gone
+    expect(file).not.toContain('role="listbox"')
+    expect(file).not.toContain('companion-model-menu')
+  })
+  it("keeps the auto/small/medium/large options", () => {
+    for (const label of ["auto", "small", "medium", "large"]) {
+      expect(file).toContain(label)
+    }
+  })
+})
+
 describe("BlogCompanion.tsx — props + a11y (spec §9)", () => {
   it("accepts the spec props (draft/subject/threadId/saveInProgress/onApply/onUndo/onThreadReady)", () => {
     expect(file).toContain("saveInProgress")

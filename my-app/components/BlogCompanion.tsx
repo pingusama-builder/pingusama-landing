@@ -91,7 +91,7 @@ export default function BlogCompanion(props: BlogCompanionProps) {
   const [modelTier, setModelTier] = useState<string>("")
   const [error, setError] = useState<{ message: string; partial: boolean } | null>(null)
   const [liveRegion, setLiveRegion] = useState("")
-  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const [modelValue, setModelValue] = useState<"auto" | "small" | "medium" | "large">("auto")
   const abortRef = useRef<AbortController | null>(null)
 
   // Cancel any in-flight stream if the panel unmounts.
@@ -178,6 +178,9 @@ export default function BlogCompanion(props: BlogCompanionProps) {
         break
       case "model":
         setModelTier(String(evt.tier ?? ""))
+        if (evt.tier === "auto" || evt.tier === "small" || evt.tier === "medium" || evt.tier === "large") {
+          setModelValue(evt.tier)
+        }
         break
       case "content":
         if (typeof evt.delta === "string") {
@@ -275,7 +278,7 @@ export default function BlogCompanion(props: BlogCompanionProps) {
 
   async function handleModelChange(value: "auto" | "small" | "medium" | "large") {
     if (!threadId) return
-    setModelMenuOpen(false)
+    setModelValue(value)
     const res = await setThreadModelPreferenceAction(threadId, value)
     if (!res.success) setLiveRegion("Could not change model.")
   }
@@ -286,28 +289,18 @@ export default function BlogCompanion(props: BlogCompanionProps) {
     <section className="companion" aria-label="Writing companion">
       <div className="companion-head">
         <span className="companion-title">Writing companion</span>
-        {modelTier && <span className="companion-model">model: {modelTier}</span>}
-        <button
-          type="button"
-          className="companion-model-btn"
-          aria-haspopup="listbox"
-          aria-expanded={modelMenuOpen}
+        <span className="companion-model">model: {modelTier}</span>
+        <select
+          className="companion-model-select"
+          aria-label="Answering model"
+          value={modelValue}
           disabled={streaming || !threadId}
-          onClick={() => setModelMenuOpen((o) => !o)}
+          onChange={(e) => void handleModelChange(e.target.value as "auto" | "small" | "medium" | "large")}
         >
-          model {modelMenuOpen ? "▲" : "▼"}
-        </button>
-        {modelMenuOpen && (
-          <ul className="companion-model-menu" role="listbox">
-            {MODEL_OPTIONS.map((o) => (
-              <li key={o.value} role="option" aria-selected={false}>
-                <button type="button" onClick={() => handleModelChange(o.value)}>
-                  {o.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+          {MODEL_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="companion-quick">
