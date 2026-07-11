@@ -26,7 +26,7 @@ The plan *numbers* tasks 1–14 but the **build order** must satisfy import deps
 | 5 | buildCompanionPrompt | ✅ done | 9d602e0 | built AFTER T6; companion-prompt.ts + test (13 pass); hierarchy regex fixed (deviation #4) |
 | 7 | companion-tools.ts | ✅ done | 3d49078 | deny-by-default allowlist + pure propose_edit + save_writing_preference + set_model delegate. 1 test bug fixed (see deviations) |
 | 8 | chat scoping (chat route + actions) | ✅ done | a78dcfc | route 400s on purpose!=chat; getThreadAction→getChatThread. Checkpoint: full suite 271 pass + tsc clean. 1 latent test-mock fix (see deviations) |
-| 9 | /api/blog-companion route + route test | ⬜ pending | — | LARGE — SSE route + companion-route.test.ts |
+| 9 | /api/blog-companion route + route test | ✅ done | 647dd67 | LARGE — SSE route + companion-route.test.ts (21 tests). Checkpoint: full suite 292 pass + tsc clean. 1 test fixture fix (see deviations) |
 | 10 | BlogCompanion.tsx + UI test | ⬜ pending | — | LARGE — static-grep UI test |
 | 11 | PostEditor integration + test | ⬜ pending | — | static-grep integration test |
 | 12 | Companion CSS + test | ⬜ pending | — | append .companion* to globals.css; static-grep css test |
@@ -43,27 +43,28 @@ Baseline before branch: 198 tests. After T1–T6: 219 + 19 (blog-proposals) + ..
 4. **T5 test — hierarchy regex**: plan regexes `/N\.\s*Phrase/` don't match `N. **Phrase**` (markdown bold `**` between number and text). **Fix:** `/N\.\s*\**Phrase/` (allow the `*` chars) for all 5 levels. (companion-prompt.test.ts)
 5. **T7 test — missing `await` on sync dispatch tests**: plan's three "refuses X" tests call `executeCompanionToolCall(...)` WITHOUT `await` even though it's `async` (returns a Promise), so `r.content` was undefined → `.toMatch()` threw "expects a string, got undefined". **Fix:** make those three `it` callbacks `async` and `await` the call. The async tests (routes propose_edit, set_model, save_writing_preference) were already correct. (companion-tools.test.ts)
 6. **T8 checkpoint — latent `chat-memory.test.ts` mock missed in T2**: running `npx tsc --noEmit` at the Task 8 checkpoint surfaced `chat-memory.test.ts:410` — the `baseThread` ChatThread factory omitted the three discriminator fields added in Task 2 (`purpose/subject_type/subject_key`), so its returned object had `purpose?: string | undefined` not `purpose: string`. Latent since T2 (tsc wasn't run on tests until now; `npm run build` / next build doesn't typecheck test files, so the build stayed green). **Fix:** add `purpose: "chat"`, `subject_type: null`, `subject_key: null` to the factory (one fix covers all derived mocks in the file). Bundled into the T8 commit. Not a plan-spec deviation — a missed test fixture from T2. (chat-memory.test.ts)
+7. **T9 test — proposal `range.start` index off by the heading prefix**: the proposal-event test's DRAFT was `content_markdown: "# Draft\n\nThe opening repeats the title."` and asserted `range.start === 0`, but the `# Draft\n\n` prefix is 9 chars so the phrase occurs at index 9 (the server-computed range is correct; the assertion was wrong). Same class of fixture/index bug as deviation #3 (T6). The plan's intent was the phrase at index 0. **Fix:** drop the heading prefix — `content_markdown: "The opening repeats the title."` — so the phrase sits at index 0 and `range.start === 0` holds. No other test depends on the draft body content. (companion-route.test.ts)
 
 ## RESUME HERE
 
-**Current in-flight task: Task 9 (companion route — /api/blog-companion, SSE, admin-gated, origin-checked).** No work started yet on Task 9. Tasks 1–8 done. Checkpoint after T8: full suite **271 pass / 21 files**, `npx tsc --noEmit` clean (a latent T2 test-mock fix was applied + logged as deviation #6). HEAD = a78dcfc.
+**Current in-flight task: Task 10 (BlogCompanion client component).** No work started yet on Task 10. Tasks 1–9 done. Checkpoint after T9 (LARGE): full suite **292 pass / 22 files**, `npx tsc --noEmit` clean. HEAD = 647dd67.
 
-Task 9 is LARGE (plan lines 2490–3828). Read that whole section from disk before starting — it has the full `companion-route.test.ts` (mirrors chat-route.test.ts: authMock/chatMock/writingContextMock/mistralMock + drainSSE/makeRequest helpers) and the full `app/api/blog-companion/route.ts` implementation.
+Task 10 is LARGE (plan lines 3829–4020). Read that whole section from disk before starting — it has the full static-grep `companion-ui.test.ts` and the full `components/BlogCompanion.tsx` (mobile-first sticky bar → overlay drawer ≤720px; quick actions declare a scope; model pill reuses `setThreadModelPreferenceAction`; streams plain-text critique; renders proposals as cards; runtime-validates every `proposal` event via `validateProposal`; Apply disabled while `saveInProgress`; all model text plain text `white-space: pre-wrap`, NEVER `dangerouslySetInnerHTML`; a11y live region + aria-labels).
 
 Creates 2 files:
-- `my-app/app/api/blog-companion/route.ts` — `POST(request): Promise<Response>` SSE stream of `{thread|model|content|proposal|tool|error|done}`. Admin gate + same-origin check; request + size limits; server-authoritative thread resolution by subject (`getCompanionThread`/`getOrCreateCompanionThread`) + per-turn verification; scope-based model routing (`scopeToTier` helper, module-local); persists the REQUEST only (not the draft); MAX_TURNS=3; deny-by-default dispatch (Task 7 allowlist) is the security boundary; `request.signal` propagated to `mistralStream`. Imports NO site-write module + NO generic service client (verified by static-dep test in T14).
-- `my-app/tests/unit/companion-route.test.ts` — new, mirrors chat-route.test.ts.
+- `my-app/components/BlogCompanion.tsx` — `"use client"` component. Props (consumed by PostEditor in T11): `draft: DraftSnapshot`, `subjectType: "post"|"draft"`, `subjectKey: string`, `threadId?: string`, `saveInProgress: boolean`, `onThreadReady: (threadId: string) => void`, `onApply: (proposal: Proposal) => Promise<ApplyResult>`, `onUndo: (undoTarget: UndoTarget) => void`. Also exports `QUICK_ACTIONS: QuickAction[]` and `SCOPE_LABELS` for the static test.
+- `my-app/tests/unit/companion-ui.test.ts` — static-grep (NO DOM testing lib in the repo). Reads `components/BlogCompanion.tsx` as text and asserts: the five spec quick actions + scopes present; NO `dangerouslySetInnerHTML`; `pre-wrap`; the spec props; `validateProposal` import; `aria-label` + live region; `saveInProgress`.
 
-Consumes (all exist): `getCurrentUser`/`isAdmin` (@/lib/auth); `getCompanionThread`/`getOrCreateCompanionThread`/`appendMessage`/`getMessages`/`consumeOneTurnOverride`/`recallMemories`/`MessageRole`/`ChatMessageRow` (@/lib/db/chat); `buildWritingContext` (@/lib/chat/writing-context); `buildCompanionPrompt` (@/lib/chat/companion-prompt); `COMPANION_TOOLS`/`executeCompanionToolCall`/`CompanionDraft` (@/lib/chat/companion-tools); `MODEL_TIERS`/`DEFAULT_TIER`/`ModelTier`/`ModelPreference` (@/lib/chat/models); `mistralStream`/`MistralMessage`/`MistralToolCall` (@/lib/chat/mistral); `DraftSnapshot` (@/lib/blog/proposals).
+Consumes (all exist from T6): `validateProposal`, `applyProposalToForm`, `Proposal`, `DraftSnapshot`, `UndoTarget`, `ApplyResult` from `@/lib/blog/proposals`; `setThreadModelPreferenceAction` from `@/app/admin/chat/actions`.
 
 Next actions, in order:
-1. Read plan §Task 9 from disk (lines 2490–3828) — the whole thing, it's large.
-2. Write `tests/unit/companion-route.test.ts` (failing test first).
-3. `cd my-app && npx vitest run tests/unit/companion-route.test.ts` → expect import failure (route missing).
-4. Write `app/api/blog-companion/route.ts`.
-5. Re-run → expect pass. If a plan test/impl mismatch appears, fix minimally and **log it in `## Deviations from plan`** above (append a numbered item). Watch for the same kinds of bugs seen before (push() arg shape, missing await on async dispatch, regex for bold, fixture counts).
-6. Commit Task 9: `git add my-app/app/api/blog-companion/route.ts my-app/tests/unit/companion-route.test.ts && git commit -m "feat(blog-companion): /api/blog-companion SSE route — admin-gated, origin-checked, deny-by-default"`; capture SHA.
-7. Cadence: mark T9 ✅ + SHA in table; rewrite RESUME HERE → Task 10 (lines 3829–4020); `git commit -m "docs(blog): execution progress — Task 9 done"`; append HANDOFF one-liner. **Task 9 is a LARGE checkpoint boundary** — run the full suite + tsc after, extra-careful progress + HANDOFF commits.
+1. Read plan §Task 10 from disk (lines 3829–4020) — the whole thing, it's large.
+2. Write `tests/unit/companion-ui.test.ts` (failing test first — readFileSync ENOENT).
+3. `cd my-app && npx vitest run tests/unit/companion-ui.test.ts` → expect FAIL (component missing).
+4. Write `components/BlogCompanion.tsx`.
+5. Re-run → expect pass. If a plan test/impl mismatch appears, fix minimally and **log it in `## Deviations from plan`** above (append a numbered item). Watch for: static-grep regex expectations vs actual JSX (e.g. `scope: "full"` vs `scope:"full"` spacing), the same fixture/regex bugs seen before.
+6. Commit Task 10: `git add my-app/components/BlogCompanion.tsx my-app/tests/unit/companion-ui.test.ts && git commit -m "feat(blog-companion): BlogCompanion client component — mobile-first, plain-text-only, a11y"`; capture SHA.
+7. Cadence: mark T10 ✅ + SHA in table; rewrite RESUME HERE → Task 11 (lines 4021–4340); `git commit -m "docs(blog): execution progress — Task 10 done"`; append HANDOFF one-liner. **Task 10 is a LARGE checkpoint boundary** — run the full suite + tsc after, extra-careful progress + HANDOFF commits.
 
 ## After every task (cadence)
 
