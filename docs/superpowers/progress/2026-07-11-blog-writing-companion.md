@@ -25,7 +25,7 @@ The plan *numbers* tasks 1–14 but the **build order** must satisfy import deps
 | 6 | Pure proposal logic (lib/blog/proposals.ts) | ✅ done | 88bec8b | built BEFORE Task 5. 1 plan test bug fixed (see deviations) |
 | 5 | buildCompanionPrompt | ✅ done | 9d602e0 | built AFTER T6; companion-prompt.ts + test (13 pass); hierarchy regex fixed (deviation #4) |
 | 7 | companion-tools.ts | ✅ done | 3d49078 | deny-by-default allowlist + pure propose_edit + save_writing_preference + set_model delegate. 1 test bug fixed (see deviations) |
-| 8 | chat scoping (chat route + actions) | ⬜ pending | — | route rejects purpose!=chat; getThreadAction→getChatThread; listThreadsAction/inferIdleThreadsAction already chat-scoped via T3 |
+| 8 | chat scoping (chat route + actions) | ✅ done | a78dcfc | route 400s on purpose!=chat; getThreadAction→getChatThread. Checkpoint: full suite 271 pass + tsc clean. 1 latent test-mock fix (see deviations) |
 | 9 | /api/blog-companion route + route test | ⬜ pending | — | LARGE — SSE route + companion-route.test.ts |
 | 10 | BlogCompanion.tsx + UI test | ⬜ pending | — | LARGE — static-grep UI test |
 | 11 | PostEditor integration + test | ⬜ pending | — | static-grep integration test |
@@ -42,27 +42,28 @@ Baseline before branch: 198 tests. After T1–T6: 219 + 19 (blog-proposals) + ..
 3. **T6 test — `draft` fixture**: plan had `"# Title\n\nThe opening repeats the title. The opening repeats the title."` (phrase **twice**) + `bodyProposal` range `{0, len}` (wrong — occurrence is at index 9). Server enforces `original` occurs exactly once, so an apply-test draft must have it once. **Fix:** `draft.content_markdown = "# Title\n\nThe opening repeats the title. Some other line."` (phrase once) and `bodyProposal` range = `{ start: 9, end: 9 + original.length }`. (blog-proposals.test.ts)
 4. **T5 test — hierarchy regex**: plan regexes `/N\.\s*Phrase/` don't match `N. **Phrase**` (markdown bold `**` between number and text). **Fix:** `/N\.\s*\**Phrase/` (allow the `*` chars) for all 5 levels. (companion-prompt.test.ts)
 5. **T7 test — missing `await` on sync dispatch tests**: plan's three "refuses X" tests call `executeCompanionToolCall(...)` WITHOUT `await` even though it's `async` (returns a Promise), so `r.content` was undefined → `.toMatch()` threw "expects a string, got undefined". **Fix:** make those three `it` callbacks `async` and `await` the call. The async tests (routes propose_edit, set_model, save_writing_preference) were already correct. (companion-tools.test.ts)
+6. **T8 checkpoint — latent `chat-memory.test.ts` mock missed in T2**: running `npx tsc --noEmit` at the Task 8 checkpoint surfaced `chat-memory.test.ts:410` — the `baseThread` ChatThread factory omitted the three discriminator fields added in Task 2 (`purpose/subject_type/subject_key`), so its returned object had `purpose?: string | undefined` not `purpose: string`. Latent since T2 (tsc wasn't run on tests until now; `npm run build` / next build doesn't typecheck test files, so the build stayed green). **Fix:** add `purpose: "chat"`, `subject_type: null`, `subject_key: null` to the factory (one fix covers all derived mocks in the file). Bundled into the T8 commit. Not a plan-spec deviation — a missed test fixture from T2. (chat-memory.test.ts)
 
 ## RESUME HERE
 
-**Current in-flight task: Task 8 (chat scoping — route + actions).** No work started yet on Task 8. Task 7 (companion-tools.ts) is DONE (commit 3d49078). Running total: baseline 198 + T1–T6 + T7 = 42 tests in the two companion/chat-tools files pass; full suite still green.
+**Current in-flight task: Task 9 (companion route — /api/blog-companion, SSE, admin-gated, origin-checked).** No work started yet on Task 9. Tasks 1–8 done. Checkpoint after T8: full suite **271 pass / 21 files**, `npx tsc --noEmit` clean (a latent T2 test-mock fix was applied + logged as deviation #6). HEAD = a78dcfc.
 
-Read plan lines 2256–2489 (`## Task 8: Scope the chat route + chat actions to chat-purpose threads`). Task 8 modifies 3 files:
-- `my-app/app/api/chat/route.ts` — reject a supplied `threadId` whose thread is `purpose='blog-companion'` with 400 (don't append/create). Nonexistent id still falls through to `createThread` (first-turn UX preserved).
-- `my-app/app/admin/chat/actions.ts` — `getThreadAction` switches from `getThread` to `getChatThread` (returns null for non-chat threads); remove the now-unused `getThread` import, add `getChatThread`.
-- `my-app/tests/unit/chat-route.test.ts` — add `purpose/subject_type/subject_key` to existing thread mocks (1a setupOk createThread+getThread, 1b pinned-preference getThread, 1c one_turn_override getThread) so existing tests stay green; append the new "companion-thread rejection" describe (1d) — 400 + no append + no createThread, plus a first-turn-still-creates test.
+Task 9 is LARGE (plan lines 2490–3828). Read that whole section from disk before starting — it has the full `companion-route.test.ts` (mirrors chat-route.test.ts: authMock/chatMock/writingContextMock/mistralMock + drainSSE/makeRequest helpers) and the full `app/api/blog-companion/route.ts` implementation.
 
-Consumes `getChatThread` from `@/lib/db/chat` (added in T3). `listThreadsAction`/`inferIdleThreadsAction` already chat-scoped via T3 — no change. This is the chat-side half of server-authoritative-threads; companion-side half is Task 9.
+Creates 2 files:
+- `my-app/app/api/blog-companion/route.ts` — `POST(request): Promise<Response>` SSE stream of `{thread|model|content|proposal|tool|error|done}`. Admin gate + same-origin check; request + size limits; server-authoritative thread resolution by subject (`getCompanionThread`/`getOrCreateCompanionThread`) + per-turn verification; scope-based model routing (`scopeToTier` helper, module-local); persists the REQUEST only (not the draft); MAX_TURNS=3; deny-by-default dispatch (Task 7 allowlist) is the security boundary; `request.signal` propagated to `mistralStream`. Imports NO site-write module + NO generic service client (verified by static-dep test in T14).
+- `my-app/tests/unit/companion-route.test.ts` — new, mirrors chat-route.test.ts.
+
+Consumes (all exist): `getCurrentUser`/`isAdmin` (@/lib/auth); `getCompanionThread`/`getOrCreateCompanionThread`/`appendMessage`/`getMessages`/`consumeOneTurnOverride`/`recallMemories`/`MessageRole`/`ChatMessageRow` (@/lib/db/chat); `buildWritingContext` (@/lib/chat/writing-context); `buildCompanionPrompt` (@/lib/chat/companion-prompt); `COMPANION_TOOLS`/`executeCompanionToolCall`/`CompanionDraft` (@/lib/chat/companion-tools); `MODEL_TIERS`/`DEFAULT_TIER`/`ModelTier`/`ModelPreference` (@/lib/chat/models); `mistralStream`/`MistralMessage`/`MistralToolCall` (@/lib/chat/mistral); `DraftSnapshot` (@/lib/blog/proposals).
 
 Next actions, in order:
-1. Read plan §Task 8 from disk (lines 2256–2489).
-2. Edit `tests/unit/chat-route.test.ts`: 1a/1b/1c add the three discriminator fields to the three mock returns; 1d append the rejection describe at EOF.
-3. `cd my-app && npx vitest run tests/unit/chat-route.test.ts` → expect the two new rejection tests FAIL (route doesn't check purpose yet → 200 not 400).
-4. Edit `app/api/chat/route.ts` (thread-resolution block: 400 when `t && t.purpose !== "chat"`).
-5. Edit `app/admin/chat/actions.ts` (import `getChatThread`, drop `getThread`, switch `getThreadAction`).
-6. `npx vitest run tests/unit/chat-route.test.ts tests/unit/chat-actions.test.ts` → expect PASS. If a plan test/impl mismatch appears, fix minimally and **log it in `## Deviations from plan`** above (append a numbered item).
-7. Commit Task 8: `git add my-app/app/api/chat/route.ts my-app/app/admin/chat/actions.ts my-app/tests/unit/chat-route.test.ts && git commit -m "feat(chat): reject companion threads at the chat route + scope getThreadAction to chat"`; capture SHA.
-8. Cadence: mark T8 ✅ + SHA in table; rewrite RESUME HERE → Task 9 (lines 2490–3269); `git commit -m "docs(blog): execution progress — Task 8 done"`; append HANDOFF one-liner. **Task 8 is a checkpoint boundary** — extra-careful progress + HANDOFF commits.
+1. Read plan §Task 9 from disk (lines 2490–3828) — the whole thing, it's large.
+2. Write `tests/unit/companion-route.test.ts` (failing test first).
+3. `cd my-app && npx vitest run tests/unit/companion-route.test.ts` → expect import failure (route missing).
+4. Write `app/api/blog-companion/route.ts`.
+5. Re-run → expect pass. If a plan test/impl mismatch appears, fix minimally and **log it in `## Deviations from plan`** above (append a numbered item). Watch for the same kinds of bugs seen before (push() arg shape, missing await on async dispatch, regex for bold, fixture counts).
+6. Commit Task 9: `git add my-app/app/api/blog-companion/route.ts my-app/tests/unit/companion-route.test.ts && git commit -m "feat(blog-companion): /api/blog-companion SSE route — admin-gated, origin-checked, deny-by-default"`; capture SHA.
+7. Cadence: mark T9 ✅ + SHA in table; rewrite RESUME HERE → Task 10 (lines 3829–4020); `git commit -m "docs(blog): execution progress — Task 9 done"`; append HANDOFF one-liner. **Task 9 is a LARGE checkpoint boundary** — run the full suite + tsc after, extra-careful progress + HANDOFF commits.
 
 ## After every task (cadence)
 
