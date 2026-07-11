@@ -50,21 +50,17 @@ Baseline before branch: 198 tests. After T1–T6: 219 + 19 (blog-proposals) + ..
 
 ## RESUME HERE
 
-**ALL 14 TASKS DONE. The blog writing companion is BUILT on `feat/blog-companion` (base master @ 0021285), NOT deployed / NOT merged — awaiting user review + deploy.**
+**BUILD COMPLETE + DEPLOYED + MERGED + USER SMOKE-TESTED. Now in REFINEMENT phase — awaiting an external advisor's verdict on two refinements.**
 
-Final checkpoint (Task 14) is GREEN:
-- `npm test` → **335 tests passing / 28 files** (baseline 198 → +137 across Tasks 1–14).
-- `npx tsc --noEmit` → clean (exit 0).
-- `npm run build` → green; `/api/blog-companion` route present + `/admin/blog/new` + `/admin/blog/edit/[slug]` render BlogCompanion.
-- `tests/unit/companion-static-deps.test.ts` (8 tests) → green; confirms the companion path imports NO site-write module / NO generic service client / NO `dangerouslySetInnerHTML`, + the `COMPANION_ALLOWED` allowlist is correct.
+The blog writing companion shipped 2026-07-12: merged to master (`0021285..56fbbd5`, pushed to origin), deployed `vercel --prod` `dpl_7J4eWTDweqsEVF4L4mjhQguhoL6S` at https://pingu-tinkering.vercel.app, prod schema migration applied to `kuyytbmmvxcmiyxqsnpe` (purpose/subject_type/subject_key + CHECK + unique partial index, verified; 5 existing threads backfilled to 'chat'). Live anon smoke checks pass (GET / 200, /api/me {"admin":false}, POST /api/blog-companion 401). **The user smoke-tested it live with their admin login — "working as intended."**
 
-HEAD = d864c4d. Commits this session (Tasks 7–14): 3d49078 (T7), a78dcfc (T8), 647dd67 (T9), b533b67 (T10), ba41910 (T11), 2036549 (T12), e7b1d02 (T13), d864c4d (T14). Plus per-task progress commits.
+**Two refinements are now in flight** (user-requested), pending an external advisor's verdict before implementation:
+- **(A) Positioning** — the companion sits *below the whole editor form* inside a 1040px `wrap` (desktop: static 70vh panel; ≤720px: sticky bottom drawer). The user finds "underneath the blog writer" uncomfortable (scroll past the whole form to reach it, can't see findings while editing the body). Options weighed: right-rail side panel (lean) / floating-FAB slide-over / sticky-bottom-at-all-breakpoints.
+- **(B) Fiction-craft `F1–Fn` rubric tier** — the current masters (Orwell/SW/Zinsser) are nonfiction prose-economy only; Orwell is the sole fiction writer and only his essay rules are encoded. The user tested the companion on a finished fiction draft ("Rumors and Ramen", a cyberpunk/noir vignette) — it gave good fiction feedback but from latent LLM knowledge, mis-citing `O3/Z1` for a title-undersells-stakes finding because there's no fiction principle to cite. Candidate masters to distill: King + Bradbury (user-named) + Elmore Leonard, Vonnegut, Gardner, Le Guin (my additions). **Central tension: a fiction tier may over-prescribe and fight principle 1 (originality) — the alternative is to keep the companion prose-only + add fiction quick-actions + fiction eval cases.**
 
-**10 deviations logged** (all test-side or minor token/impl fixes; none change the spec or security boundary): see `## Deviations from plan` above. The last (T14): the static-deps `FORBIDDEN_IDENTIFIERS` guard false-positived on `route.ts`'s SECURITY header comment (which names the forbidden fns to document the boundary); fixed via `stripComments()` so the guard targets code, not comments.
+**The advisor brief is staged at `ai-advisor/refinement-01-positioning-fiction/`** (untracked, on disk for the user to paste into their external advisor) — `PROMPT.md` + `INDEX.md` + `context/01-current-companion-prompt.md` + `context/02-editor-and-companion-ui.md` + `context/03-companion-css-and-layout.md` + `context/04-refinement-inputs.md` (the last bundles the companion's actual output on the fiction draft + the draft itself). Same format as the original build's advisor round (the GPT-5.6 verdict was adopted in full).
 
-**HANDOFF.md** (gitignored, on disk) has the "Blog writing companion: BUILT (awaiting user review + deploy)" section with the deploy instructions + a copyable next-session prompt. HANDOFF is NOT committed (gitignored — per the user's instruction, edit on disk only).
-
-**Nothing left to build.** The next action is the USER's: review the diff vs master, then deploy + merge + apply the additive schema migration per the HANDOFF BUILT section. DO NOT deploy or merge without explicit user confirmation (the standing constraint from the original resume prompt).
+**Next session: the user pastes the advisor's verdict.** Read `ai-advisor/refinement-01-positioning-fiction/PROMPT.md` + its `context/` to reload the design under review, reconcile the verdict into an implementation plan (superpowers:writing-plans skill), then build task-by-task on a **new branch off master** (master is now at `56fbbd5`). DO NOT deploy or merge without explicit user confirmation. Preserve the settled security boundary (no site-write import in the companion path; deny-by-default dispatch allowlist; `propose_edit` pure; publish path XSS-sanitized), Fraunces/Nunito tokens, the 390px mobile rule, and the two load-bearing product principles (originality paramount / no sugar-coating) enforced by prompt + example bank + eval corpus — NOT a second model pass, NOT auto text-stripping.
 
 ## After every task (cadence)
 
