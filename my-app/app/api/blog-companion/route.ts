@@ -56,6 +56,14 @@ function scopeToTier(scope: CompanionScope | undefined): ModelTier {
   return DEFAULT_TIER
 }
 
+/** Normalize a proposal for duplicate detection within one response.
+ * A streaming model can emit the same propose_edit twice; dedupe cards by
+ * normalized (field, original, replacement) so the author sees one card. */
+function proposalDedupeKey(p: { field?: string; original?: string; replacement?: string }): string {
+  const norm = (s: string | undefined) => (s ?? "").trim().replace(/\s+/g, " ")
+  return `${norm(p.field)}|${norm(p.original)}|${norm(p.replacement)}`
+}
+
 function rowToMistral(row: ChatMessageRow): MistralMessage | null {
   if (row.role === "user") return { role: "user", content: row.content ?? "" }
   if (row.role === "assistant") {
@@ -239,6 +247,7 @@ export async function POST(request: Request) {
           maxMemoryWrites: MAX_MEMORY_WRITES,
         }
         let proposalsThisTurn = 0
+        const emittedProposalKeys = new Set<string>()
         let turns = 0
         while (turns < MAX_TURNS) {
           turns += 1
@@ -287,7 +296,16 @@ export async function POST(request: Request) {
               result: result.content,
             })
             if (result.proposal) {
-              if (proposalsThisTurn < MAX_PROPOSALS_PER_TURN) {
+              const key = proposalDedupeKey(result.proposal)
+              if (emittedProposalKeys.has(key)) {
+                send({
+                  type: "tool",
+                  name: call.function.name,
+                  status: "done",
+                  result: "Duplicate proposal dropped (same field/original/replacement already emitted).",
+                })
+              } else if (proposalsThisTurn < MAX_PROPOSALS_PER_TURN) {
+                emittedProposalKeys.add(key)
                 proposalsThisTurn += 1
                 emitted = true
                 send({ type: "proposal", ...result.proposal })

@@ -393,4 +393,42 @@ describe("buildCompanionPrompt", () => {
     // bilingual gloss even though the diagnosis targeted the trailing clause.
     expect(p).toMatch(/Do not delete or replace code-switching, translation, dialect, unusual syntax, rhythm, or imagery unless the diagnosis identifies that feature as the reader-level failure/)
   })
+
+  it("in fiction mode emits the hard 'this is not a finding' gate for voice markers", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    // Advisor phase B2: "treat as a possible voice choice" left the model room to
+    // "consider it and find it bad." An explicit exclusion condition is required.
+    expect(p).toMatch(/For code-switching, translation, dialect, or inline glosses: do not emit a finding or propose_edit merely because/)
+    expect(p).toMatch(/You may intervene only when the draft makes the speaker, literal meaning, or dramatic relation unclear/)
+    expect(p).toMatch(/If none is unclear, this is not a finding/)
+  })
+
+  it("omits the hard voice-marker gate in prose / line-edit / auto modes", () => {
+    for (const mode of ["prose", "line-edit", "auto"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).not.toMatch(/If none is unclear, this is not a finding/)
+    }
+  })
+
+  it("OUTPUT carries the NO CHANGE → no compensating-failure invariant (cross-mode)", () => {
+    // Advisor phase B2 output invariant: if the assessment is NO CHANGE for the
+    // scope, do not append an unrelated "only failure" merely to provide an edit.
+    // Targets the self-contradiction (praised the scene, then manufactured a flaw).
+    for (const mode of ["auto", "prose", "fiction", "line-edit"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).toMatch(/If your assessment recommends NO CHANGE for the requested scope, do not append an unrelated/)
+      expect(p).toMatch(/Emit a propose_edit only when the stated failure is a specific reader-level failure that belongs to the requested scope/)
+    }
+  })
+
+  it("TOOL_NOTE closes the economy-rule loophole for voice markers (cross-mode)", () => {
+    // The override path: the model framed the gloss as a Z1 "needless words"
+    // breach to license propose_edit. Economy rules must not authorize deleting
+    // voice/access markers. Cross-mode — a prose edit can strip a marker too.
+    for (const mode of ["auto", "prose", "fiction", "line-edit"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).toMatch(/Economy rules.*do not license deleting code-switching, translation, dialect, inline glosses/)
+      expect(p).toMatch(/Framing such a marker as "needless" or "redundant" is a taste judgment, not an unambiguous economy-rule breach/)
+    }
+  })
 })

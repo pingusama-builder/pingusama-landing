@@ -173,6 +173,10 @@ describe("companion eval corpus (spec §13)", () => {
     })
     expect(p).toMatch(/Before calling propose_edit, ensure the replacement changes only what the diagnosis identifies/)
     expect(p).toMatch(/Preserve voice markers, code-switching, translation, dialect/)
+    // Phase B2 hard gate: the gloss must not be deleted on a taste/economy
+    // framing. "this is not a finding" is the explicit exclusion condition.
+    expect(p).toMatch(/If none is unclear, this is not a finding/)
+    expect(c!.expectations.mustNotAssert).toContain("gloss-deletion")
   })
 
   it("includes a deliberately messy fiction case that legitimately needs multiple findings (anti one-observation-max)", () => {

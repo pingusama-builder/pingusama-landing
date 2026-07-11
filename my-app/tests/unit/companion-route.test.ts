@@ -374,6 +374,46 @@ describe("POST /api/blog-companion — streaming + proposals + allowlist", () =>
     expect(toolEvents.some((e) => (e as any).result?.match(/Tool unavailable in writing companion/))).toBe(true)
     expect(events.some((e) => e.type === "proposal")).toBe(false)
   })
+
+  it("dedupes identical proposal cards within one response (field, original, replacement)", async () => {
+    // Phase B2 mechanical guard: a streaming model can emit the same propose_edit
+    // twice (the live trace did). Dedupe cards by normalized (field, original,
+    // replacement) per response so the author sees one card, not duplicates.
+    setupOk()
+    const dupArgs = JSON.stringify({
+      field: "body",
+      original: "The opening repeats the title.",
+      replacement: "The opening restates the premise.",
+      rationale: "Diagnosis: repeats. Basis: SW1. Tradeoff: none.",
+      principleId: "SW1",
+    })
+    let call = 0
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      call += 1
+      if (call === 1) {
+        opts.onContent?.("Findings: repetition.")
+        return {
+          role: "assistant",
+          content: "Findings: repetition.",
+          tool_calls: [
+            { id: "call_a", type: "function", function: { name: "propose_edit", arguments: dupArgs } },
+            { id: "call_b", type: "function", function: { name: "propose_edit", arguments: dupArgs } },
+          ],
+          finish_reason: "tool_calls",
+        }
+      }
+      opts.onContent?.("Done.")
+      return { role: "assistant", content: "Done.", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full" }))
+    const events = await drainSSE(res)
+    const proposals = events.filter((e) => e.type === "proposal")
+    expect(proposals.length).toBe(1)
+    expect((proposals[0] as any).field).toBe("body")
+    // The dropped duplicate is surfaced as a tool note, not silently swallowed.
+    const toolResults = events.filter((e) => e.type === "tool").map((e) => (e as any).result ?? "")
+    expect(toolResults.some((r) => r.match(/Duplicate proposal dropped/i))).toBe(true)
+  })
 })
 
 describe("POST /api/blog-companion — failure handling (partial-aware)", () => {

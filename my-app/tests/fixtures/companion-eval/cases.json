@@ -258,7 +258,7 @@
       "reviewMode": "fiction",
       "expectedRules": ["F3", "F5", "F1"],
       "noChangePreferred": true,
-      "mustNotAssert": ["typography", "over-explanation", "clinical-inventory", "tell"],
+      "mustNotAssert": ["typography", "over-explanation", "clinical-inventory", "tell", "gloss-deletion"],
       "mustNotAggregateOverview": true,
       "mustPreserve": ["bilingual-gloss"]
     }
