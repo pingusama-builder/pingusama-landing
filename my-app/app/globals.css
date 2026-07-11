@@ -1701,6 +1701,7 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   .editor-wrap { width: min(100% - 32px, 1040px); }
   .companion-rail {
     position: sticky;
+    top: auto;
     bottom: 0;
     z-index: 20;
     max-height: 60dvh;

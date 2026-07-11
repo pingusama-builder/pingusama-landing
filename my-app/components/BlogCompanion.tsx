@@ -318,44 +318,46 @@ export default function BlogCompanion(props: BlogCompanionProps) {
 
   return (
     <section className="companion" id="companion-body" aria-label="Writing companion">
-      <div className="companion-head">
-        <span className="companion-title">Writing companion</span>
-        <span className="companion-model">model: {modelTier}</span>
-        <select
-          className="companion-model-select"
-          aria-label="Answering model"
-          value={modelValue}
-          disabled={streaming || !threadId}
-          onChange={(e) => void handleModelChange(e.target.value as "auto" | "small" | "medium" | "large")}
-        >
-          {MODEL_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="companion-hide-btn"
-          aria-expanded={true}
-          aria-controls="companion-body"
-          onClick={() => setVisible(false)}
-        >
-          Hide companion
-        </button>
-      </div>
-
-      <div className="companion-quick">
-        {QUICK_ACTIONS.map((qa) => (
-          <button
-            key={qa.label}
-            type="button"
-            className="companion-quick-btn"
-            disabled={streaming}
-            onClick={() => handleQuickAction(qa)}
-            title={qa.hint}
+      <div className="companion-top">
+        <div className="companion-head">
+          <span className="companion-title">Writing companion</span>
+          <span className="companion-model">model: {modelTier}</span>
+          <select
+            className="companion-model-select"
+            aria-label="Answering model"
+            value={modelValue}
+            disabled={streaming || !threadId}
+            onChange={(e) => void handleModelChange(e.target.value as "auto" | "small" | "medium" | "large")}
           >
-            {qa.label}
+            {MODEL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="companion-hide-btn"
+            aria-expanded={true}
+            aria-controls="companion-body"
+            onClick={() => setVisible(false)}
+          >
+            Hide companion
           </button>
-        ))}
+        </div>
+
+        <div className="companion-quick">
+          {QUICK_ACTIONS.map((qa) => (
+            <button
+              key={qa.label}
+              type="button"
+              className="companion-quick-btn"
+              disabled={streaming}
+              onClick={() => handleQuickAction(qa)}
+              title={qa.hint}
+            >
+              {qa.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="companion-scroll">
