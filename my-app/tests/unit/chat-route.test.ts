@@ -14,6 +14,19 @@ const chatMock = vi.hoisted(() => ({
   getMessages: vi.fn(),
   recallMemories: vi.fn(),
   saveMemory: vi.fn(),
+  consumeOneTurnOverride: vi.fn(),
+}))
+const modelsMock = vi.hoisted(() => ({
+  classifyDifficultyHybrid: vi.fn(),
+  resolveModel: vi.fn(),
+}))
+vi.mock("@/lib/chat/models", () => ({
+  classifyDifficultyHybrid: modelsMock.classifyDifficultyHybrid,
+  resolveModel: modelsMock.resolveModel,
+  MODEL_TIERS: { small: "mistral-small-latest", medium: "mistral-medium-latest", large: "mistral-large-latest" },
+  DEFAULT_TIER: "medium",
+  bandToTier: (b: string) => (b === "easy" ? "small" : b === "hard" ? "large" : "medium"),
+  MODEL_PREFERENCES: ["auto", "small", "medium", "large"],
 }))
 const awarenessMock = vi.hoisted(() => ({
   buildSiteContext: vi.fn(),
@@ -37,6 +50,7 @@ vi.mock("@/lib/db/chat", async () => {
     getMessages: chatMock.getMessages,
     recallMemories: chatMock.recallMemories,
     saveMemory: chatMock.saveMemory,
+    consumeOneTurnOverride: chatMock.consumeOneTurnOverride,
   }
 })
 vi.mock("@/lib/chat/awareness", () => ({
@@ -95,8 +109,18 @@ function setupOk() {
     title: "Hi",
     created_at: "2026-07-11",
     updated_at: "2026-07-11",
+    model_preference: null,
+    one_turn_override: null,
   })
-  chatMock.getThread.mockResolvedValue(null)
+  chatMock.getThread.mockResolvedValue({
+    id: "t-new",
+    title: "Hi",
+    created_at: "2026-07-11",
+    updated_at: "2026-07-11",
+    model_preference: null,
+    one_turn_override: null,
+  })
+  chatMock.consumeOneTurnOverride.mockResolvedValue(null)
   chatMock.appendMessage.mockResolvedValue({
     id: "m1",
     thread_id: "t-new",
@@ -108,6 +132,7 @@ function setupOk() {
   chatMock.getMessages.mockResolvedValue([])
   chatMock.recallMemories.mockResolvedValue([])
   awarenessMock.buildSiteContext.mockResolvedValue("SITE_CTX")
+  modelsMock.classifyDifficultyHybrid.mockResolvedValue({ band: "easy", via: "heuristic" })
 }
 
 describe("POST /api/chat — admin gate", () => {
@@ -226,5 +251,81 @@ describe("POST /api/chat — streaming happy path", () => {
     // assistant(tool-call) + tool(result) + assistant(answer) = 3 assistant/tool rows
     // plus the initial user row = 4 appendMessage calls.
     expect(chatMock.appendMessage).toHaveBeenCalledTimes(4)
+  })
+})
+
+describe("POST /api/chat — model resolution", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("emits a 'model' SSE event and persists the model on the assistant row", async () => {
+    setupOk()
+    modelsMock.classifyDifficultyHybrid.mockResolvedValue({ band: "hard", via: "heuristic" })
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("Answer.")
+      return { role: "assistant", content: "Answer.", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "explain and prove this hard thing" }))
+    const events = await drainSSE(res)
+    const modelEvt = events.find((e) => e.type === "model")
+    expect(modelEvt).toBeDefined()
+    expect((modelEvt as any).tier).toBe("large") // hard → large
+    expect((modelEvt as any).modelId).toBe("mistral-large-latest")
+    // The assistant appendMessage carried the model.
+    const assistantAppend = chatMock.appendMessage.mock.calls.find(
+      (c) => c[0].role === "assistant"
+    )
+    expect(assistantAppend?.[0].model).toBe("mistral-large-latest")
+  })
+
+  it("auto path calls classifyDifficultyHybrid", async () => {
+    setupOk()
+    const res = await POST(makeRequest({ message: "hi" }))
+    await drainSSE(res)
+    expect(modelsMock.classifyDifficultyHybrid).toHaveBeenCalledTimes(1)
+  })
+
+  it("pinned preference skips the classifier", async () => {
+    setupOk()
+    chatMock.getThread.mockResolvedValue({
+      id: "t-new",
+      title: "Hi",
+      created_at: "2026-07-11",
+      updated_at: "2026-07-11",
+      model_preference: "small",
+      one_turn_override: null,
+    })
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ threadId: "t-new", message: "hi" }))
+    const events = await drainSSE(res)
+    const modelEvt = events.find((e) => e.type === "model")
+    expect((modelEvt as any).tier).toBe("small")
+    expect(modelsMock.classifyDifficultyHybrid).not.toHaveBeenCalled()
+  })
+
+  it("consumes a one_turn_override (uses it, then clears it)", async () => {
+    setupOk()
+    chatMock.getThread.mockResolvedValue({
+      id: "t-new",
+      title: "Hi",
+      created_at: "2026-07-11",
+      updated_at: "2026-07-11",
+      model_preference: "auto",
+      one_turn_override: null,
+    })
+    chatMock.consumeOneTurnOverride.mockResolvedValue("large")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ threadId: "t-new", message: "hi" }))
+    const events = await drainSSE(res)
+    const modelEvt = events.find((e) => e.type === "model")
+    expect((modelEvt as any).tier).toBe("large")
+    expect(modelsMock.classifyDifficultyHybrid).not.toHaveBeenCalled()
+    expect(chatMock.consumeOneTurnOverride).toHaveBeenCalledWith("t-new")
   })
 })

@@ -4,6 +4,7 @@ import {
   getThread,
   appendMessage,
   getMessages,
+  consumeOneTurnOverride,
   type MessageRole,
   type ChatMessageRow,
 } from "@/lib/db/chat"
@@ -12,8 +13,15 @@ import { buildSiteContext } from "@/lib/chat/awareness"
 import { buildSystemPrompt } from "@/lib/chat/prompt"
 import { CHAT_TOOLS, executeToolCall, type ToolContext } from "@/lib/chat/tools"
 import {
+  classifyDifficultyHybrid,
+  bandToTier,
+  MODEL_TIERS,
+  DEFAULT_TIER,
+  type ModelTier,
+  type ModelPreference,
+} from "@/lib/chat/models"
+import {
   mistralStream,
-  mistralTurn,
   type MistralMessage,
   type MistralToolCall,
 } from "@/lib/chat/mistral"
@@ -53,9 +61,9 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  let body: { threadId?: string; message?: string }
+  let body: { threadId?: string; message?: string; modelPreference?: ModelPreference }
   try {
-    body = (await request.json()) as { threadId?: string; message?: string }
+    body = (await request.json()) as { threadId?: string; message?: string; modelPreference?: ModelPreference }
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 })
   }
@@ -69,14 +77,38 @@ export async function POST(request: Request) {
 
   // ── Thread ──────────────────────────────────────────────────────────────
   let threadId = body.threadId
+  let modelPreference = body.modelPreference // optional, unused by the UI today (reserved)
   if (threadId) {
     const t = await getThread(threadId)
     if (!t) threadId = undefined
+    else modelPreference = t.model_preference ?? "auto"
   }
   if (!threadId) {
     const t = await createThread(message.slice(0, 60))
     threadId = t.id
+    modelPreference = t.model_preference ?? "auto"
   }
+
+  // ── Resolve the model for this turn (once per request) ──────────────────
+  // A one-turn override (set by the set_model tool last turn) wins and is
+  // consumed. Then a pinned preference. Then auto-routing via the hybrid
+  // classifier. Then the default tier.
+  const override = await consumeOneTurnOverride(threadId)
+  let tier: ModelTier = DEFAULT_TIER
+  let reason = `default (${DEFAULT_TIER})`
+  if (override) {
+    tier = override
+    reason = `override (${override})`
+  } else if (modelPreference && modelPreference !== "auto") {
+    tier = modelPreference
+    reason = `pinned (${modelPreference})`
+  } else {
+    const { band } = await classifyDifficultyHybrid(message)
+    tier = bandToTier(band)
+    reason = `auto → ${tier} (${band})`
+  }
+  const modelId = MODEL_TIERS[tier] ?? MODEL_TIERS[DEFAULT_TIER]
+
   await appendMessage({ threadId, role: "user", content: message })
 
   // ── Build prompt context (once) ────────────────────────────────────────
@@ -105,6 +137,7 @@ export async function POST(request: Request) {
 
       try {
         send({ type: "thread", threadId })
+        send({ type: "model", tier, modelId, reason })
 
         const toolCtx: ToolContext = {
           sourceThreadId: threadId,
@@ -122,6 +155,7 @@ export async function POST(request: Request) {
           const acc = await mistralStream({
             messages: mistralMessages,
             tools: CHAT_TOOLS,
+            model: modelId,
             maxTokens: isFinalGuess ? 1200 : 600,
             onContent: (delta) => {
               lastContent += delta
@@ -135,6 +169,7 @@ export async function POST(request: Request) {
             role: "assistant" as MessageRole,
             content: acc.content,
             toolCalls: acc.tool_calls.length > 0 ? acc.tool_calls : undefined,
+            model: modelId,
           })
 
           // No tool calls → conversation turn complete.
