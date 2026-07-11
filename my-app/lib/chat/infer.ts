@@ -109,7 +109,10 @@ function buildPass1Input(
     const scanned = nonToolCount(rows)
     return { transcript: capTranscript(renderRows(rows).join("\n")), scanned, enough: scanned >= 2 }
   }
-  const idx = rows.findIndex((r) => (r.created_at ?? "") > since)
+  const sinceMs = since ? Date.parse(since) : NaN
+  const idx = rows.findIndex(
+    (r) => !Number.isNaN(sinceMs) && Date.parse(r.created_at ?? "") > sinceMs
+  )
   if (idx === -1) return { transcript: "", scanned: 0, enough: false }
   const slice = rows.slice(idx)
   const tail = rows.slice(Math.max(0, idx - INCREMENTAL_CONTEXT_TAIL), idx)

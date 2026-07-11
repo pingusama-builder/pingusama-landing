@@ -218,4 +218,25 @@ describe("inferMemoriesFromThread (incremental checkpoints)", () => {
     expect(pass1Content).not.toContain("Earlier conversation")
     expect(pass1Content).toContain("hello there")
   })
+
+  it("partitions correctly across the Z-vs-+00:00 timestamp format mismatch", async () => {
+    // last_inferred_at uses Z-suffix millisecond format (touchInferredAt's toISOString);
+    // created_at uses +00:00 microsecond format (Supabase/PostgREST).
+    dbMock.getThread.mockResolvedValue({ id: "t1", last_inferred_at: "2026-07-11T10:00:00.123Z" })
+    dbMock.getMessages.mockResolvedValue([
+      msgAt("user", "old question", "2026-07-11T09:59:59.999999+00:00"),
+      msgAt("assistant", "old answer", "2026-07-11T10:00:00.000000+00:00"),
+      msgAt("user", "new after the stamp", "2026-07-11T10:00:00.500000+00:00"),
+      msgAt("assistant", "new reply", "2026-07-11T10:00:00.600000+00:00"),
+    ])
+    mistralMock.turn.mockResolvedValueOnce({ role: "assistant", content: "[]", tool_calls: [], finish_reason: "stop" })
+    const summary = await inferMemoriesFromThread("t1")
+    const pass1Content = mistralMock.turn.mock.calls[0][0].messages[1].content as string
+    expect(pass1Content).toContain("New messages since last save")
+    expect(pass1Content).toContain("new after the stamp")
+    // The 6-deep tail includes both prior rows as context; the new slice is the 2 newest.
+    expect(pass1Content).toContain("old question") // tail context
+    expect(pass1Content).toContain("old answer")   // tail context
+    expect(summary.scanned).toBe(2) // only the 2 new non-tool messages
+  })
 })
