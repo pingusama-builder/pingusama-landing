@@ -23,7 +23,7 @@ The plan *numbers* tasks 1–14 but the **build order** must satisfy import deps
 | 3 | Thread helpers + writing- guard (db/chat.ts) | ✅ done | a8295e5 | ChatThread +purpose/subject; getChatThread/getCompanionThread/getOrCreateCompanionThread/listChatThreads/listIdleChatThreads; assertWritingPrefName; listThreads+listIdleUnprocessedThreads re-scoped to purpose='chat'. 2 plan bugs fixed (see deviations) |
 | 4 | buildWritingContext | ✅ done | b19b6f5 | lib/chat/writing-context.ts; dropped unused MemoryRow import |
 | 6 | Pure proposal logic (lib/blog/proposals.ts) | ✅ done | 88bec8b | built BEFORE Task 5. 1 plan test bug fixed (see deviations) |
-| 5 | buildCompanionPrompt | 🟡 in flight | (pending) | companion-prompt.ts + test written; hierarchy regex fixed; re-run to confirm green was interrupted |
+| 5 | buildCompanionPrompt | ✅ done | 9d602e0 | built AFTER T6; companion-prompt.ts + test (13 pass); hierarchy regex fixed (deviation #4) |
 | 7 | companion-tools.ts | ⬜ pending | — | imports proposals (T6) + tools + chat |
 | 8 | chat scoping (chat route + actions) | ⬜ pending | — | route rejects purpose!=chat; getThreadAction→getChatThread; listThreadsAction/inferIdleThreadsAction already chat-scoped via T3 |
 | 9 | /api/blog-companion route + route test | ⬜ pending | — | LARGE — SSE route + companion-route.test.ts |
@@ -44,27 +44,18 @@ Baseline before branch: 198 tests. After T1–T6: 219 + 19 (blog-proposals) + ..
 
 ## RESUME HERE
 
-**Current in-flight task: Task 5 (buildCompanionPrompt).**
+**Current in-flight task: Task 7 (companion-tools.ts).** No work started yet on Task 7.
 
-State: `lib/chat/companion-prompt.ts` created; `tests/unit/companion-prompt.test.ts` has buildWritingContext (3, passing) + buildCompanionPrompt (10) blocks; hierarchy regex already fixed (deviation #4). The re-run to confirm all 13 pass was interrupted before completion.
+Read plan lines ~1671–2210 (`## Task 7: Companion tools`). Task 7 creates `lib/chat/companion-tools.ts` + `tests/unit/companion-tools.test.ts`. It imports from `@/lib/chat/tools` (executeToolCall/ToolContext/ToolResult), `@/lib/db/chat` (saveMemory/assertMemoryInput/assertWritingPrefName/MemoryType), `@/lib/blog/proposals` (draftRevision/findOccurrences/types — all exist from T6), `@/lib/chat/mistral` (MistralTool type), `node:crypto`. Produces COMPANION_TOOLS, COMPANION_ALLOWED, CompanionDraft, CompanionToolResult, executeProposal, executeSaveWritingPreference, executeCompanionToolCall.
 
 Next actions, in order:
-1. `cd my-app && npx vitest run tests/unit/companion-prompt.test.ts` — expect **13 passed**. If any fail, read the failure; do not re-apply deviations #1–#4.
-2. Commit Task 5:
-   ```
-   git add my-app/lib/chat/companion-prompt.ts my-app/tests/unit/companion-prompt.test.ts
-   git commit -m "feat(chat): buildCompanionPrompt — masters rubric, 5-level hierarchy, example bank, untrusted draft"
-   ```
-3. Update this progress file: mark Task 5 ✅ with the new commit SHA; rewrite `## RESUME HERE` to point at **Task 7** (companion-tools.ts — read plan lines ~1671–1928). Commit progress:
-   ```
-   git add docs/superpowers/progress/2026-07-11-blog-writing-companion.md
-   git commit -m "docs(blog): execution progress — Task 5 done"
-   ```
-4. Append a one-line status to HANDOFF.md (the "Blog writing companion: BUILDING" section — create if absent). Commit:
-   ```
-   git add HANDOFF.md && git commit -m "docs: HANDOFF status — blog companion Task 5/14 done"
-   ```
-5. Proceed to Task 7.
+1. Read plan §Task 7 from disk (`docs/superpowers/plans/2026-07-11-blog-writing-companion.md`).
+2. Write `tests/unit/companion-tools.test.ts` (failing test first).
+3. `npx vitest run tests/unit/companion-tools.test.ts` → expect import failure (module missing).
+4. Write `lib/chat/companion-tools.ts`.
+5. Re-run → expect pass. If a plan test/impl mismatch appears, fix minimally and **log it in `## Deviations from plan`** above (append a numbered item).
+6. Commit Task 7: `git add my-app/lib/chat/companion-tools.ts my-app/tests/unit/companion-tools.test.ts && git commit -m "feat(chat): companion tools — deny-by-default allowlist + propose_edit + save_writing_preference"`; capture SHA.
+7. Cadence: mark T7 ✅ + SHA in table; rewrite RESUME HERE → Task 8; `git add docs/.../progress/...md && git commit -m "docs(blog): execution progress — Task 7 done"`; append HANDOFF one-liner + commit.
 
 ## After every task (cadence)
 
