@@ -1,0 +1,401 @@
+{
+  "generatedAt": "2026-07-10T19:16:24.055Z",
+  "routes": [
+    {
+      "path": "/admin/bench",
+      "file": "app/admin/bench/page.tsx"
+    },
+    {
+      "path": "/admin/blog/edit/:slug",
+      "file": "app/admin/blog/edit/[slug]/page.tsx"
+    },
+    {
+      "path": "/admin/blog/new",
+      "file": "app/admin/blog/new/page.tsx"
+    },
+    {
+      "path": "/admin/blog",
+      "file": "app/admin/blog/page.tsx"
+    },
+    {
+      "path": "/admin/login",
+      "file": "app/admin/login/page.tsx"
+    },
+    {
+      "path": "/blog/:slug",
+      "file": "app/blog/[slug]/page.tsx"
+    },
+    {
+      "path": "/blog/category/:category",
+      "file": "app/blog/category/[category]/page.tsx"
+    },
+    {
+      "path": "/blog",
+      "file": "app/blog/page.tsx"
+    },
+    {
+      "path": "/blog/search",
+      "file": "app/blog/search/page.tsx"
+    },
+    {
+      "path": "/blog/tag/:tag",
+      "file": "app/blog/tag/[tag]/page.tsx"
+    },
+    {
+      "path": "/",
+      "file": "app/page.tsx"
+    }
+  ],
+  "components": [
+    {
+      "name": "AdminHeader",
+      "file": "components/AdminHeader.tsx"
+    },
+    {
+      "name": "AdminPostTable",
+      "file": "components/AdminPostTable.tsx"
+    },
+    {
+      "name": "BenchEditor",
+      "file": "components/BenchEditor.tsx"
+    },
+    {
+      "name": "BenchOverlay",
+      "file": "components/BenchOverlay.tsx"
+    },
+    {
+      "name": "BenchWagon",
+      "file": "components/BenchWagon.tsx"
+    },
+    {
+      "name": "CoverImage",
+      "file": "components/CoverImage.tsx"
+    },
+    {
+      "name": "DetailPanel",
+      "file": "components/DetailPanel.tsx"
+    },
+    {
+      "name": "Footer",
+      "file": "components/Footer.tsx"
+    },
+    {
+      "name": "Header",
+      "file": "components/Header.tsx"
+    },
+    {
+      "name": "LandingPage",
+      "file": "components/LandingPage.tsx"
+    },
+    {
+      "name": "Pagination",
+      "file": "components/Pagination.tsx"
+    },
+    {
+      "name": "PostBody",
+      "file": "components/PostBody.tsx"
+    },
+    {
+      "name": "PostCard",
+      "file": "components/PostCard.tsx"
+    },
+    {
+      "name": "PostEditor",
+      "file": "components/PostEditor.tsx"
+    },
+    {
+      "name": "Runner",
+      "file": "components/Runner.tsx"
+    },
+    {
+      "name": "SearchBox",
+      "file": "components/SearchBox.tsx"
+    },
+    {
+      "name": "TagList",
+      "file": "components/TagList.tsx"
+    },
+    {
+      "name": "Wheel",
+      "file": "components/Wheel.tsx"
+    }
+  ],
+  "lib": [
+    {
+      "file": "lib/auth.ts",
+      "exports": [
+        "User",
+        "isAdmin",
+        "getCurrentUser",
+        "requireAdmin"
+      ]
+    },
+    {
+      "file": "lib/books.ts",
+      "exports": [
+        "Book",
+        "ShelfEntry",
+        "ShelfData",
+        "VaultData",
+        "ShelfError",
+        "ResolvedShelf",
+        "WarmStatus",
+        "WarmResult",
+        "fetchBookByIsbn",
+        "warmBookToRow",
+        "warmBook",
+        "resolveShelf",
+        "loadShelf"
+      ]
+    },
+    {
+      "file": "lib/categories.ts",
+      "exports": [
+        "BLOG_CATEGORIES",
+        "BlogCategory",
+        "isBlogCategory",
+        "categoryPath"
+      ]
+    },
+    {
+      "file": "lib/chat/awareness.ts",
+      "exports": [
+        "SiteCategory",
+        "CodeMap",
+        "loadCodeMap",
+        "buildSiteContext",
+        "AwarenessRefreshResult",
+        "refreshAwareness",
+        "readCode"
+      ]
+    },
+    {
+      "file": "lib/covers.ts",
+      "exports": [
+        "CoverResult",
+        "fetchCoverBytes"
+      ]
+    },
+    {
+      "file": "lib/date.ts",
+      "exports": [
+        "formatRelativeDate"
+      ]
+    },
+    {
+      "file": "lib/db/bench.ts",
+      "exports": [
+        "loadShelf",
+        "loadVault",
+        "saveShelf",
+        "saveVault"
+      ]
+    },
+    {
+      "file": "lib/db/books.ts",
+      "exports": [
+        "BookRow",
+        "STALE_AFTER_DAYS",
+        "isStale",
+        "getBooksByIsbns",
+        "upsertBook",
+        "mirrorCover",
+        "bookRowToBook"
+      ]
+    },
+    {
+      "file": "lib/db/chat.ts",
+      "exports": [
+        "MemoryType",
+        "MEMORY_TYPES",
+        "MessageRole",
+        "MemoryRow",
+        "ChatThread",
+        "ChatMessageRow",
+        "NAME_RE",
+        "MAX_CONTENT",
+        "MAX_DESCRIPTION",
+        "isValidName",
+        "assertMemoryInput",
+        "assertPersonalName",
+        "RecallOptions",
+        "recallMemories",
+        "SaveMemoryInput",
+        "saveMemory",
+        "updateMemory",
+        "deleteMemory",
+        "SiteAwarenessInput",
+        "upsertSiteAwareness",
+        "getSiteAwareness",
+        "createThread",
+        "getThread",
+        "listThreads",
+        "renameThread",
+        "touchThread",
+        "appendMessage",
+        "getMessages",
+        "listAllMemories",
+        "setMemoryActive",
+        "updateMemoryContent"
+      ]
+    },
+    {
+      "file": "lib/db/posts.ts",
+      "exports": [
+        "PostStatus",
+        "Post",
+        "CreatePostInput",
+        "UpdatePostInput",
+        "getPosts",
+        "getPostBySlug",
+        "getPostById",
+        "getPublishedPostBySlug",
+        "createPost",
+        "updatePost",
+        "deletePost",
+        "searchPosts",
+        "parseAndPreparePost"
+      ]
+    },
+    {
+      "file": "lib/isbn.ts",
+      "exports": [
+        "isValidIsbn13",
+        "normalizeIsbn13"
+      ]
+    },
+    {
+      "file": "lib/markdown.ts",
+      "exports": [
+        "MarkdownParseResult",
+        "parseMarkdown"
+      ]
+    },
+    {
+      "file": "lib/slug.ts",
+      "exports": [
+        "sanitizeSlug",
+        "generateSlug"
+      ]
+    },
+    {
+      "file": "lib/supabase/client.ts",
+      "exports": [
+        "createClient"
+      ]
+    },
+    {
+      "file": "lib/supabase/middleware.ts",
+      "exports": [
+        "updateSession"
+      ]
+    },
+    {
+      "file": "lib/supabase/server.ts",
+      "exports": [
+        "createClient",
+        "createServiceClient"
+      ]
+    },
+    {
+      "file": "lib/supabase/storage.ts",
+      "exports": [
+        "UploadResult",
+        "uploadBlogImage",
+        "getImageExtensionFromType"
+      ]
+    },
+    {
+      "file": "lib/tools.ts",
+      "exports": [
+        "ToolKey",
+        "Tool",
+        "TOOLS"
+      ]
+    }
+  ],
+  "dataSources": [
+    {
+      "name": "bench",
+      "file": "lib/db/bench.ts"
+    },
+    {
+      "name": "books",
+      "file": "lib/db/books.ts"
+    },
+    {
+      "name": "chat",
+      "file": "lib/db/chat.ts"
+    },
+    {
+      "name": "posts",
+      "file": "lib/db/posts.ts"
+    }
+  ],
+  "tools": [
+    {
+      "id": "epub",
+      "title": "sim2trad 簡繁書轉換",
+      "status": "Live",
+      "href": "https://sim2trad-ebook-converter.vercel.app"
+    },
+    {
+      "id": "words",
+      "title": "Name of the Words",
+      "status": "Live",
+      "href": "https://name-of-words.vercel.app"
+    },
+    {
+      "id": "vn",
+      "title": "VN Finder",
+      "status": "Live",
+      "href": "https://vn-finder.vercel.app"
+    },
+    {
+      "id": "sw",
+      "title": "Summoners War Parser",
+      "status": "Live",
+      "href": "https://sw-parser.vercel.app"
+    }
+  ],
+  "envVars": [
+    {
+      "name": "NEXT_PUBLIC_SUPABASE_URL",
+      "required": true,
+      "public": true
+    },
+    {
+      "name": "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      "required": true,
+      "public": true
+    },
+    {
+      "name": "SUPABASE_SERVICE_ROLE_KEY",
+      "required": true,
+      "public": false
+    },
+    {
+      "name": "GOOGLE_BOOKS_API_KEY",
+      "required": true,
+      "public": false
+    }
+  ],
+  "keyFiles": [
+    {
+      "path": "lib/tools.ts",
+      "content": "export type ToolKey = \"epub\" | \"vn\" | \"sw\" | \"words\";\n\nexport interface Tool {\n  eyebrow: string;\n  title: string;\n  nature: string;\n  desc: string;\n  status: string;\n  statusKind: \"live\" | \"local\" | \"wip\";\n  href: string;\n}\n\nexport const TOOLS: Record<ToolKey, Tool> = {\n  epub: {\n    eyebrow: \"the tamer · converter\",\n    title: \"sim2trad 簡繁書轉換\",\n    nature:\n      \"你愛讀《凡人修仙傳》、《詭秘之主》但不喜歡簡體字？ Me too。所以我寫了這個，專為超大網絡小說而設的轉換器，連目錄一起。\",\n    desc: \"Upload EPUB, DOCX, or TXT novels in Simplified Chinese and get split, converted Traditional Chinese output (s2t / s2hk / s2tw / s2twp) as real EPUB or TXT files. MOBI and AZW3 are not supported.\",\n    status: \"Live\",\n    statusKind: \"live\",\n    href: \"https://sim2trad-ebook-converter.vercel.app\",\n  },\n  words: {\n    eyebrow: \"the keeper · vocab\",\n    title: \"Name of the Words\",\n    nature: \"Its true name: catching the words you almost let go.\",\n    desc: \"A pocket vocabulary app. Save a word today, see it again tomorrow, let the ones that matter root themselves and forget the rest.\",\n    status: \"Live\",\n    statusKind: \"live\",\n    href: \"https://name-of-words.vercel.app\",\n  },\n  vn: {\n    eyebrow: \"the compass · discovery\",\n    title: \"VN Finder\",\n    nature: \"Its true name: a small map of stories I kept replaying.\",\n    desc: \"Look up visual novels by character, route, or scene. Built from the data of games I couldn't stop thinking about long after the credits rolled.\",\n    status: \"Live\",\n    statusKind: \"live\",\n    href: \"https://vn-finder.vercel.app\",\n  },\n  sw: {\n    eyebrow: \"the scribe · parser\",\n    title: \"Summoners War Parser\",\n    nature: \"Its true name: reading the runes of a save file.\",\n    desc: \"Upload your Summoners War save file and inspect runes, monsters, and artifacts. The parser reads the JSON export and turns it into a browsable web dashboard.\",\n    status: \"Live\",\n    statusKind: \"live\",\n    href: \"https://sw-parser.vercel.app\",\n  },\n};\n"
+    },
+    {
+      "path": "lib/categories.ts",
+      "content": "export const BLOG_CATEGORIES = [\n  \"Movies\",\n  \"Books/Reading\",\n  \"App Engineering\",\n  \"AI\",\n  \"Fiction\",\n] as const\n\nexport type BlogCategory = (typeof BLOG_CATEGORIES)[number]\n\nexport function isBlogCategory(value: string): value is BlogCategory {\n  return (BLOG_CATEGORIES as readonly string[]).includes(value)\n}\n\nexport function categoryPath(category: string): string {\n  return `/blog/category/${encodeURIComponent(category)}`\n}\n"
+    },
+    {
+      "path": "lib/data/shelf.json",
+      "content": "{\n  \"currentlyReading\": [\n    {\n      \"isbn13\": \"9780307473394\",\n      \"note\": \"On discipline, distance, and the long quiet miles.\"\n    },\n    {\n      \"isbn13\": \"9780593466735\",\n      \"note\": \"Time loops, moon colonies, and the texture of a single moment.\"\n    },\n    {\n      \"isbn13\": \"9781250236210\",\n      \"note\": \"A gentle question: what if we just stopped, for a while?\"\n    }\n  ],\n  \"tbr\": [\n    {\n      \"isbn13\": \"9780593652886\",\n      \"note\": \"For the season of making things slowly.\"\n    },\n    {\n      \"isbn13\": \"9780143111610\",\n      \"note\": \"A classic I have been meaning to sit with properly.\"\n    }\n  ]\n}\n"
+    },
+    {
+      "path": "lib/data/vault.json",
+      "content": "{\n  \"clips\": [\n    {\n      \"title\": \"On building slowly, in public\",\n      \"url\": \"https://x.com/search?q=building%20slowly%20in%20public\",\n      \"source\": \"X · thread\",\n      \"date\": \"2d ago\",\n      \"note\": \"for the \\\"small, stubborn\\\" line of thought\"\n    },\n    {\n      \"title\": \"A translator's notebook\",\n      \"url\": \"https://www.youtube.com/results?search_query=translator+notebook\",\n      \"source\": \"blog\",\n      \"date\": \"1w ago\",\n      \"note\": \"for court language, kept close\"\n    },\n    {\n      \"title\": \"The watercourse way, revisited\",\n      \"url\": \"https://en.wikipedia.org/wiki/Tao_Te_Ching\",\n      \"source\": \"essay\",\n      \"date\": \"3w ago\",\n      \"note\": \"for the space, not for anywhere else\"\n    },\n    {\n      \"title\": \"Small tools, long shadows\",\n      \"url\": \"https://www.youtube.com/results?search_query=small+tools+programming\",\n      \"source\": \"talk\",\n      \"date\": \"1mo ago\",\n      \"note\": \"why tiny utilities outlast big platforms\"\n    },\n    {\n      \"title\": \"Notes on patience from a pixel runner\",\n      \"url\": \"https://gamedev.net/search?query=pixel+animation+patience\",\n      \"source\": \"article\",\n      \"date\": \"2mo ago\",\n      \"note\": \"for the runner, and for the work\"\n    },\n    {\n      \"title\": \"A pattern language for quiet sites\",\n      \"url\": \"https://www.indiehackers.com/search/pattern-language-quiet-sites\",\n      \"source\": \"post\",\n      \"date\": \"3mo ago\",\n      \"note\": \"kept for when the workshop grows a new room\"\n    },\n    {\n      \"title\": \"The craft of clipping without hoarding\",\n      \"url\": \"https://readwise.io/search?q=clipping+without+hoarding\",\n      \"source\": \"newsletter\",\n      \"date\": \"4mo ago\",\n      \"note\": \"a reminder that the vault is a garden, not a warehouse\"\n    }\n  ]\n}\n"
+    }
+  ]
+}

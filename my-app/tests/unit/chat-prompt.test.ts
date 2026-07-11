@@ -1,0 +1,63 @@
+import { describe, it, expect } from "vitest"
+import { buildSystemPrompt } from "@/lib/chat/prompt"
+import type { MemoryRow } from "@/lib/db/chat"
+
+const baseRow = (over: Partial<MemoryRow> = {}): MemoryRow => ({
+  id: "r1",
+  type: "user",
+  name: "prefers-terracotta",
+  description: "likes warm terracotta accents",
+  content: "Prefers terracotta accents.",
+  links: [],
+  source_thread_id: null,
+  fingerprint: null,
+  last_used_at: "2026-07-11T00:00:00Z",
+  last_synced_at: null,
+  created_at: "2026-07-11T00:00:00Z",
+  updated_at: "2026-07-11T00:00:00Z",
+  active: true,
+  ...over,
+})
+
+describe("buildSystemPrompt", () => {
+  it("embeds the live site context", () => {
+    const prompt = buildSystemPrompt({ siteContext: "# SITE CONTEXT\nTool wheel here", memories: [] })
+    expect(prompt).toContain("# SITE CONTEXT")
+    expect(prompt).toContain("Tool wheel here")
+  })
+
+  it("states the hard scope: the bot can only write memories, never the site", () => {
+    const prompt = buildSystemPrompt({ siteContext: "ctx", memories: [] })
+    expect(prompt).toMatch(/can ONLY write to your own memory bank/i)
+    expect(prompt).toMatch(/cannot edit the site/i)
+    // The five tools are enumerated.
+    expect(prompt).toContain("save_memory")
+    expect(prompt).toContain("refresh_awareness")
+    expect(prompt).toContain("read_code")
+  })
+
+  it("separates site awareness from personal memories and renders links", () => {
+    const prompt = buildSystemPrompt({
+      siteContext: "ctx",
+      memories: [
+        baseRow({ type: "site", name: "site:blog", content: "# Blog index" }),
+        baseRow({
+          type: "feedback",
+          name: "be-concise",
+          description: "keep it tight",
+          content: "Be concise.",
+          links: ["prefers-terracotta"],
+        }),
+      ],
+    })
+    expect(prompt).toContain("Site awareness")
+    expect(prompt).toContain("Personal memories")
+    expect(prompt).toContain("[feedback] be-concise")
+    expect(prompt).toContain("[[prefers-terracotta]]")
+  })
+
+  it("shows a placeholder when there are no memories yet", () => {
+    const prompt = buildSystemPrompt({ siteContext: "ctx", memories: [] })
+    expect(prompt).toMatch(/No memories yet/)
+  })
+})

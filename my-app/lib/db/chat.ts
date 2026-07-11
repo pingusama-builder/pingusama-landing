@@ -1,0 +1,459 @@
+import { createServiceClient } from "@/lib/supabase/server"
+
+// ── Memory + conversation store for the site-aware chatbot ──────────────
+// Service-role only (RLS enabled, no public policies). The bot's writes are
+// confined to these tables; site-content write functions are never imported
+// here, so prompt injection cannot reach posts/books/bench/storage.
+
+export type MemoryType =
+  | "user"
+  | "feedback"
+  | "project"
+  | "reference"
+  | "idea"
+  | "site"
+
+export const MEMORY_TYPES: MemoryType[] = [
+  "user",
+  "feedback",
+  "project",
+  "reference",
+  "idea",
+  "site",
+]
+
+export type MessageRole = "user" | "assistant" | "tool"
+
+export interface MemoryRow {
+  id: string
+  type: MemoryType
+  name: string
+  description: string
+  content: string
+  links: string[]
+  source_thread_id: string | null
+  fingerprint: string | null
+  last_used_at: string
+  last_synced_at: string | null
+  created_at: string
+  updated_at: string
+  active: boolean
+}
+
+export interface ChatThread {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatMessageRow {
+  id: string
+  thread_id: string
+  role: MessageRole
+  content: string | null
+  tool_calls: unknown | null
+  created_at: string
+}
+
+function client() {
+  return createServiceClient()
+}
+
+function handle(error: { message: string } | null): void {
+  if (error) throw new Error(error.message)
+}
+
+// ── Validation ──────────────────────────────────────────────────────────
+// Names are kebab slugs (a-z0-9-), optionally namespaced with a colon for
+// site awareness (site:blog). Server validates before any DB call so tool
+// args from the model can never reach SQL unsanitized.
+export const NAME_RE = /^[a-z0-9][a-z0-9:-]{0,79}$/
+export const MAX_CONTENT = 8000
+export const MAX_DESCRIPTION = 300
+
+export function isValidName(name: string): boolean {
+  return NAME_RE.test(name)
+}
+
+export function assertMemoryInput(input: {
+  type: string
+  name: string
+  description?: string
+  content?: string
+  links?: string[]
+}): void {
+  if (!MEMORY_TYPES.includes(input.type as MemoryType)) {
+    throw new Error(`Invalid memory type: ${input.type}`)
+  }
+  if (!isValidName(input.name)) {
+    throw new Error(
+      `Invalid memory name: must be lowercase kebab (a-z 0-9 - :), ≤80 chars`
+    )
+  }
+  if (input.description != null && input.description.length > MAX_DESCRIPTION) {
+    throw new Error(`Description too long (≤${MAX_DESCRIPTION} chars)`)
+  }
+  if (input.content != null && input.content.length > MAX_CONTENT) {
+    throw new Error(`Content too long (≤${MAX_CONTENT} chars)`)
+  }
+  if (input.links && !input.links.every(isValidName)) {
+    throw new Error(`Links must each be a valid memory name`)
+  }
+}
+
+// Personal-memory tools may not touch the auto-maintained site:* namespace.
+// refresh_awareness owns those; this keeps injection from clobbering awareness
+// via save_memory/update_memory.
+export function assertPersonalName(name: string): void {
+  if (name.startsWith("site:")) {
+    throw new Error(
+      `Names starting with "site:" are managed by refresh_awareness, not save_memory/update_memory`
+    )
+  }
+}
+
+// ── Recall (the single chokepoint) ───────────────────────────────────────
+// Query-aware from day one so callers don't change when we swap to filtered /
+// semantic recall later. Today: all active memories, most-recently-used first,
+// with optional type/category filters; bumps last_used_at for what we return.
+export interface RecallOptions {
+  query?: string
+  types?: MemoryType[]
+  category?: string // site category, e.g. "blog" → name "site:blog"
+  includeSite?: boolean // default true
+  limit?: number
+}
+
+export async function recallMemories(
+  opts: RecallOptions = {}
+): Promise<MemoryRow[]> {
+  const limit = opts.limit ?? 40
+  const c = client()
+  let q = c.from("chat_memories").select("*").eq("active", true)
+
+  if (opts.types && opts.types.length > 0) {
+    q = q.in("type", opts.types)
+  }
+  if (opts.category) {
+    q = q.eq("name", `site:${opts.category}`)
+  } else if (opts.includeSite === false) {
+    q = q.neq("type", "site")
+  }
+  // ordering: site awareness first (so the bot always has current site model),
+  // then most-recently-used personal memories.
+  q = q.order("type", { ascending: false }).order("last_used_at", {
+    ascending: false,
+  }).limit(limit)
+
+  const { data, error } = await q
+  handle(error)
+
+  const rows = (data ?? []) as MemoryRow[]
+  // Bump last_used_at for returned rows (feeds future relevance). Best-effort.
+  if (rows.length > 0) {
+    await c
+      .from("chat_memories")
+      .update({ last_used_at: new Date().toISOString() })
+      .in(
+        "id",
+        rows.map((r) => r.id)
+      )
+      .then(({ error: e }) => {
+        if (e) console.warn("recallMemories last_used_at bump failed:", e.message)
+      })
+  }
+  return rows
+}
+
+// ── Memory writes (bot tools) ────────────────────────────────────────────
+export interface SaveMemoryInput {
+  type: MemoryType
+  name: string
+  description: string
+  content: string
+  links?: string[]
+  sourceThreadId?: string
+}
+
+export async function saveMemory(input: SaveMemoryInput): Promise<MemoryRow> {
+  assertMemoryInput(input)
+  assertPersonalName(input.name)
+  const c = client()
+  const now = new Date().toISOString()
+  const row = {
+    type: input.type,
+    name: input.name,
+    description: input.description,
+    content: input.content,
+    links: input.links ?? [],
+    source_thread_id: input.sourceThreadId ?? null,
+    last_used_at: now,
+    updated_at: now,
+    active: true,
+  }
+  // Upsert on (active, name): update if an active memory with this name exists.
+  const { data: existing } = await c
+    .from("chat_memories")
+    .select("id")
+    .eq("name", input.name)
+    .eq("active", true)
+    .maybeSingle()
+  if (existing) {
+    const { data, error } = await c
+      .from("chat_memories")
+      .update(row)
+      .eq("id", existing.id)
+      .select("*")
+      .single()
+    handle(error)
+    return data as MemoryRow
+  }
+  const { data, error } = await c
+    .from("chat_memories")
+    .insert(row)
+    .select("*")
+    .single()
+  handle(error)
+  return data as MemoryRow
+}
+
+export async function updateMemory(
+  name: string,
+  patch: { content?: string; description?: string }
+): Promise<MemoryRow> {
+  assertPersonalName(name)
+  assertMemoryInput({ type: "project", name, ...patch })
+  const c = client()
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (patch.content != null) update.content = patch.content
+  if (patch.description != null) update.description = patch.description
+  const { data, error } = await c
+    .from("chat_memories")
+    .update(update)
+    .eq("name", name)
+    .eq("active", true)
+    .select("*")
+    .maybeSingle()
+  handle(error)
+  if (!data) throw new Error(`No active memory named "${name}" to update`)
+  return data as MemoryRow
+}
+
+export async function deleteMemory(name: string): Promise<void> {
+  assertPersonalName(name)
+  const c = client()
+  const { error } = await c
+    .from("chat_memories")
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq("name", name)
+    .eq("active", true)
+  handle(error)
+}
+
+// ── Site awareness upsert (used by refresh_awareness, deterministic) ──────
+export interface SiteAwarenessInput {
+  category: string // blog | shelf | vault | tools | code
+  description: string
+  content: string
+  keys: string[] // current item keys; diffed vs stored to compute deltas
+  fingerprint: string
+}
+
+export async function upsertSiteAwareness(input: SiteAwarenessInput): Promise<{
+  row: MemoryRow
+  changed: boolean
+  added: string[]
+  removed: string[]
+}> {
+  if (!isValidName(`site:${input.category}`)) {
+    throw new Error(`Invalid site category: ${input.category}`)
+  }
+  const name = `site:${input.category}`
+  const c = client()
+  const { data: existing } = await c
+    .from("chat_memories")
+    .select("*")
+    .eq("name", name)
+    .eq("active", true)
+    .maybeSingle()
+  const prev = existing as MemoryRow | null
+  const oldKeys = prev?.links ?? []
+  const added = input.keys.filter((k) => !oldKeys.includes(k))
+  const removed = oldKeys.filter((k) => !input.keys.includes(k))
+  const changed = !prev || prev.fingerprint !== input.fingerprint
+
+  const now = new Date().toISOString()
+  const contentWithDelta =
+    added.length || removed.length
+      ? `${input.content}\n\n## Recent changes\n${
+          added.length ? `+ Added: ${added.join(", ")}\n` : ""
+        }${removed.length ? `- Removed: ${removed.join(", ")}\n` : ""}`.trim()
+      : input.content
+
+  const row = {
+    type: "site" as MemoryType,
+    name,
+    description: input.description,
+    content: changed ? contentWithDelta : prev?.content ?? contentWithDelta,
+    links: input.keys,
+    fingerprint: input.fingerprint,
+    last_used_at: now,
+    last_synced_at: now,
+    updated_at: now,
+    active: true,
+  }
+
+  if (prev) {
+    const { data, error } = await c
+      .from("chat_memories")
+      .update(row)
+      .eq("id", prev.id)
+      .select("*")
+      .single()
+    handle(error)
+    return { row: data as MemoryRow, changed, added, removed }
+  }
+  const { data, error } = await c
+    .from("chat_memories")
+    .insert(row)
+    .select("*")
+    .single()
+  handle(error)
+  return { row: data as MemoryRow, changed, added, removed }
+}
+
+export async function getSiteAwareness(
+  category: string
+): Promise<MemoryRow | null> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_memories")
+    .select("*")
+    .eq("name", `site:${category}`)
+    .eq("active", true)
+    .maybeSingle()
+  handle(error)
+  return (data as MemoryRow | null) ?? null
+}
+
+// ── Threads + messages ───────────────────────────────────────────────────
+export async function createThread(title = "New conversation"): Promise<ChatThread> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_threads")
+    .insert({ title })
+    .select("*")
+    .single()
+  handle(error)
+  return data as ChatThread
+}
+
+export async function getThread(id: string): Promise<ChatThread | null> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_threads")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle()
+  handle(error)
+  return (data as ChatThread | null) ?? null
+}
+
+export async function listThreads(limit = 50): Promise<ChatThread[]> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_threads")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(limit)
+  handle(error)
+  return (data ?? []) as ChatThread[]
+}
+
+export async function renameThread(id: string, title: string): Promise<void> {
+  const c = client()
+  const { error } = await c
+    .from("chat_threads")
+    .update({ title, updated_at: new Date().toISOString() })
+    .eq("id", id)
+  handle(error)
+}
+
+export async function touchThread(id: string): Promise<void> {
+  const c = client()
+  const { error } = await c
+    .from("chat_threads")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", id)
+  handle(error)
+}
+
+export async function appendMessage(input: {
+  threadId: string
+  role: MessageRole
+  content?: string | null
+  toolCalls?: unknown
+}): Promise<ChatMessageRow> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_messages")
+    .insert({
+      thread_id: input.threadId,
+      role: input.role,
+      content: input.content ?? null,
+      tool_calls: input.toolCalls ?? null,
+    })
+    .select("*")
+    .single()
+  handle(error)
+  await touchThread(input.threadId)
+  return data as ChatMessageRow
+}
+
+export async function getMessages(threadId: string): Promise<ChatMessageRow[]> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_messages")
+    .select("*")
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: true })
+  handle(error)
+  return (data ?? []) as ChatMessageRow[]
+}
+
+// ── Management UI helpers ────────────────────────────────────────────────
+export async function listAllMemories(opts: {
+  type?: MemoryType
+  activeOnly?: boolean
+} = {}): Promise<MemoryRow[]> {
+  const c = client()
+  let q = c.from("chat_memories").select("*")
+  if (opts.type) q = q.eq("type", opts.type)
+  if (opts.activeOnly) q = q.eq("active", true)
+  q = q.order("type", { ascending: true }).order("updated_at", { ascending: false })
+  const { data, error } = await q
+  handle(error)
+  return (data ?? []) as MemoryRow[]
+}
+
+export async function setMemoryActive(id: string, active: boolean): Promise<void> {
+  const c = client()
+  const { error } = await c
+    .from("chat_memories")
+    .update({ active, updated_at: new Date().toISOString() })
+    .eq("id", id)
+  handle(error)
+}
+
+export async function updateMemoryContent(
+  id: string,
+  patch: { content?: string; description?: string }
+): Promise<void> {
+  const c = client()
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (patch.content != null) update.content = patch.content
+  if (patch.description != null) update.description = patch.description
+  const { error } = await c.from("chat_memories").update(update).eq("id", id)
+  handle(error)
+}

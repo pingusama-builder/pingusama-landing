@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Aleo, Fraunces, Nunito } from "next/font/google";
 import "./globals.css";
+import ChatFab from "@/components/ChatFab";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -32,7 +33,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${fraunces.variable} ${aleo.variable} ${nunito.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+        <ChatFab />
+      </body>
     </html>
   );
 }

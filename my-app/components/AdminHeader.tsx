@@ -12,6 +12,7 @@ export default function AdminHeader() {
       <nav>
         <Link href="/admin/blog">blog</Link>
         <Link href="/admin/bench">bench</Link>
+        <Link href="/admin/chat">chat</Link>
         <Link href="/">site</Link>
         <button
           onClick={() => logout()}

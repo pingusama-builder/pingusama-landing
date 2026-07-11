@@ -1,0 +1,199 @@
+import { getCurrentUser, isAdmin } from "@/lib/auth"
+import {
+  createThread,
+  getThread,
+  appendMessage,
+  getMessages,
+  type MessageRole,
+  type ChatMessageRow,
+} from "@/lib/db/chat"
+import { recallMemories } from "@/lib/db/chat"
+import { buildSiteContext } from "@/lib/chat/awareness"
+import { buildSystemPrompt } from "@/lib/chat/prompt"
+import { CHAT_TOOLS, executeToolCall, type ToolContext } from "@/lib/chat/tools"
+import {
+  mistralStream,
+  mistralTurn,
+  type MistralMessage,
+  type MistralToolCall,
+} from "@/lib/chat/mistral"
+
+export const maxDuration = 60
+export const runtime = "nodejs"
+
+const MAX_TURNS = 6
+const MAX_MEMORY_WRITES = 3
+
+function rowToMistral(row: ChatMessageRow): MistralMessage | null {
+  if (row.role === "user") return { role: "user", content: row.content ?? "" }
+  if (row.role === "assistant") {
+    const msg: MistralMessage = {
+      role: "assistant",
+      content: row.content && row.content.length > 0 ? row.content : null,
+    }
+    const tc = row.tool_calls as MistralToolCall[] | null
+    if (tc && tc.length > 0) msg.tool_calls = tc
+    return msg
+  }
+  if (row.role === "tool") {
+    const meta = row.tool_calls as { tool_call_id?: string } | null
+    return {
+      role: "tool",
+      content: row.content ?? "",
+      tool_call_id: meta?.tool_call_id ?? "",
+    }
+  }
+  return null
+}
+
+export async function POST(request: Request) {
+  // ── Admin gate (the API route is NOT under /admin/, so middleware doesn't cover it) ──
+  const user = await getCurrentUser()
+  if (!user || !isAdmin(user)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  let body: { threadId?: string; message?: string }
+  try {
+    body = (await request.json()) as { threadId?: string; message?: string }
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 })
+  }
+  const message = (body.message ?? "").trim()
+  if (!message) {
+    return Response.json({ error: "Missing message" }, { status: 400 })
+  }
+  if (message.length > 4000) {
+    return Response.json({ error: "Message too long (≤4000 chars)" }, { status: 413 })
+  }
+
+  // ── Thread ──────────────────────────────────────────────────────────────
+  let threadId = body.threadId
+  if (threadId) {
+    const t = await getThread(threadId)
+    if (!t) threadId = undefined
+  }
+  if (!threadId) {
+    const t = await createThread(message.slice(0, 60))
+    threadId = t.id
+  }
+  await appendMessage({ threadId, role: "user", content: message })
+
+  // ── Build prompt context (once) ────────────────────────────────────────
+  const [siteContext, memories, historyRows] = await Promise.all([
+    buildSiteContext(),
+    recallMemories({ limit: 40 }),
+    getMessages(threadId),
+  ])
+  const systemPrompt = buildSystemPrompt({ siteContext, memories })
+
+  const history = historyRows.map(rowToMistral).filter((m): m is MistralMessage => m !== null)
+  // Drop the last user message from history (we'll add it fresh to avoid dup),
+  // then re-add it.
+  const mistralMessages: MistralMessage[] = [
+    { role: "system", content: systemPrompt },
+    ...history.slice(0, -1),
+    { role: "user", content: message },
+  ]
+
+  // ── SSE stream + agent loop ─────────────────────────────────────────────
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (obj: Record<string, unknown>) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`))
+
+      try {
+        send({ type: "thread", threadId })
+
+        const toolCtx: ToolContext = {
+          sourceThreadId: threadId,
+          memoryWrites: 0,
+          maxMemoryWrites: MAX_MEMORY_WRITES,
+        }
+
+        let turns = 0
+        let lastContent = ""
+        while (turns < MAX_TURNS) {
+          turns += 1
+          const isFinalGuess = turns === MAX_TURNS
+
+          // Stream this turn's content to the client as it arrives.
+          const acc = await mistralStream({
+            messages: mistralMessages,
+            tools: CHAT_TOOLS,
+            maxTokens: isFinalGuess ? 1200 : 600,
+            onContent: (delta) => {
+              lastContent += delta
+              send({ type: "content", delta })
+            },
+          })
+
+          // Persist this assistant turn (content + any tool_calls).
+          await appendMessage({
+            threadId,
+            role: "assistant" as MessageRole,
+            content: acc.content,
+            toolCalls: acc.tool_calls.length > 0 ? acc.tool_calls : undefined,
+          })
+
+          // No tool calls → conversation turn complete.
+          if (acc.tool_calls.length === 0) {
+            break
+          }
+
+          // Append the assistant tool-call message to the running history.
+          mistralMessages.push({
+            role: "assistant",
+            content: acc.content || null,
+            tool_calls: acc.tool_calls,
+          })
+
+          // Execute each tool call, feed results back.
+          for (const call of acc.tool_calls) {
+            send({ type: "tool", name: call.function.name, status: "running" })
+            const result = await executeToolCall(
+              call.function.name,
+              call.function.arguments,
+              toolCtx
+            )
+            send({
+              type: "tool",
+              name: call.function.name,
+              status: "done",
+              result: result.content,
+            })
+            // Persist the tool result message.
+            await appendMessage({
+              threadId,
+              role: "tool" as MessageRole,
+              content: result.content,
+              toolCalls: { tool_call_id: call.id, name: call.function.name },
+            })
+            mistralMessages.push({
+              role: "tool",
+              content: result.content,
+              tool_call_id: call.id,
+            })
+          }
+        }
+
+        send({ type: "done", threadId })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Chat failed"
+        send({ type: "error", message: msg })
+      } finally {
+        controller.close()
+      }
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "x-vercel-no-loop": "1",
+    },
+  })
+}
