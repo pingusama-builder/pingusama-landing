@@ -260,6 +260,10 @@ ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS model_preference text;
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS one_turn_override text;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS model text;
 
+-- Auto memory inference (companion feature 1/3) — additive.
+ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS last_inferred_at timestamptz NULL;
+ALTER TABLE public.chat_memories ADD COLUMN IF NOT EXISTS source text NULL DEFAULT 'chat';
+
 -- Memory bank — the bot's own durable, self-refining scratchpad.
 -- Mirrors Claude Code's memory system: one record per durable fact,
 -- types (user/feedback/project/reference/idea), plus a `site` type for

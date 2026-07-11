@@ -10,6 +10,7 @@ const baseRow = (over: Partial<MemoryRow> = {}): MemoryRow => ({
   content: "Prefers terracotta accents.",
   links: [],
   source_thread_id: null,
+  source: "chat",
   fingerprint: null,
   last_used_at: "2026-07-11T00:00:00Z",
   last_synced_at: null,

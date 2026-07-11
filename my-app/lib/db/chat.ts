@@ -33,6 +33,7 @@ export interface MemoryRow {
   content: string
   links: string[]
   source_thread_id: string | null
+  source: string
   fingerprint: string | null
   last_used_at: string
   last_synced_at: string | null
@@ -48,6 +49,7 @@ export interface ChatThread {
   updated_at: string
   model_preference: ModelPreference | null
   one_turn_override: ModelTier | null
+  last_inferred_at: string | null
 }
 
 export interface ChatMessageRow {
@@ -178,6 +180,7 @@ export interface SaveMemoryInput {
   content: string
   links?: string[]
   sourceThreadId?: string
+  source?: "chat" | "inference"
 }
 
 export async function saveMemory(input: SaveMemoryInput): Promise<MemoryRow> {
@@ -192,6 +195,7 @@ export async function saveMemory(input: SaveMemoryInput): Promise<MemoryRow> {
     content: input.content,
     links: input.links ?? [],
     source_thread_id: input.sourceThreadId ?? null,
+    source: input.source ?? "chat",
     last_used_at: now,
     updated_at: now,
     active: true,
@@ -512,4 +516,35 @@ export async function updateMemoryContent(
   if (patch.description != null) update.description = patch.description
   const { error } = await c.from("chat_memories").update(update).eq("id", id)
   handle(error)
+}
+
+export async function touchInferredAt(threadId: string): Promise<void> {
+  const c = client()
+  const { error } = await c
+    .from("chat_threads")
+    .update({ last_inferred_at: new Date().toISOString() })
+    .eq("id", threadId)
+  handle(error)
+}
+
+export async function listIdleUnprocessedThreads(opts: {
+  idleMinutes: number
+  limit: number
+}): Promise<Pick<ChatThread, "id" | "title" | "updated_at" | "last_inferred_at">[]> {
+  const cutoff = new Date(Date.now() - opts.idleMinutes * 60_000).toISOString()
+  const c = client()
+  const { data, error } = await c
+    .from("chat_threads")
+    .select("id,title,updated_at,last_inferred_at")
+    .lt("updated_at", cutoff)
+    .order("updated_at", { ascending: false })
+    .limit(opts.limit)
+  handle(error)
+  const rows = (data ?? []) as Array<
+    Pick<ChatThread, "id" | "title" | "updated_at" | "last_inferred_at">
+  >
+  return rows.filter((r) => {
+    if (!r.last_inferred_at) return true
+    return new Date(r.last_inferred_at) < new Date(r.updated_at)
+  })
 }

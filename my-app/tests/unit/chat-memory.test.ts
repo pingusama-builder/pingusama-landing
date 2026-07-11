@@ -39,6 +39,10 @@ class Query {
     this.filters[c] = Array.isArray(v) ? v : [v]
     return this
   }
+  lt(c: string, v: unknown) {
+    ;(this.filters[c] ??= []).push(v)
+    return this
+  }
   order() {
     return this
   }
@@ -90,6 +94,8 @@ import {
   deleteMemory,
   recallMemories,
   upsertSiteAwareness,
+  touchInferredAt,
+  listIdleUnprocessedThreads,
   MAX_CONTENT,
   MAX_DESCRIPTION,
   type MemoryRow,
@@ -112,6 +118,7 @@ const baseRow = (over: Partial<MemoryRow> = {}): MemoryRow => ({
   content: "Prefers terracotta accents across the site.",
   links: [],
   source_thread_id: null,
+  source: "chat",
   fingerprint: null,
   last_used_at: "2026-07-11T00:00:00Z",
   last_synced_at: null,
@@ -407,6 +414,7 @@ const baseThread = (over: Partial<ChatThread> = {}): ChatThread => ({
   updated_at: "2026-07-11T00:00:00Z",
   model_preference: null,
   one_turn_override: null,
+  last_inferred_at: null,
   ...over,
 })
 
@@ -485,5 +493,72 @@ describe("appendMessage (with model)", () => {
     const row = await appendMessage({ threadId: "t1", role: "assistant", content: "hi", model: "mistral-large-latest" })
     expect(row.model).toBe("mistral-large-latest")
     expect(fake.calls[0].payload).toMatchObject({ model: "mistral-large-latest" })
+  })
+})
+
+describe("saveMemory (source provenance)", () => {
+  beforeEach(() => {
+    holder.current = new FakeClient()
+  })
+  it("defaults source to 'chat' when omitted", async () => {
+    const fake = holder.current!
+    fake.push(null)
+    fake.push(baseRow({ name: "prefers-terracotta" }))
+    await saveMemory({
+      type: "user",
+      name: "prefers-terracotta",
+      description: "d",
+      content: "c",
+    })
+    expect(fake.calls[1].payload).toMatchObject({ source: "chat" })
+  })
+  it("writes source 'inference' when provided", async () => {
+    const fake = holder.current!
+    fake.push(null)
+    fake.push(baseRow({ name: "x-name", source: "inference" }))
+    await saveMemory({
+      type: "user",
+      name: "x-name",
+      description: "d",
+      content: "c",
+      source: "inference",
+    })
+    expect(fake.calls[1].payload).toMatchObject({ source: "inference" })
+  })
+})
+
+describe("touchInferredAt", () => {
+  beforeEach(() => {
+    holder.current = new FakeClient()
+  })
+  it("stamps last_inferred_at on the thread", async () => {
+    const fake = holder.current!
+    fake.push(null, null) // update(...).then → { error: null }
+    await touchInferredAt("t1")
+    expect(fake.calls[0].table).toBe("chat_threads")
+    expect(fake.calls[0].payload).toHaveProperty("last_inferred_at")
+    expect(fake.calls[0].filters.id).toContain("t1")
+  })
+})
+
+describe("listIdleUnprocessedThreads", () => {
+  beforeEach(() => {
+    holder.current = new FakeClient()
+  })
+  it("returns only threads with unprocessed content (last_inferred_at null or older than updated_at)", async () => {
+    const fake = holder.current!
+    const threads = [
+      baseThread({ id: "a", updated_at: "2026-07-11T10:00:00Z", last_inferred_at: null }),
+      baseThread({ id: "b", updated_at: "2026-07-11T10:00:00Z", last_inferred_at: "2026-07-11T09:00:00Z" }),
+      baseThread({ id: "c", updated_at: "2026-07-11T10:00:00Z", last_inferred_at: "2026-07-11T11:00:00Z" }), // already processed past updated_at
+    ]
+    fake.push(threads) // list query
+    const out = await listIdleUnprocessedThreads({ idleMinutes: 15, limit: 5 })
+    expect(out.map((t) => t.id)).toEqual(["a", "b"])
+  })
+  it("returns an empty list when nothing matches", async () => {
+    holder.current!.push([])
+    const out = await listIdleUnprocessedThreads({ idleMinutes: 15, limit: 5 })
+    expect(out).toEqual([])
   })
 })
