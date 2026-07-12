@@ -11,11 +11,22 @@ export type ModelTier = "small" | "medium" | "large"
 export type ModelPreference = "auto" | ModelTier
 export type DifficultyBand = "easy" | "medium" | "hard"
 
-export const MODEL_TIERS: Record<ModelTier, string> = {
-  small: "mistral-small-latest",
-  medium: "mistral-medium-latest",
-  large: "mistral-large-latest",
-}
+// Advisor phase B8 Q7 substrate check: when OLLAMA_MODEL is set, every tier
+// resolves to the local Ollama tag (e.g. glm5.2) so the route's reported modelId
+// (surfaced to the UI via the { type: "model" } SSE event) and the model sent
+// to the client both reflect the actual reasoning model in use. When unset,
+// the Mistral tier map is unchanged. This mirrors the client-side coercion in
+// lib/chat/mistral.ts (which also forces the request model to OLLAMA_MODEL
+// regardless of the per-call model id).
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL
+
+export const MODEL_TIERS: Record<ModelTier, string> = OLLAMA_MODEL
+  ? { small: OLLAMA_MODEL, medium: OLLAMA_MODEL, large: OLLAMA_MODEL }
+  : {
+      small: "mistral-small-latest",
+      medium: "mistral-medium-latest",
+      large: "mistral-large-latest",
+    }
 
 export const DEFAULT_TIER: ModelTier = "medium"
 

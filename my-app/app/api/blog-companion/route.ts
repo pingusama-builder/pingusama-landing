@@ -43,6 +43,12 @@ const MAX_MEMORY_WRITES = 3
 const MAX_PROPOSALS_PER_TURN = 8
 const MAX_DRAFT_CHARS = 50_000
 const MAX_MESSAGE_CHARS = 4000
+// Per-turn output cap. Default 800 / 1200 (final) fits Mistral (non-reasoning).
+// Override via env for a reasoning substrate (e.g. Ollama GLM 5.2) whose
+// thinking tokens count against max_tokens — give it room so the response
+// is not consumed by reasoning (advisor phase B8 Q7 substrate check).
+const MAX_TOKENS = Number(process.env.COMPANION_MAX_TOKENS) || 800
+const MAX_TOKENS_FINAL = Number(process.env.COMPANION_MAX_TOKENS_FINAL) || 1200
 
 type CompanionScope = "title" | "sentence" | "opening" | "section" | "full"
 
@@ -276,7 +282,7 @@ export async function POST(request: Request) {
             messages: mistralMessages,
             tools: COMPANION_TOOLS,
             model: modelId,
-            maxTokens: isFinalGuess ? 1200 : 800,
+            maxTokens: isFinalGuess ? MAX_TOKENS_FINAL : MAX_TOKENS,
             signal: request.signal,
             onContent: (delta) => {
               emitted = true

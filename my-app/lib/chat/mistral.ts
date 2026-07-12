@@ -41,6 +41,38 @@ export interface AccumulatedMessage {
 export const MISTRAL_ENDPOINT =
   "https://api.mistral.ai/v1/chat/completions"
 
+// ── Ollama substrate check (advisor phase B8 Q7) ──────────────────────────
+// When OLLAMA_BASE_URL is set, this client routes to a local Ollama instance's
+// OpenAI-compatible /v1/chat/completions endpoint instead of Mistral. The
+// streamed tool-call delta shape Ollama emits matches the OpenAI shape this
+// parser already handles, so the route, the tool dispatcher (allowlist +
+// propose_edit pure), and the prompt are unchanged — only the HTTP destination
+// and model name differ. This is a LOCAL-ONLY experiment (Ollama is not
+// deployable to Vercel); unset OLLAMA_BASE_URL to restore Mistral. The security
+// boundary (no site-write imports, deny-by-default tool allowlist) is
+// untouched — Ollama is reachable only through the same constrained client.
+export function isOllamaBackend(): boolean {
+  return !!process.env.OLLAMA_BASE_URL
+}
+
+function getOllamaModel(): string {
+  const m = process.env.OLLAMA_MODEL
+  if (!m) {
+    throw new Error(
+      "OLLAMA_BASE_URL is set but OLLAMA_MODEL is not. Set OLLAMA_MODEL to the Ollama tag (e.g. glm5.2) you pulled locally."
+    )
+  }
+  return m
+}
+
+function resolveEndpoint(): string {
+  if (isOllamaBackend()) {
+    const base = process.env.OLLAMA_BASE_URL!.replace(/\/+$/, "")
+    return `${base}/v1/chat/completions`
+  }
+  return MISTRAL_ENDPOINT
+}
+
 export function getMistralApiKey(): string {
   const key = process.env.MISTRAL_API_KEY
   if (!key) {
@@ -66,8 +98,14 @@ interface CallOptions {
 }
 
 async function callMistral(opts: CallOptions, stream: boolean): Promise<AccumulatedMessage> {
+  const ollama = isOllamaBackend()
+  // On the Ollama path, coerce every caller's model to the local Ollama tag so a
+  // mistral tier id (mistral-large-latest) or the inference model never reaches
+  // Ollama (which would 404 on an unknown model). On the Mistral path, keep the
+  // per-call model override / default resolution.
+  const model = ollama ? getOllamaModel() : opts.model ?? getMistralModel()
   const body: Record<string, unknown> = {
-    model: opts.model ?? getMistralModel(),
+    model,
     messages: opts.messages,
     max_tokens: opts.maxTokens ?? 1000,
     temperature: 0.4,
@@ -78,13 +116,22 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
     body.tool_choice = opts.toolChoice ?? "auto"
   }
 
-  const res = await fetch(MISTRAL_ENDPOINT, {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: stream ? "text/event-stream" : "application/json",
+  }
+  if (ollama) {
+    // Ollama's OpenAI endpoint needs no Bearer key; an optional key is honored
+    // if set (e.g. behind a proxy).
+    const key = process.env.OLLAMA_API_KEY
+    if (key) headers.Authorization = `Bearer ${key}`
+  } else {
+    headers.Authorization = `Bearer ${getMistralApiKey()}`
+  }
+
+  const res = await fetch(resolveEndpoint(), {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${getMistralApiKey()}`,
-      "Content-Type": "application/json",
-      Accept: stream ? "text/event-stream" : "application/json",
-    },
+    headers,
     body: JSON.stringify(body),
     signal: opts.signal,
   })
