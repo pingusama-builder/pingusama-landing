@@ -36,6 +36,23 @@ export interface AccumulatedMessage {
   content: string
   tool_calls: MistralToolCall[]
   finish_reason: string | null
+  // Advisor phase B9 telemetry (observability for the narrow-scope substrate
+  // experiment — see VERDICT-phaseB9.md Q1). response_model is the model the API
+  // echoed back, the DECISIVE confound field (the configured alias is NOT proof
+  // of which model answered: the alias could resolve unexpectedly, the provider
+  // could return a different concrete model, an SDK/proxy could transform the
+  // request, or the parser could misclassify). content_chunk_types are the
+  // typed chunk types seen in delta.content (thinking vs text) — a thinking
+  // chunk without reasoning_effort sent would mean native/default reasoning.
+  // reasoning_chars / text_chars are char proxies for token counts (no tokenizer
+  // available; sufficient to spot a 12k-char flood vs a 200-char answer).
+  // reasoning_effort_sent is the effort param actually sent (or null) — the
+  // requested alias alone does not tell us whether the param reached the model.
+  response_model?: string
+  content_chunk_types?: string[]
+  reasoning_chars?: number
+  text_chars?: number
+  reasoning_effort_sent?: string | null
 }
 
 export const MISTRAL_ENDPOINT =
@@ -128,6 +145,38 @@ export function isReasoningModel(model: string): boolean {
   return model === getReasoningModel()
 }
 
+// ── Narrow-scope substrate override (advisor phase B9 Q3 A/B test) ─────────
+// Dormant when unset. When COMPANION_NARROW_SUBSTRATE is "model|effort" (e.g.
+// "mistral-medium-3-5|high" or "mistral-medium-3-5|none"), the medium tier
+// resolves to `model` (see lib/chat/models.ts) and THIS client sends `effort`
+// as the root-level reasoning_effort for that model — so the three-arm matched
+// narrow-scope test (baseline mistral-medium-latest / 3.5+high / 3.5+none) can
+// run with NO prompt, tool, cap, or security change. Malformed → null (dormant).
+// The Ollama path always wins over this override (Ollama is its own substrate).
+// See ai-advisor/refinement-03-fiction-examples-extension/VERDICT-phaseB9.md Q3.
+export function getNarrowSubstrate(): { model: string; effort: string } | null {
+  const raw = process.env.COMPANION_NARROW_SUBSTRATE
+  if (!raw) return null
+  const sep = raw.indexOf("|")
+  if (sep <= 0 || sep >= raw.length - 1) return null
+  return { model: raw.slice(0, sep).trim(), effort: raw.slice(sep + 1).trim() }
+}
+
+/** The reasoning_effort to send for a given per-call model, or undefined to
+ * omit the param. Pinned reasoning model → COMPANION_REASONING_EFFORT;
+ * narrow-substrate override model → its override effort; everything else →
+ * undefined (the param is never sent to a model that rejects it, e.g.
+ * mistral-medium-latest which is not documented as adjustable-reasoning).
+ * Ollama path → always undefined (its substrate does not take this param).
+ * Read at call time so tests can flip the env. */
+export function reasoningEffortForModel(model: string): string | undefined {
+  if (isOllamaBackend()) return undefined
+  if (isReasoningModel(model)) return getReasoningEffort()
+  const ns = getNarrowSubstrate()
+  if (ns && model === ns.model) return ns.effort
+  return undefined
+}
+
 /** Extract author-facing text from a content payload that may be a plain
  * string (non-reasoning + answer phase) OR an array of typed chunks (Mistral
  * ThinkChunk type:"thinking" + TextChunk type:"text" during the reasoning
@@ -218,11 +267,19 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
     body.tool_choice = opts.toolChoice ?? "auto"
   }
 
-  // Reasoning substrate: send the root-level param only to the pinned reasoning
-  // model (mistral-medium-3-5 by default). medium-latest / large-latest reject
-  // reasoning_effort → isReasoningModel is false for them, so it is never sent.
-  if (!ollama && isReasoningModel(model)) {
-    body.reasoning_effort = getReasoningEffort()
+  // Reasoning substrate (advisor phase B8 Q7 + phase B9 narrow override): send
+  // the root-level reasoning_effort only for a model that accepts it — the
+  // pinned reasoning model, OR the narrow-substrate override model (so the A/B
+  // arms 3.5+high / 3.5+none can run with no other change). reasoning_effort_sent
+  // is captured for telemetry; the DECISIVE confound field is response_model, not
+  // the alias we requested.
+  let reasoningEffortSent: string | null = null
+  if (!ollama) {
+    const effort = reasoningEffortForModel(model)
+    if (effort) {
+      body.reasoning_effort = effort
+      reasoningEffortSent = effort
+    }
   }
 
   const headers: Record<string, string> = {
@@ -259,6 +316,7 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
 
   if (!stream) {
     const json = (await res.json()) as {
+      model?: string
       choices: { message: { content: unknown; tool_calls?: MistralToolCall[] }; finish_reason: string | null }[]
     }
     const choice = json.choices?.[0]
@@ -267,6 +325,8 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
       content: extractTextContent(choice?.message?.content),
       tool_calls: choice?.message?.tool_calls ?? [],
       finish_reason: choice?.finish_reason ?? null,
+      response_model: typeof json.model === "string" && json.model ? json.model : undefined,
+      reasoning_effort_sent: reasoningEffortSent,
     }
   }
 
@@ -278,6 +338,14 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
   let content = ""
   const toolCalls: Record<number, MistralToolCall> = {}
   let finishReason: string | null = null
+  // Advisor phase B9 telemetry accumulators. responseModel is the model the API
+  // echoes back (the decisive confound field). chunkTypes tracks the typed chunk
+  // types seen in delta.content arrays (thinking vs text). reasoningChars is a
+  // char proxy for the reasoning-token count (no tokenizer; sufficient to spot a
+  // 12k-char flood vs a 200-char answer).
+  let responseModel = ""
+  const chunkTypes = new Set<string>()
+  let reasoningChars = 0
 
   const processLine = (line: string) => {
     if (!line.startsWith("data:")) return
@@ -285,9 +353,10 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
     if (payload === "[DONE]") return
     try {
       const evt = JSON.parse(payload) as {
+        model?: string
         choices?: {
           delta?: {
-            content?: string | null
+            content?: unknown
             reasoning_content?: string | null
             tool_calls?: {
               index: number
@@ -298,6 +367,12 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
           finish_reason?: string | null
         }[]
       }
+      // Capture the model the API echoes back (decisive confound field — the
+      // configured alias is NOT proof of which model answered). Use the first
+      // non-empty model field; providers echo it on every chunk.
+      if (typeof evt.model === "string" && evt.model && !responseModel) {
+        responseModel = evt.model
+      }
       const choice = evt.choices?.[0]
       const delta = choice?.delta
       if (delta?.content) {
@@ -305,16 +380,29 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
         // TextChunk). Forward text to the author; forward thinking to the
         // reasoning channel. extractTextContent drops thinking; extractReasoningContent
         // drops text — together they partition the array with no leakage either way.
+        // Track the typed chunk types for telemetry (thinking present without
+        // reasoning_effort sent ⇒ native/default reasoning, the confound signal).
+        if (Array.isArray(delta.content)) {
+          for (const c of delta.content) {
+            if (c && typeof c === "object" && typeof (c as { type?: string }).type === "string") {
+              chunkTypes.add((c as { type: string }).type)
+            }
+          }
+        }
         const text = extractTextContent(delta.content)
         if (text) {
           content += text
           opts.onContent?.(text)
         }
         const reasoning = extractReasoningContent(delta.content)
-        if (reasoning) opts.onReasoning?.(reasoning)
+        if (reasoning) {
+          reasoningChars += reasoning.length
+          opts.onReasoning?.(reasoning)
+        }
       }
       if (delta?.reasoning_content) {
         // GLM (Ollama) puts reasoning in a separate string field, not chunked.
+        reasoningChars += delta.reasoning_content.length
         opts.onReasoning?.(delta.reasoning_content)
       }
       if (delta?.tool_calls) {
@@ -362,6 +450,11 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
       .map((k) => toolCalls[Number(k)])
       .filter((tc) => tc.function.name),
     finish_reason: finishReason,
+    response_model: responseModel || undefined,
+    content_chunk_types: chunkTypes.size ? [...chunkTypes] : undefined,
+    reasoning_chars: reasoningChars || undefined,
+    text_chars: content.length || undefined,
+    reasoning_effort_sent: reasoningEffortSent,
   }
 }
 

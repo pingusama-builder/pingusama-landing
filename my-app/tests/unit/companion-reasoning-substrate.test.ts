@@ -7,6 +7,8 @@ import {
   extractReasoningContent,
   isReasoningModel,
   getReasoningEffort,
+  reasoningEffortForModel,
+  getNarrowSubstrate,
 } from "@/lib/chat/mistral"
 
 const mistralSrc = readFileSync(
@@ -184,5 +186,89 @@ describe("Mistral reasoning substrate — extractReasoningContent (thinking chan
     expect(extractReasoningContent({ odd: true })).toBe("")
     expect(extractReasoningContent([{ type: "text", text: "x" }])).toBe("")
     expect(extractReasoningContent([{ type: "unknown" }])).toBe("")
+  })
+})
+
+// ── Advisor phase B9 ───────────────────────────────────────────────────────
+// Per-turn telemetry fields + a per-model reasoning_effort resolver that lets
+// the three-arm matched narrow-scope A/B test (baseline medium-latest /
+// 3.5+high / 3.5+none) run with no prompt or security change. The decisive
+// confound field is response_model, not the configured alias — see
+// VERDICT-phaseB9.md Q1/Q3.
+
+describe("getNarrowSubstrate — COMPANION_NARROW_SUBSTRATE parser (advisor phase B9 Q3)", () => {
+  const saved: Record<string, string | undefined> = {}
+  beforeEach(() => {
+    saved.COMPANION_NARROW_SUBSTRATE = process.env.COMPANION_NARROW_SUBSTRATE
+    delete process.env.COMPANION_NARROW_SUBSTRATE
+  })
+  afterEach(() => {
+    process.env.COMPANION_NARROW_SUBSTRATE = saved.COMPANION_NARROW_SUBSTRATE
+  })
+
+  it("parses model|effort", () => {
+    process.env.COMPANION_NARROW_SUBSTRATE = "mistral-medium-3-5|high"
+    expect(getNarrowSubstrate()).toEqual({ model: "mistral-medium-3-5", effort: "high" })
+  })
+  it("parses effort=none (the cost-control A/B arm)", () => {
+    process.env.COMPANION_NARROW_SUBSTRATE = "mistral-medium-3-5|none"
+    expect(getNarrowSubstrate()).toEqual({ model: "mistral-medium-3-5", effort: "none" })
+  })
+  it("returns null when unset (dormant — prod path unchanged)", () => {
+    expect(getNarrowSubstrate()).toBeNull()
+  })
+  it("returns null for a malformed value (no | separator)", () => {
+    process.env.COMPANION_NARROW_SUBSTRATE = "mistral-medium-3-5"
+    expect(getNarrowSubstrate()).toBeNull()
+  })
+  it("returns null for an empty model or effort side", () => {
+    process.env.COMPANION_NARROW_SUBSTRATE = "|high"
+    expect(getNarrowSubstrate()).toBeNull()
+    process.env.COMPANION_NARROW_SUBSTRATE = "mistral-medium-3-5|"
+    expect(getNarrowSubstrate()).toBeNull()
+  })
+})
+
+describe("reasoningEffortForModel — per-model effort (advisor phase B9 Q1/Q3)", () => {
+  const saved: Record<string, string | undefined> = {}
+  beforeEach(() => {
+    saved.COMPANION_REASONING_EFFORT = process.env.COMPANION_REASONING_EFFORT
+    saved.MISTRAL_REASONING_MODEL = process.env.MISTRAL_REASONING_MODEL
+    saved.OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL
+    saved.COMPANION_NARROW_SUBSTRATE = process.env.COMPANION_NARROW_SUBSTRATE
+    delete process.env.COMPANION_REASONING_EFFORT
+    delete process.env.MISTRAL_REASONING_MODEL
+    delete process.env.OLLAMA_BASE_URL
+    delete process.env.COMPANION_NARROW_SUBSTRATE
+  })
+  afterEach(() => {
+    process.env.COMPANION_REASONING_EFFORT = saved.COMPANION_REASONING_EFFORT
+    process.env.MISTRAL_REASONING_MODEL = saved.MISTRAL_REASONING_MODEL
+    process.env.OLLAMA_BASE_URL = saved.OLLAMA_BASE_URL
+    process.env.COMPANION_NARROW_SUBSTRATE = saved.COMPANION_NARROW_SUBSTRATE
+  })
+
+  it("returns the global effort for the pinned reasoning model", () => {
+    process.env.COMPANION_REASONING_EFFORT = "high"
+    process.env.MISTRAL_REASONING_MODEL = "mistral-medium-3-5"
+    expect(reasoningEffortForModel("mistral-medium-3-5")).toBe("high")
+  })
+  it("returns undefined for a non-reasoning model with no narrow override", () => {
+    process.env.COMPANION_REASONING_EFFORT = "high"
+    expect(reasoningEffortForModel("mistral-medium-latest")).toBeUndefined()
+  })
+  it("returns the narrow-substrate effort when the model matches the override", () => {
+    process.env.COMPANION_NARROW_SUBSTRATE = "mistral-medium-3-5|none"
+    expect(reasoningEffortForModel("mistral-medium-3-5")).toBe("none")
+  })
+  it("returns undefined when the model is not the narrow override model", () => {
+    process.env.COMPANION_NARROW_SUBSTRATE = "mistral-medium-3-5|none"
+    expect(reasoningEffortForModel("mistral-medium-latest")).toBeUndefined()
+  })
+  it("returns undefined on the Ollama path regardless of env", () => {
+    process.env.OLLAMA_BASE_URL = "http://localhost:11434"
+    process.env.COMPANION_REASONING_EFFORT = "high"
+    process.env.COMPANION_NARROW_SUBSTRATE = "mistral-medium-3-5|high"
+    expect(reasoningEffortForModel("mistral-medium-3-5")).toBeUndefined()
   })
 })
