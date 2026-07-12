@@ -432,24 +432,40 @@ describe("buildCompanionPrompt", () => {
     }
   })
 
-  it("OUTPUT carries the cap-aware, findings-first full-review rule (cross-mode)", () => {
-    // Advisor phase B4: the complete-Summon full review truncated mid-finding
-    // because the model spent its output budget on a public F1–F6 recital +
-    // reassurance before reaching actionable findings. The fiction lenses guide
-    // private reasoning; they are not a public lens-by-lens essay. The output must
-    // lead with a few completed findings and reserve budget to finish each one.
-    // Cross-mode: the budget discipline applies in every mode (F1–F6 only exist
-    // in fiction, so the no-recital clause is a no-op there but harmless).
+  it("OUTPUT carries the countable full-review output budget (cross-mode)", () => {
+    // Advisor phase B5: the 433109a "findings-first" rule was too soft — the
+    // complete-Summon full review still spent its budget on a Structural Overview
+    // + three strengths subsections and truncated mid-finding 2. The advisor
+    // prescribed a HARD, COUNTABLE budget, not another "be concise" request.
+    // Cross-mode (F1–F6 only exist in fiction; the no-recital clause is a no-op
+    // elsewhere but harmless).
     for (const mode of ["auto", "prose", "fiction", "line-edit"] as const) {
       const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
-      // Findings-first: lead with ≤3 highest-leverage, complete each before the next.
-      expect(p).toMatch(/no more than three highest-leverage actionable findings/)
-      expect(p).toMatch(/complete each finding.*before beginning another/)
-      // Cap-aware: do not start a finding you cannot finish.
-      expect(p).toMatch(/Do not begin a finding unless you can complete its diagnosis and next step within the remaining response budget/)
+      // Hard countable limits.
+      expect(p).toMatch(/at most three findings, ordered by revision leverage/)
+      expect(p).toMatch(/no more than roughly 90 words per finding/)
+      // No strengths list / F1–F6 recap / structural overview unless requested.
+      expect(p).toMatch(/Do not include a separate strengths list/)
+      expect(p).toMatch(/structural overview unless the author explicitly requests one/)
+      // Complete Finding 1 before beginning Finding 2.
+      expect(p).toMatch(/complete Finding 1 before beginning Finding 2/)
       // No public lens recital.
       expect(p).toMatch(/Do not recite the fiction lenses \(F1/)
       expect(p).toMatch(/the lenses guide private reasoning, not a public lens-by-lens essay/)
+    }
+  })
+
+  it("OUTPUT forbids memory leakage into editorial verdict (cross-mode)", () => {
+    // Advisor phase B5 new issue: the full review cited private memory labels
+    // (writing-strengths-core) and made biographical claims ("Cantonese-inflected
+    // cadence") as evidence the passage works. Personal memory must not become an
+    // authority that pre-approves or disqualifies a line. Cross-mode — a prose
+    // review could leak memory the same way.
+    for (const mode of ["auto", "prose", "fiction", "line-edit"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).toMatch(/Do not cite private memory, profile labels/)
+      expect(p).toMatch(/inferred cultural identity/)
+      expect(p).toMatch(/never as an authority that pre-approves or disqualifies a line/)
     }
   })
 })
