@@ -87,6 +87,73 @@ export function getMistralModel(): string {
   return process.env.MISTRAL_MODEL || "mistral-medium-latest"
 }
 
+// ── Mistral in-place reasoning substrate check (advisor phase B8 Q7) ──────
+// When COMPANION_REASONING_EFFORT is set (e.g. "high"), the full-review tier
+// (`large`) is rerouted to a reasoning-capable Mistral model (default
+// `mistral-medium-3-5`; override via MISTRAL_REASONING_MODEL — see
+// lib/chat/models.ts) and THIS client sends a root-level `reasoning_effort`
+// param for that model only. small/medium tiers are NOT coerced, so the param
+// never reaches a model that rejects it (`mistral-medium-latest`,
+// `mistral-large-latest`). Dormant when unset — the production Mistral path is
+// identical to before. This is a deployable substrate check (same provider,
+// same Vercel runtime, no Ollama): option 2 Path A in
+// ai-advisor/refinement-03-fiction-examples-extension/eval/lane-decision-research.md.
+// The Ollama substrate (`OLLAMA_BASE_URL`) takes precedence over this one.
+//
+// SAFETY — thinking must never reach the author: Mistral does NOT put reasoning
+// in a separate `reasoning_content` field. With reasoning_effort "high" the
+// reasoning trace is embedded INSIDE `content` as typed chunks (a `ThinkChunk`
+// type:"thinking" holding the trace, then a `TextChunk` type:"text" holding
+// the answer; in streaming, `delta.content` alternates between a chunk array
+// during thinking and a plain string during the answer phase). A naive
+// A direct append of delta.content would coerce a chunk-array to a string and stream
+// the model's internal reasoning into the author-facing SSE. `extractTextContent`
+// is the post-output mechanical guard that holds regardless of substrate: it
+// extracts only text, ignores thinking, and drops any unknown shape to safe-
+// empty (a visible failure in a trace) rather than risk stringifying reasoning.
+export function getReasoningEffort(): string | undefined {
+  return process.env.COMPANION_REASONING_EFFORT
+}
+
+export function getReasoningModel(): string {
+  return process.env.MISTRAL_REASONING_MODEL || "mistral-medium-3-5"
+}
+
+/** True only when this per-call model is the pinned reasoning model AND the
+ * reasoning substrate is active (env set) AND we are not on the Ollama path
+ * (Ollama substrate wins). Read at call time so tests can flip the env. */
+export function isReasoningModel(model: string): boolean {
+  if (isOllamaBackend()) return false
+  if (!getReasoningEffort()) return false
+  return model === getReasoningModel()
+}
+
+/** Extract author-facing text from a content payload that may be a plain
+ * string (non-reasoning + answer phase) OR an array of typed chunks (Mistral
+ * ThinkChunk type:"thinking" + TextChunk type:"text" during the reasoning
+ * phase). Emits ONLY text; never leaks thinking. Unknown shapes → "" (safe
+ * empty, not a stringify). Pure + env-free so it is directly unit-testable. */
+export function extractTextContent(content: unknown): string {
+  if (content == null) return ""
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return ""
+  let out = ""
+  for (const chunk of content) {
+    if (typeof chunk === "string") {
+      out += chunk
+    } else if (
+      chunk &&
+      typeof chunk === "object" &&
+      (chunk as { type?: string }).type === "text" &&
+      typeof (chunk as { text?: unknown }).text === "string"
+    ) {
+      out += (chunk as { text: string }).text
+    }
+    // type:"thinking" / unknown shapes → ignored (never leaked)
+  }
+  return out
+}
+
 interface CallOptions {
   messages: MistralMessage[]
   tools?: MistralTool[]
@@ -114,6 +181,13 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
   if (opts.tools && opts.tools.length > 0) {
     body.tools = opts.tools
     body.tool_choice = opts.toolChoice ?? "auto"
+  }
+
+  // Reasoning substrate: send the root-level param only to the pinned reasoning
+  // model (mistral-medium-3-5 by default). medium-latest / large-latest reject
+  // reasoning_effort → isReasoningModel is false for them, so it is never sent.
+  if (!ollama && isReasoningModel(model)) {
+    body.reasoning_effort = getReasoningEffort()
   }
 
   const headers: Record<string, string> = {
@@ -150,12 +224,12 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
 
   if (!stream) {
     const json = (await res.json()) as {
-      choices: { message: { content: string | null; tool_calls?: MistralToolCall[] }; finish_reason: string | null }[]
+      choices: { message: { content: unknown; tool_calls?: MistralToolCall[] }; finish_reason: string | null }[]
     }
     const choice = json.choices?.[0]
     return {
       role: "assistant",
-      content: choice?.message?.content ?? "",
+      content: extractTextContent(choice?.message?.content),
       tool_calls: choice?.message?.tool_calls ?? [],
       finish_reason: choice?.finish_reason ?? null,
     }
@@ -191,8 +265,14 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
       const choice = evt.choices?.[0]
       const delta = choice?.delta
       if (delta?.content) {
-        content += delta.content
-        opts.onContent?.(delta.content)
+        // Reasoning substrate: delta.content may be a chunk array (ThinkChunk +
+        // TextChunk) during the thinking phase. Extract ONLY text so the model's
+        // internal reasoning never reaches the author-facing onContent stream.
+        const text = extractTextContent(delta.content)
+        if (text) {
+          content += text
+          opts.onContent?.(text)
+        }
       }
       if (delta?.tool_calls) {
         for (const tc of delta.tool_calls) {

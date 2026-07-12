@@ -20,13 +20,32 @@ export type DifficultyBand = "easy" | "medium" | "hard"
 // regardless of the per-call model id).
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL
 
+// Advisor phase B8 Q7 substrate check (Mistral in-place reasoning, option 2
+// Path A): when COMPANION_REASONING_EFFORT is set, the full-review tier
+// (`large`) is rerouted to a reasoning-capable Mistral model (default
+// `mistral-medium-3-5`; override via MISTRAL_REASONING_MODEL). small/medium are
+// left on the non-reasoning Mistral map so the root-level `reasoning_effort`
+// param (sent by lib/chat/mistral.ts via isReasoningModel) never reaches a
+// model that rejects it (mistral-medium-latest, mistral-large-latest). Dormant
+// when unset — the production Mistral path is identical to before. Ollama
+// (OLLAMA_MODEL) takes precedence over this substrate. See
+// ai-advisor/refinement-03-fiction-examples-extension/eval/lane-decision-research.md.
+const COMPANION_REASONING_EFFORT = process.env.COMPANION_REASONING_EFFORT
+const MISTRAL_REASONING_MODEL = process.env.MISTRAL_REASONING_MODEL || "mistral-medium-3-5"
+
 export const MODEL_TIERS: Record<ModelTier, string> = OLLAMA_MODEL
   ? { small: OLLAMA_MODEL, medium: OLLAMA_MODEL, large: OLLAMA_MODEL }
-  : {
-      small: "mistral-small-latest",
-      medium: "mistral-medium-latest",
-      large: "mistral-large-latest",
-    }
+  : COMPANION_REASONING_EFFORT
+    ? {
+        small: "mistral-small-latest",
+        medium: "mistral-medium-latest",
+        large: MISTRAL_REASONING_MODEL,
+      }
+    : {
+        small: "mistral-small-latest",
+        medium: "mistral-medium-latest",
+        large: "mistral-large-latest",
+      }
 
 export const DEFAULT_TIER: ModelTier = "medium"
 
