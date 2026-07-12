@@ -468,4 +468,38 @@ describe("buildCompanionPrompt", () => {
       expect(p).toMatch(/never as an authority that pre-approves or disqualifies a line/)
     }
   })
+
+  it("OUTPUT bans identity/culture attribution of style (cross-mode)", () => {
+    // Advisor phase B6: the phase-B5 memory clause still leaked — the run still
+    // said "Cantonese-inflected cadence", "your recalled strengths", "aligns with
+    // your emotional honesty". The harder constraint is an ATTRIBUTION ban, not
+    // just a citation ban: do not attribute a passage's style to the author's
+    // identity, culture, profile, memory, or prior-work labels; ground every
+    // craft assessment in the submitted text and its reader-level effect.
+    // Cross-mode — a prose review could attribute style to a profile label the
+    // same way.
+    for (const mode of ["auto", "prose", "fiction", "line-edit"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).toMatch(/Do not attribute a passage's style to the author's identity, culture, profile/)
+      expect(p).toMatch(/Ground every craft assessment in the submitted text and its reader-level effect/)
+    }
+  })
+
+  it("OUTPUT requires inquiry/NO CHANGE for plausible-deliberate voice choices (cross-mode)", () => {
+    // Advisor phase B6: two findings over-converted unusual-but-coherent
+    // narratorly choices into defects because a cleaner workshop rewrite existed
+    // — a past/present tense shift ("The figure materializing … is straight from
+    // the legends") and an estimating measurement ("I will put him at just 6
+    // feet"). The rule: for an unusual tense shift, measurement, syntax, or
+    // register change that may be deliberate voice, do not propose a normalizing
+    // edit unless it causes a specific clarity/temporal-orientation/reader-effect
+    // failure; if intent is plausible-but-uncertain, ask one focused question or
+    // recommend NO CHANGE. Cross-mode — applies to prose tense/register too.
+    for (const mode of ["auto", "prose", "fiction", "line-edit"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).toMatch(/unusual tense shift, measurement, syntax, or register change that may be deliberate voice/)
+      expect(p).toMatch(/do not propose a normalizing edit unless it causes a specific clarity, temporal-orientation, or reader-effect failure/)
+      expect(p).toMatch(/ask one focused question or recommend NO CHANGE/)
+    }
+  })
 })
