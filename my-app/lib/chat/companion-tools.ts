@@ -23,15 +23,26 @@ import {
 // anything not in it, so prompt injection in the draft cannot reach those tools.
 
 export type CompanionDraft = DraftSnapshot
-export type CompanionToolResult = ToolResult & { proposal?: Proposal }
+export type FictionReviewPayload = {
+  assessment: string
+  noChange: boolean
+  findings: { diagnosis: string; principleId: string; hasEdit: boolean }[]
+}
+export type CompanionToolResult = ToolResult & {
+  proposal?: Proposal
+  proposals?: Proposal[]
+  fictionReview?: FictionReviewPayload
+}
 
 const PROPOSAL_FIELDS: ProposalField[] = ["body", "title", "excerpt", "meta_description"]
 const MAX_ORIGINAL = 500
 const MAX_REPLACEMENT = 2000
 const MAX_RATIONALE = 300
+const MAX_ASSESSMENT = 300
 
 export const COMPANION_ALLOWED = new Set([
   "propose_edit",
+  "submit_fiction_review",
   "save_writing_preference",
   "set_model",
 ])
@@ -109,6 +120,60 @@ export const COMPANION_TOOLS: MistralTool[] = [
     },
   },
 ]
+
+// ── Fiction structured terminal ───────────────────────────────────────────
+// The prose-edit loophole (advisor phase B8): on a non-reasoning substrate the
+// model narrated "Proposed edit: original: / Replacement:" in prose instead of
+// calling a tool, bypassing the tool layer. submit_fiction_review is the
+// input-side mechanical guard: the model submits the WHOLE review as ONE
+// structured call (assessment + noChange + findings[]; each finding optionally
+// carries a surgical body edit). There is no prose assessment slot to narrate
+// into — assessment lives inside the call. Fiction mode offers ONLY this tool
+// (no propose_edit), so there is no separate edit path to loophole through.
+// Pure (no DB, no import) — reuses the same validation rules as executeProposal.
+export const FICTION_REVIEW_TOOL: MistralTool = {
+  type: "function",
+  function: {
+    name: "submit_fiction_review",
+    description:
+      "Submit the full fiction review as ONE structured call. Carries the assessment, a noChange flag, and findings[]; each finding optionally carries a surgical body edit (original+replacement+rationale). This is the ONLY way to propose edits in fiction mode — do NOT narrate edits in prose. field is always body; original must occur exactly once in the draft. noChange:true ⟹ findings must be empty. principleId is a compact rule ID (O1–O6, SW1–SW4, Z1–Z3, V1–V3). A finding without original/replacement is a diagnosis-only observation.",
+    parameters: {
+      type: "object",
+      properties: {
+        assessment: { type: "string", description: "≤300 chars. The one-line review verdict." },
+        noChange: { type: "boolean", description: "true if you recommend NO CHANGE." },
+        findings: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              diagnosis: { type: "string", description: "What's wrong, one sentence." },
+              principleId: { type: "string", description: "Compact rule ID, e.g. Z2." },
+              original: { type: "string", description: "body edits: exact anchor, must occur once, ≤500 chars. Omit for diagnosis-only." },
+              replacement: { type: "string", description: "1–2000 chars. Present iff proposing an edit." },
+              rationale: { type: "string", description: "Diagnosis/Edit/Basis/Tradeoff, ≤300 chars. Present iff proposing an edit." },
+            },
+            required: ["diagnosis", "principleId"],
+          },
+        },
+      },
+      required: ["assessment", "noChange", "findings"],
+    },
+  },
+}
+
+/** Fiction mode gets the structured terminal only (no propose_edit — the review
+ * is ONE call, so there is no separate edit path to loophole through). Other
+ * modes keep the existing blog tool set. */
+export function companionToolsFor(reviewMode: string | undefined): MistralTool[] {
+  if (reviewMode === "fiction") {
+    return [
+      FICTION_REVIEW_TOOL,
+      ...COMPANION_TOOLS.filter((t) => t.function.name !== "propose_edit"),
+    ]
+  }
+  return COMPANION_TOOLS
+}
 
 function stableId(baseRevision: string, field: string, original: string, replacement: string): string {
   return (
@@ -226,6 +291,117 @@ export function executeProposal(rawArgs: string, draft: CompanionDraft): Compani
 }
 
 /**
+ * submit_fiction_review — the structured terminal for fiction mode. Pure (no
+ * DB, no import): parses the one-call review, validates each finding's
+ * optional surgical edit with the SAME rules as executeProposal (anchor-
+ * occurs-once, rationale 1–300, replacement 1–2000, original ≤500, field is
+ * always body), and returns an array of validated proposals (one per valid
+ * finding-with-edit) + a fictionReview payload for the UI. Invalid findings
+ * have their edit skipped (hasEdit:false) but still appear in the review
+ * payload as observations — no all-or-nothing. noChange:true ⟹ empty
+ * findings (validator rejects otherwise).
+ */
+export function executeFictionReview(
+  rawArgs: string,
+  draft: CompanionDraft
+): CompanionToolResult {
+  let args: Record<string, unknown>
+  try {
+    args = tryParseArgs(rawArgs)
+  } catch (e) {
+    return { content: `Tool error: ${(e as Error).message}`, memoryWrite: false }
+  }
+  const assessment = asString(args.assessment)
+  const noChange = args.noChange === true
+  const findings = Array.isArray(args.findings) ? args.findings : []
+
+  if (!assessment || assessment.length > MAX_ASSESSMENT) {
+    return { content: `Tool error: assessment must be 1–${MAX_ASSESSMENT} chars.`, memoryWrite: false }
+  }
+  if (noChange && findings.length > 0) {
+    return {
+      content:
+        "Tool error: noChange is true but findings is non-empty — do not propose edits alongside a NO CHANGE recommendation.",
+      memoryWrite: false,
+    }
+  }
+  if (!noChange && findings.length === 0) {
+    return {
+      content:
+        "Tool error: noChange is false but findings is empty — either set noChange:true (recommend NO CHANGE) or provide at least one finding.",
+      memoryWrite: false,
+    }
+  }
+
+  const baseRevision = draftRevision(draft)
+  const proposals: Proposal[] = []
+  const reviewFindings: FictionReviewPayload["findings"] = []
+  let editCount = 0
+
+  for (const f of findings) {
+    if (!f || typeof f !== "object") continue
+    const fin = f as {
+      diagnosis?: unknown
+      principleId?: unknown
+      original?: unknown
+      replacement?: unknown
+      rationale?: unknown
+    }
+    const diagnosis = asString(fin.diagnosis)
+    const principleId = asString(fin.principleId)
+    if (!diagnosis || !principleId) continue // skip a malformed finding
+    const original = asString(fin.original)
+    const replacement = asString(fin.replacement)
+    const rationale = asString(fin.rationale)
+    const wantsEdit = original.length > 0 || replacement.length > 0
+    if (!wantsEdit) {
+      reviewFindings.push({ diagnosis, principleId, hasEdit: false })
+      continue
+    }
+    // validate as a body edit (same rules as executeProposal)
+    if (!replacement || replacement.length > MAX_REPLACEMENT) {
+      reviewFindings.push({ diagnosis, principleId, hasEdit: false })
+      continue
+    }
+    if (!rationale || rationale.length > MAX_RATIONALE) {
+      reviewFindings.push({ diagnosis, principleId, hasEdit: false })
+      continue
+    }
+    if (original.length === 0 || original.length > MAX_ORIGINAL) {
+      reviewFindings.push({ diagnosis, principleId, hasEdit: false })
+      continue
+    }
+    const occ = findOccurrences(draft.content_markdown, original)
+    if (occ.length !== 1) {
+      reviewFindings.push({ diagnosis, principleId, hasEdit: false })
+      continue
+    }
+    proposals.push({
+      id: stableId(baseRevision, "body", original, replacement),
+      field: "body",
+      original,
+      replacement,
+      rationale,
+      principleId,
+      baseRevision,
+      range: { start: occ[0], end: occ[0] + original.length },
+    })
+    editCount += 1
+    reviewFindings.push({ diagnosis, principleId, hasEdit: true })
+  }
+
+  const content = noChange
+    ? "Fiction review: NO CHANGE recommended."
+    : `Fiction review: ${reviewFindings.length} finding(s), ${editCount} edit(s) proposed.`
+  return {
+    content,
+    memoryWrite: false,
+    proposals,
+    fictionReview: { assessment, noChange, findings: reviewFindings },
+  }
+}
+
+/**
  * save_writing_preference — handled INLINE (it is not a name executeToolCall
  * knows). Enforces the shared cap, the writing- prefix (via
  * assertWritingPrefName, which also rejects site:*), and the feedback type,
@@ -289,6 +465,8 @@ export async function executeCompanionToolCall(
   switch (name) {
     case "propose_edit":
       return executeProposal(rawArgs, draft)
+    case "submit_fiction_review":
+      return executeFictionReview(rawArgs, draft)
     case "save_writing_preference":
       return await executeSaveWritingPreference(rawArgs, ctx)
     case "set_model":
