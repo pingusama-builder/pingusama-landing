@@ -431,4 +431,25 @@ describe("buildCompanionPrompt", () => {
       expect(p).toMatch(/Framing such a marker as "needless" or "redundant" is a taste judgment, not an unambiguous economy-rule breach/)
     }
   })
+
+  it("OUTPUT carries the cap-aware, findings-first full-review rule (cross-mode)", () => {
+    // Advisor phase B4: the complete-Summon full review truncated mid-finding
+    // because the model spent its output budget on a public F1–F6 recital +
+    // reassurance before reaching actionable findings. The fiction lenses guide
+    // private reasoning; they are not a public lens-by-lens essay. The output must
+    // lead with a few completed findings and reserve budget to finish each one.
+    // Cross-mode: the budget discipline applies in every mode (F1–F6 only exist
+    // in fiction, so the no-recital clause is a no-op there but harmless).
+    for (const mode of ["auto", "prose", "fiction", "line-edit"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      // Findings-first: lead with ≤3 highest-leverage, complete each before the next.
+      expect(p).toMatch(/no more than three highest-leverage actionable findings/)
+      expect(p).toMatch(/complete each finding.*before beginning another/)
+      // Cap-aware: do not start a finding you cannot finish.
+      expect(p).toMatch(/Do not begin a finding unless you can complete its diagnosis and next step within the remaining response budget/)
+      // No public lens recital.
+      expect(p).toMatch(/Do not recite the fiction lenses \(F1/)
+      expect(p).toMatch(/the lenses guide private reasoning, not a public lens-by-lens essay/)
+    }
+  })
 })

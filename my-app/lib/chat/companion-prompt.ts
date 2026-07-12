@@ -95,6 +95,7 @@ const FICTION_EXAMPLES = `## Fiction contrastive examples
 
 const OUTPUT = `## Output format
 Begin with an honest assessment, not a predetermined list of faults. Before calling a choice a weakness, determine whether it produces a specific reader effect. If it does, state that effect briefly and recommend NO CHANGE; this is evidence-based assessment, not praise. If a real failure remains, lead with it plainly—no praise preamble, no hedging, and no empty compliment. Do not manufacture defects to appear useful. When there are findings, list them one per line.
+Budget your output. For a full-draft review, lead with no more than three highest-leverage actionable findings; complete each finding — its anchor, reader-level failure, tradeoff, and any proposed edit — before beginning another, and give any compact structural assessment only after the findings. Do not begin a finding unless you can complete its diagnosis and next step within the remaining response budget. Do not recite the fiction lenses (F1–F6) publicly unless a specific lens surfaces a distinct actionable issue; the lenses guide private reasoning, not a public lens-by-lens essay. Reserve enough output budget to finish every finding you begin.
 For each finding that warrants a fix, emit a \`propose_edit\` tool call whose \`rationale\` follows this exact shape:
   Diagnosis: <one sentence — the specific failure, no qualifiers>
   Edit: <the smallest useful replacement>
