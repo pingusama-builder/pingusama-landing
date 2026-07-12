@@ -43,11 +43,14 @@ const MAX_MEMORY_WRITES = 3
 const MAX_PROPOSALS_PER_TURN = 8
 const MAX_DRAFT_CHARS = 50_000
 const MAX_MESSAGE_CHARS = 4000
-// Per-turn output cap. Default 800 / 1200 (final) fits Mistral (non-reasoning).
-// Override via env for a reasoning substrate (e.g. Ollama GLM 5.2) whose
-// thinking tokens count against max_tokens — give it room so the response
-// is not consumed by reasoning (advisor phase B8 Q7 substrate check).
-const MAX_TOKENS = Number(process.env.COMPANION_MAX_TOKENS) || 800
+// Per-turn output cap. Default 1200 / 1200 (final). The per-turn cap was
+// raised 800→1200 per advisor phase B8 Q3 (the post-Patch-A full review still
+// truncated mid-Finding 3 at 800; 1200 is a Mistral-specific operational test,
+// not a general answer — do not raise again until a 1200-token trace completes
+// under the chosen product protocol). Override via env for a reasoning
+// substrate (e.g. Ollama GLM 5.2) whose thinking tokens count against
+// max_tokens (advisor phase B8 Q7 substrate check).
+const MAX_TOKENS = Number(process.env.COMPANION_MAX_TOKENS) || 1200
 const MAX_TOKENS_FINAL = Number(process.env.COMPANION_MAX_TOKENS_FINAL) || 1200
 
 type CompanionScope = "title" | "sentence" | "opening" | "section" | "full"
