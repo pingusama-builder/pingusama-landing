@@ -531,4 +531,51 @@ describe("buildCompanionPrompt", () => {
       expect(p).toMatch(/FINDING 1:/)
     }
   })
+
+  it("fiction review excludes identity/profile/cultural memories from recalled preferences", () => {
+    // Advisor phase B7 Q2 (mechanical): "Cantonese-inflected cadence",
+    // writing-strengths-core, etc. leaked into the verdict despite two prompt
+    // clauses naming them verbatim. The prompt layer is exhausted; go
+    // mechanical. In fiction review, stop surfacing the profile/strengths
+    // labels and the cultural style-attribution memories from the
+    // recalled-preferences block. A non-identity craft preference is retained.
+    const memories = [
+      baseMemoryRow({ id: "s1", name: "writing-strengths-core", description: "core strengths", content: "immersive scene-setting" }),
+      baseMemoryRow({ id: "s2", name: "writing-strengths-emotional-honesty", description: "strength", content: "emotional honesty" }),
+      baseMemoryRow({ id: "c1", name: "writing-style-cantonese-cadence", description: "cadence", content: "Cantonese-inflected cadence" }),
+      baseMemoryRow({ id: "c2", name: "writing-style-cantonese-influence", description: "influence", content: "Cantonese influence on syntax" }),
+      baseMemoryRow({ id: "k1", name: "writing-style-concise", description: "style pref", content: "prefer concise prose" }),
+    ]
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories, draft, reviewMode: "fiction" })
+    // The guard filters the recalled-preferences block. Scope the assertion to
+    // that block, not the whole prompt — the OUTPUT clause legitimately names
+    // `writing-strengths-core` as an illustrative example of what NOT to cite.
+    const recalled = p.split("## Recalled writing preferences + feedback")[1].split("## The draft")[0]
+    // Excluded identity/profile/cultural labels + their content must not appear.
+    expect(recalled).not.toContain("writing-strengths-core")
+    expect(recalled).not.toContain("writing-strengths-emotional-honesty")
+    expect(recalled).not.toContain("writing-style-cantonese-cadence")
+    expect(recalled).not.toContain("writing-style-cantonese-influence")
+    expect(recalled).not.toContain("Cantonese-inflected cadence")
+    expect(recalled).not.toContain("Cantonese influence on syntax")
+    expect(recalled).not.toContain("immersive scene-setting")
+    // A non-identity craft preference is still surfaced.
+    expect(recalled).toContain("writing-style-concise")
+  })
+
+  it("non-fiction modes still surface the identity/profile/cultural memories", () => {
+    // The guard is fiction-review-specific. Prose/line-edit/auto keep
+    // surfacing the author-profile memories (personalization is expected
+    // there); only fiction review assesses the text on its own merits.
+    const memories = [
+      baseMemoryRow({ id: "s1", name: "writing-strengths-core", description: "core strengths", content: "immersive scene-setting" }),
+      baseMemoryRow({ id: "c1", name: "writing-style-cantonese-cadence", description: "cadence", content: "Cantonese-inflected cadence" }),
+    ]
+    for (const mode of ["auto", "prose", "line-edit"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories, draft, reviewMode: mode })
+      const recalled = p.split("## Recalled writing preferences + feedback")[1].split("## The draft")[0]
+      expect(recalled).toContain("writing-strengths-core")
+      expect(recalled).toContain("writing-style-cantonese-cadence")
+    }
+  })
 })
