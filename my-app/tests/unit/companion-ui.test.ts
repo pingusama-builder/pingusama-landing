@@ -152,3 +152,14 @@ describe("BlogCompanion.tsx — fiction_review event (structured terminal)", () 
     expect(file).toContain("companion-review-finding")
   })
 })
+
+describe("BlogCompanion.tsx — reasoning panel cap (advisor phase B8 post-deploy)", () => {
+  it("defines a REASONING_CAP constant so a non-converging trace can't flood the panel", () => {
+    expect(file).toContain("REASONING_CAP")
+  })
+  it("appends a one-time truncation marker when reasoning crosses the cap", () => {
+    expect(file).toMatch(/reasoning truncated/)
+    // the handler drops further deltas once capped (guard against a 12000-token flood)
+    expect(file).toMatch(/>= REASONING_CAP/)
+  })
+})

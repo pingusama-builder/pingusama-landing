@@ -371,7 +371,16 @@ describe("POST /api/blog-companion — streaming + proposals + allowlist", () =>
     const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT }))
     const events = await drainSSE(res)
     const toolEvents = events.filter((e) => e.type === "tool")
-    expect(toolEvents.some((e) => (e as any).result?.match(/Tool unavailable in writing companion/))).toBe(true)
+    // read_code is not in the offered tool set → refused at the offered-set
+    // boundary (Fix A) before reaching the dispatcher allowlist. Either refusal
+    // message is acceptable; both refuse it with no proposal emitted.
+    expect(
+      toolEvents.some(
+        (e) =>
+          /Skipped.*not offered/i.test(String((e as any).result ?? "")) ||
+          /Tool unavailable in writing companion/.test(String((e as any).result ?? ""))
+      )
+    ).toBe(true)
     expect(events.some((e) => e.type === "proposal")).toBe(false)
   })
 
@@ -705,5 +714,75 @@ describe("POST /api/blog-companion — fiction structured terminal + reasoning s
     const review = events.find((e) => e.type === "fiction_review")
     expect((review as any).noChange).toBe(true)
     expect(events.filter((e) => e.type === "proposal").length).toBe(0)
+  })
+
+  it("fiction mode strips a hallucinated propose_edit tool call (no proposal, no history entry, skip event)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("Preamble only.")
+      return {
+        role: "assistant",
+        content: "Preamble only.",
+        tool_calls: [
+          // hallucinated: propose_edit is NOT offered in fiction mode
+          {
+            id: "pe1",
+            type: "function",
+            function: {
+              name: "propose_edit",
+              arguments: JSON.stringify({
+                field: "body",
+                original: "The opening repeats the title.",
+                replacement: "The opening restates the premise.",
+                rationale: "Diagnosis: repeats. Basis: SW1. Tradeoff: none.",
+                principleId: "SW1",
+              }),
+            },
+          },
+        ],
+        finish_reason: "tool_calls",
+      }
+    })
+    const res = await POST(makeRequest({ message: "check scene movement", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "section", reviewMode: "fiction" }))
+    const events = await drainSSE(res)
+    // no proposal emitted from the hallucinated call
+    expect(events.filter((e) => e.type === "proposal").length).toBe(0)
+    // a skip tool event surfaced for transparency
+    const skip = events.find((e) => e.type === "tool" && /Skipped/i.test(String((e as any).result ?? "")))
+    expect(skip).toBeDefined()
+    expect(/propose_edit is not offered/.test(String((skip as any).result))).toBe(true)
+    // the persisted assistant row carries NO tool_calls (propose_edit must not enter history → no Mistral 3230 next turn)
+    const assistantAppends = chatMock.appendMessage.mock.calls.filter((c) => c[0].role === "assistant")
+    expect(assistantAppends.length).toBeGreaterThanOrEqual(1)
+    const lastAssistant = assistantAppends[assistantAppends.length - 1][0]
+    expect(lastAssistant.toolCalls).toBeUndefined()
+  })
+
+  it("fiction mode keeps a hallucinated propose_edit out of the next turn's request (no 3230)", async () => {
+    setupOk()
+    let call = 0
+    const seenMessages: any[] = []
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      call += 1
+      seenMessages.push(opts.messages)
+      if (call === 1) {
+        return {
+          role: "assistant",
+          content: "",
+          tool_calls: [{ id: "pe1", type: "function", function: { name: "propose_edit", arguments: JSON.stringify({ field: "body", original: "The opening repeats the title.", replacement: "x", rationale: "Diagnosis: r. Basis: SW1. Tradeoff: none.", principleId: "SW1" }) } }],
+          finish_reason: "tool_calls",
+        }
+      }
+      return { role: "assistant", content: "done", tool_calls: [], finish_reason: "stop" }
+    })
+    await POST(makeRequest({ message: "check scene movement", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "section", reviewMode: "fiction" }))
+    // turn 1 happened; because the only call was stripped, the loop breaks and
+    // there is NO turn 2 (calls.length === 0 → break). So no second mistralStream
+    // call, and no chance to send an unbalanced/propose_edit-bearing history back.
+    expect(call).toBe(1)
+    // the messages sent on turn 1 contain no propose_edit tool_call in the
+    // assistant turn (the hallucinated call never reached history).
+    const turn1 = seenMessages[0]
+    expect(turn1.some((m: any) => m.role === "assistant" && m.tool_calls?.some?.((tc: any) => tc.function?.name === "propose_edit"))).toBe(false)
   })
 })

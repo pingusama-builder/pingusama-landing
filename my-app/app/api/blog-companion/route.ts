@@ -333,6 +333,19 @@ export async function POST(request: Request) {
         // only edit path; the prose preamble is capped at 2 sentences. Other
         // modes keep the blog tool set + uncapped content.
         const tools = companionToolsFor(reviewMode)
+        // Mechanical correctness guard (advisor phase B8 post-deploy): only
+        // EXECUTE + persist tool calls for tools that were actually OFFERED to
+        // the model this turn. A non-reasoning / reasoning substrate can emit a
+        // tool call for a function not in the offered set (e.g. hallucinating
+        // `propose_edit` in fiction mode, where it is not offered). If such a
+        // call were executed it would produce a proposal from a path the mode
+        // disallows, and if it were pushed into history the next turn's request
+        // would carry a tool_call referencing an unoffered function → Mistral
+        // 3230 "Not the same number of function calls and responses". The
+        // dispatcher allowlist (COMPANION_ALLOWED) is the SECURITY boundary;
+        // this offered-set filter is the CORRECTNESS boundary. Stripped calls
+        // are surfaced as a tool event (transparency) but never enter history.
+        const offeredToolNames = new Set(tools.map((t) => t.function.name))
         const forwardContent =
           reviewMode === "fiction"
             ? fictionPreambleForwarder(send)
@@ -356,23 +369,40 @@ export async function POST(request: Request) {
             },
           })
 
+          // Filter to offered tools (see offeredToolNames comment above).
+          const calls = acc.tool_calls.filter((c) => offeredToolNames.has(c.function.name))
+          const stripped = acc.tool_calls.filter((c) => !offeredToolNames.has(c.function.name))
+
           await appendMessage({
             threadId,
             role: "assistant" as MessageRole,
             content: acc.content,
-            toolCalls: acc.tool_calls.length > 0 ? acc.tool_calls : undefined,
+            toolCalls: calls.length > 0 ? calls : undefined,
             model: modelId,
           })
 
-          if (acc.tool_calls.length === 0) break
+          // Surface hallucinated calls for tools not offered this turn (e.g.
+          // propose_edit in fiction mode) as a tool event so the author sees
+          // why no edit landed — but DO NOT execute or persist them to history
+          // (that would risk a Mistral 3230 on the next turn).
+          for (const s of stripped) {
+            send({
+              type: "tool",
+              name: s.function.name,
+              status: "done",
+              result: `Skipped: ${s.function.name} is not offered in this mode — use the offered review tool.`,
+            })
+          }
+
+          if (calls.length === 0) break
 
           mistralMessages.push({
             role: "assistant",
             content: acc.content || null,
-            tool_calls: acc.tool_calls,
+            tool_calls: calls,
           })
 
-          for (const call of acc.tool_calls) {
+          for (const call of calls) {
             send({ type: "tool", name: call.function.name, status: "running" })
 
             // Remedy A (advisor phase-B3): dedupe identical propose_edit attempts

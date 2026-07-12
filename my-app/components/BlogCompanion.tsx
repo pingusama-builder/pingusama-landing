@@ -63,6 +63,16 @@ export const CRAFT_NOTE_LABELS: Record<string, string> = {
   F4: "POV & distance", F5: "Dialogue as action", F6: "Worldbuilding",
 }
 
+// Reasoning panel display cap (advisor phase B8 post-deploy). The reasoning
+// channel is otherwise uncapped: with reasoning_effort "high" + a large token
+// budget a non-converging trace (or a repetition degeneration) can pour tens of
+// thousands of chars into the Thinking panel, flooding it. This is a post-output
+// mechanical guard — once the cap is reached, further reasoning deltas are
+// dropped and a one-time truncation marker is shown. The cap is generous (the
+// useful reasoning lives in the first chunk; the tail is usually degeneration).
+export const REASONING_CAP = 6000
+const REASONING_TRUNCATED = " …(reasoning truncated)"
+
 type ProposalStatus = "pending" | "applicable" | "applied" | "stale" | "rejected"
 
 interface ProposalCard {
@@ -300,7 +310,17 @@ export default function BlogCompanion(props: BlogCompanionProps) {
       }
       case "reasoning":
         if (typeof evt.delta === "string") {
-          setReasoningText((prev) => prev + (evt.delta as string))
+          setReasoningText((prev) => {
+            // Cap the reasoning panel (REASONING_CAP) so a non-converging trace
+            // can't flood it. Once capped, drop further deltas; on the delta
+            // that crosses the cap, append a one-time truncation marker.
+            if (prev.length >= REASONING_CAP) return prev
+            const next = prev + (evt.delta as string)
+            if (next.length > REASONING_CAP) {
+              return next.slice(0, REASONING_CAP) + REASONING_TRUNCATED
+            }
+            return next
+          })
         }
         break
       case "done":
