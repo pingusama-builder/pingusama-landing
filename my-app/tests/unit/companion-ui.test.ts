@@ -26,7 +26,10 @@ describe("BlogCompanion.tsx — content safety (spec §7/§13)", () => {
   it("never uses dangerouslySetInnerHTML on model output", () => {
     expect(file).not.toContain("dangerouslySetInnerHTML")
   })
-  it("renders critique + rationale as plain text with pre-wrap", () => {
+  it("renders model output (transcript + rationale) via the safe MarkdownText renderer", () => {
+    expect(file).toContain("MarkdownText")
+  })
+  it("keeps user input + diffs as plain pre-wrap text", () => {
     expect(file).toMatch(/pre-wrap|whiteSpace:\s*"pre-wrap"/)
   })
 })

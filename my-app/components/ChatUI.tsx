@@ -10,6 +10,7 @@ import {
 } from "@/app/admin/chat/actions";
 import type { ModelPreference } from "@/lib/chat/models";
 import { appendAssistantDelta } from "@/lib/chat/stream-updater";
+import { MarkdownText } from "@/components/MarkdownText";
 
 interface UIMessage {
   id: string;
@@ -340,7 +341,11 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
                   )}
                 </div>
                 <div className="chat-msg-body">
-                  {m.content || (m.streaming ? <span className="chat-typing">…</span> : "")}
+                  {m.role === "assistant"
+                    ? m.content
+                      ? <MarkdownText>{m.content}</MarkdownText>
+                      : (m.streaming ? <span className="chat-typing">…</span> : "")
+                    : m.content}
                 </div>
               </div>
             )

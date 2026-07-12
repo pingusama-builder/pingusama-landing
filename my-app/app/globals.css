@@ -1260,8 +1260,31 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   border: 1px solid var(--line);
   color: var(--walnut);
   border-bottom-left-radius: 4px;
+  /* assistant bodies render as markdown block elements (MarkdownText); let the
+     blocks carry their own spacing instead of preserving source newlines. */
+  white-space: normal;
 }
 .chat-typing { color: var(--walnut-soft); letter-spacing: 2px; }
+
+/* MarkdownText — safe renderer for untrusted model output (chat + companion).
+   Emphasis, GFM lists, and inline code rendered as React elements; links are
+   disabled by the component, so no <a> styling is needed. */
+.md-text { white-space: normal; word-break: break-word; }
+.md-text > :first-child { margin-top: 0; }
+.md-text > :last-child { margin-bottom: 0; }
+.md-text p { margin: 0 0 0.5em; }
+.md-text ul, .md-text ol { margin: 0 0 0.5em; padding-left: 1.25em; }
+.md-text li { margin: 0; }
+.md-text li::marker { color: var(--walnut-soft); }
+.md-text strong { font-weight: 700; }
+.md-text em { font-style: italic; }
+.md-text code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.9em;
+  background: rgba(124, 86, 60, 0.08);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
 
 .chat-tool-line {
   display: flex;

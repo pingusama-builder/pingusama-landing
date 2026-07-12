@@ -10,6 +10,7 @@ import {
   type ApplyResult,
 } from "@/lib/blog/proposals"
 import { appendAssistantDelta } from "@/lib/chat/stream-updater"
+import { MarkdownText } from "@/components/MarkdownText"
 
 type Scope = "title" | "sentence" | "opening" | "section" | "full"
 
@@ -409,15 +410,17 @@ export default function BlogCompanion(props: BlogCompanionProps) {
 
       <div className="companion-scroll">
       <div className="companion-transcript" aria-live="off">
-        {lines.map((l, i) => (
-          <p
-            key={i}
-            className={l.role === "user" ? "companion-user" : "companion-assistant"}
-            style={{ whiteSpace: "pre-wrap" }}
-          >
-            {l.text}
-          </p>
-        ))}
+        {lines.map((l, i) =>
+          l.role === "user" ? (
+            <p key={i} className="companion-user" style={{ whiteSpace: "pre-wrap" }}>
+              {l.text}
+            </p>
+          ) : (
+            <MarkdownText key={i} className="companion-assistant">
+              {l.text}
+            </MarkdownText>
+          )
+        )}
         {log.map((l, i) => (
           <p key={`log-${i}`} className="companion-log" style={{ whiteSpace: "pre-wrap" }}>
             {l}
@@ -451,9 +454,9 @@ export default function BlogCompanion(props: BlogCompanionProps) {
               <p className="companion-card-principle" title={`principle: ${p.principleId}`}>
                 {craftNote(p.principleId)}
               </p>
-              <p className="companion-card-rationale" style={{ whiteSpace: "pre-wrap" }}>
+              <MarkdownText className="companion-card-rationale">
                 {p.rationale}
-              </p>
+              </MarkdownText>
               {card.status === "stale" && (
                 <p className="companion-stale-msg" role="status">
                   Draft changed — this proposal no longer applies.
