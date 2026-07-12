@@ -163,3 +163,20 @@ describe("BlogCompanion.tsx — reasoning panel cap (advisor phase B8 post-deplo
     expect(file).toMatch(/>= REASONING_CAP/)
   })
 })
+
+describe("BlogCompanion.tsx — telemetry + protocol_bypass (advisor phase B9)", () => {
+  it("handles the telemetry SSE event into a telemetry state", () => {
+    expect(file).toContain('case "telemetry"')
+    expect(file).toMatch(/setTelemetry|telemetry/)
+  })
+  it("handles the protocol_bypass SSE event with a neutral notice", () => {
+    expect(file).toContain('case "protocol_bypass"')
+    // The notice text is owned by the route (asserted in companion-route.test.ts);
+    // the component renders the notice string it receives via the event.
+    expect(file).toMatch(/setProtocolBypass|protocolBypass/)
+  })
+  it("renders a collapsed diagnostics block showing response_model (the decisive confound field)", () => {
+    expect(file).toMatch(/<details|companion-diagnostics/)
+    expect(file).toContain("response_model")
+  })
+})

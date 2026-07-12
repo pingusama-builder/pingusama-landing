@@ -167,6 +167,13 @@ export default function BlogCompanion(props: BlogCompanionProps) {
     noChange: boolean
     findings: { diagnosis: string; principleId: string; hasEdit: boolean }[]
   } | null>(null)
+  // Advisor phase B9 — per-turn telemetry (response_model is the decisive
+  // confound field) + a non-mutating protocol_bypass notice (the structured
+  // terminal is the only edit path in fiction mode; narrating propose_edit:{...}
+  // as prose bypasses it). Telemetry renders in a collapsed Diagnostics block;
+  // the bypass notice is a visible protocol-status line. See VERDICT-phaseB9.md.
+  const [telemetry, setTelemetry] = useState<Record<string, unknown> | null>(null)
+  const [protocolBypass, setProtocolBypass] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const pendingCount = cards.filter(
@@ -188,6 +195,8 @@ export default function BlogCompanion(props: BlogCompanionProps) {
       setReasoningText("")
       setReasoningCollapsed(false)
       setFictionReview(null)
+      setTelemetry(null)
+      setProtocolBypass(null)
       setLines((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "" }])
 
       const ac = new AbortController()
@@ -308,6 +317,22 @@ export default function BlogCompanion(props: BlogCompanionProps) {
         setReasoningCollapsed(true)
         break
       }
+      case "telemetry":
+        // Advisor phase B9 Q1 — per-turn telemetry (response_model is the
+        // decisive confound field). Stored (last turn wins) for the Diagnostics
+        // block; not surfaced as content.
+        if (typeof evt === "object" && evt !== null) setTelemetry(evt as Record<string, unknown>)
+        break
+      case "protocol_bypass":
+        // Advisor phase B9 Q6 — non-mutating notice: the model narrated a tool
+        // call as prose instead of calling the structured terminal. Surface a
+        // neutral protocol-status line (no edit was created). Do NOT echo the
+        // raw payload.
+        if (typeof evt.notice === "string") {
+          setProtocolBypass(evt.notice as string)
+          setLiveRegion(evt.notice as string)
+        }
+        break
       case "reasoning":
         if (typeof evt.delta === "string") {
           setReasoningText((prev) => {
@@ -535,6 +560,38 @@ export default function BlogCompanion(props: BlogCompanionProps) {
             </p>
           ))}
         </div>
+      )}
+      {protocolBypass && (
+        <p className="companion-protocol-bypass" role="status">
+          {protocolBypass}
+        </p>
+      )}
+      {telemetry && (
+        <details className="companion-diagnostics">
+          <summary>Diagnostics</summary>
+          <dl>
+            <dt>response.model</dt>
+            <dd>{String(telemetry.response_model ?? "")}</dd>
+            <dt>requested</dt>
+            <dd>{String(telemetry.requested_model ?? "")}</dd>
+            <dt>reasoning_effort</dt>
+            <dd>{String(telemetry.reasoning_effort_sent ?? "—")}</dd>
+            <dt>chunk types</dt>
+            <dd>
+              {Array.isArray(telemetry.content_chunk_types)
+                ? (telemetry.content_chunk_types as string[]).join(", ")
+                : "—"}
+            </dd>
+            <dt>finish_reason</dt>
+            <dd>{String(telemetry.finish_reason ?? "—")}</dd>
+            <dt>scope / tier</dt>
+            <dd>
+              {String(telemetry.scope ?? "—")} / {String(telemetry.tier ?? "—")}
+            </dd>
+            <dt>terminal called</dt>
+            <dd>{String(telemetry.fiction_terminal_called ?? false)}</dd>
+          </dl>
+        </details>
       )}
       <div className="companion-transcript" aria-live="off">
         {lines.map((l, i) =>
