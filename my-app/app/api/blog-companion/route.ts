@@ -15,6 +15,7 @@ import {
   COMPANION_TOOLS,
   executeCompanionToolCall,
   type CompanionDraft,
+  type CompanionToolResult,
 } from "@/lib/chat/companion-tools"
 import {
   MODEL_TIERS,
@@ -62,6 +63,23 @@ function scopeToTier(scope: CompanionScope | undefined): ModelTier {
 function proposalDedupeKey(p: { field?: string; original?: string; replacement?: string }): string {
   const norm = (s: string | undefined) => (s ?? "").trim().replace(/\s+/g, " ")
   return `${norm(p.field)}|${norm(p.original)}|${norm(p.replacement)}`
+}
+
+/** Parse propose_edit raw args → a normalized (field, original, replacement) key,
+ * or null if the args are unparseable (in which case we do not dedupe — let the
+ * tool dispatcher surface the parse error itself). Used for the PRE-execution
+ * dedupe (Remedy A): collapses identical retries whether they would succeed or
+ * fail (e.g. a model hammering a misquoted anchor → "found 0 × N" becomes one
+ * error + N−1 skips). A corrected retry changes `original` → different key →
+ * still allowed. */
+function proposeEditArgsDedupeKey(rawArgs: string): string | null {
+  try {
+    const a = JSON.parse(rawArgs)
+    if (typeof a !== "object" || a === null) return null
+    return proposalDedupeKey({ field: a.field, original: a.original, replacement: a.replacement })
+  } catch {
+    return null
+  }
 }
 
 function rowToMistral(row: ChatMessageRow): MistralMessage | null {
@@ -248,6 +266,7 @@ export async function POST(request: Request) {
         }
         let proposalsThisTurn = 0
         const emittedProposalKeys = new Set<string>()
+        const attemptedProposalArgKeys = new Set<string>()
         let turns = 0
         while (turns < MAX_TURNS) {
           turns += 1
@@ -283,12 +302,33 @@ export async function POST(request: Request) {
 
           for (const call of acc.tool_calls) {
             send({ type: "tool", name: call.function.name, status: "running" })
-            const result = await executeCompanionToolCall(
-              call.function.name,
-              call.function.arguments,
-              toolCtx,
-              companionDraft
-            )
+
+            // Remedy A (advisor phase-B3): dedupe identical propose_edit attempts
+            // BEFORE execution. Catches repeated calls whether they would succeed
+            // or fail (e.g. a model hammering a misquoted anchor → "found 0 × N"
+            // collapses to one error + N−1 duplicate-skips). A corrected retry
+            // changes `original` → a different key → still allowed. Non-propose_edit
+            // tools and unparseable args skip this guard (argsKey === null).
+            const argsKey =
+              call.function.name === "propose_edit"
+                ? proposeEditArgsDedupeKey(call.function.arguments)
+                : null
+            let result: CompanionToolResult
+            if (argsKey !== null && attemptedProposalArgKeys.has(argsKey)) {
+              result = {
+                content:
+                  "Duplicate propose_edit skipped: this exact field, anchor, and replacement was already attempted in this response.",
+                memoryWrite: false,
+              }
+            } else {
+              if (argsKey !== null) attemptedProposalArgKeys.add(argsKey)
+              result = await executeCompanionToolCall(
+                call.function.name,
+                call.function.arguments,
+                toolCtx,
+                companionDraft
+              )
+            }
             send({
               type: "tool",
               name: call.function.name,
@@ -296,6 +336,9 @@ export async function POST(request: Request) {
               result: result.content,
             })
             if (result.proposal) {
+              // Post-match dedupe: catches two proposals that diverged in raw args
+              // but normalize to the same (field, original, replacement) after
+              // proposal construction. Distinct from the pre-execution guard above.
               const key = proposalDedupeKey(result.proposal)
               if (emittedProposalKeys.has(key)) {
                 send({

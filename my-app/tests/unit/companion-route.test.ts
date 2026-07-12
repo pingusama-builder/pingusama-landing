@@ -376,9 +376,12 @@ describe("POST /api/blog-companion — streaming + proposals + allowlist", () =>
   })
 
   it("dedupes identical proposal cards within one response (field, original, replacement)", async () => {
-    // Phase B2 mechanical guard: a streaming model can emit the same propose_edit
-    // twice (the live trace did). Dedupe cards by normalized (field, original,
-    // replacement) per response so the author sees one card, not duplicates.
+    // Remedy A (advisor phase-B3): dedupe identical propose_edit attempts BEFORE
+    // execution. A model that re-emits the same edit (the live trace did) collapses
+    // to one card; the second identical call is skipped pre-execution with a
+    // "Duplicate propose_edit skipped" tool result. A post-match guard remains
+    // for semantically-identical successful proposals that diverge in raw args
+    // but normalize together after proposal construction.
     setupOk()
     const dupArgs = JSON.stringify({
       field: "body",
@@ -410,9 +413,97 @@ describe("POST /api/blog-companion — streaming + proposals + allowlist", () =>
     const proposals = events.filter((e) => e.type === "proposal")
     expect(proposals.length).toBe(1)
     expect((proposals[0] as any).field).toBe("body")
-    // The dropped duplicate is surfaced as a tool note, not silently swallowed.
+    // The skipped duplicate is surfaced as a tool note, not silently swallowed.
     const toolResults = events.filter((e) => e.type === "tool").map((e) => (e as any).result ?? "")
-    expect(toolResults.some((r) => r.match(/Duplicate proposal dropped/i))).toBe(true)
+    expect(toolResults.some((r) => r.match(/Duplicate propose_edit skipped/i))).toBe(true)
+  })
+
+  it("three identical failing raw tool calls → one anchor error + two duplicate-skipped (advisor phase-B3 Remedy A)", async () => {
+    // The live "found 0 × 3" failure: a model hammers a misquoted anchor. Pre-
+    // execution dedupe collapses the repeats — only the FIRST attempt runs and
+    // fails at anchor match; the rest are skipped as duplicates (advisor test #1).
+    setupOk()
+    const badArgs = JSON.stringify({
+      field: "body",
+      original: "This passage does not appear anywhere in the draft body.",
+      replacement: "A replacement.",
+      rationale: "Diagnosis: x. Basis: Z1. Tradeoff: none.",
+      principleId: "Z1",
+    })
+    let call = 0
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      call += 1
+      if (call === 1) {
+        return {
+          role: "assistant",
+          content: "Findings.",
+          tool_calls: [
+            { id: "c1", type: "function", function: { name: "propose_edit", arguments: badArgs } },
+            { id: "c2", type: "function", function: { name: "propose_edit", arguments: badArgs } },
+            { id: "c3", type: "function", function: { name: "propose_edit", arguments: badArgs } },
+          ],
+          finish_reason: "tool_calls",
+        }
+      }
+      opts.onContent?.("Done.")
+      return { role: "assistant", content: "Done.", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full" }))
+    const events = await drainSSE(res)
+    const proposals = events.filter((e) => e.type === "proposal")
+    expect(proposals.length).toBe(0)
+    const toolResults = events.filter((e) => e.type === "tool").map((e) => (e as any).result ?? "")
+    // First attempt runs → anchor fails (found 0). Repeats are skipped pre-execution.
+    expect(toolResults.filter((r) => /must occur exactly once/.test(r)).length).toBe(1)
+    expect(toolResults.filter((r) => /Duplicate propose_edit skipped/i.test(r)).length).toBe(2)
+  })
+
+  it("a corrected anchor after failure remains allowed (different original → not deduped)", async () => {
+    // Remedy A must not over-block: a model that retries with a FIXED anchor
+    // (different `original`) gets a different dedupe key and is allowed to run
+    // (advisor test #2). This is the guard against the dedupe swallowing legit retries.
+    setupOk()
+    const badArgs = JSON.stringify({
+      field: "body",
+      original: "This passage does not appear anywhere in the draft body.",
+      replacement: "A replacement.",
+      rationale: "Diagnosis: x. Basis: Z1. Tradeoff: none.",
+      principleId: "Z1",
+    })
+    const goodArgs = JSON.stringify({
+      field: "body",
+      original: "The opening repeats the title.",
+      replacement: "The opening restates the premise.",
+      rationale: "Diagnosis: repeats. Basis: SW1. Tradeoff: none.",
+      principleId: "SW1",
+    })
+    let call = 0
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      call += 1
+      if (call === 1) {
+        return {
+          role: "assistant",
+          content: "Findings.",
+          tool_calls: [
+            { id: "c1", type: "function", function: { name: "propose_edit", arguments: badArgs } },
+            { id: "c2", type: "function", function: { name: "propose_edit", arguments: goodArgs } },
+          ],
+          finish_reason: "tool_calls",
+        }
+      }
+      opts.onContent?.("Done.")
+      return { role: "assistant", content: "Done.", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full" }))
+    const events = await drainSSE(res)
+    const proposals = events.filter((e) => e.type === "proposal")
+    // The corrected retry (goodArgs) succeeds → one proposal.
+    expect(proposals.length).toBe(1)
+    expect((proposals[0] as any).field).toBe("body")
+    const toolResults = events.filter((e) => e.type === "tool").map((e) => (e as any).result ?? "")
+    // The bad anchor fails once; the good anchor is NOT skipped (different key).
+    expect(toolResults.filter((r) => /must occur exactly once/.test(r)).length).toBe(1)
+    expect(toolResults.some((r) => /Duplicate propose_edit skipped/i.test(r))).toBe(false)
   })
 })
 
