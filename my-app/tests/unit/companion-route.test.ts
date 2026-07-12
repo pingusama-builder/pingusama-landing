@@ -567,3 +567,143 @@ describe("POST /api/blog-companion — review mode (advisor §B)", () => {
     expect(userAppend?.[0].content).toBe("review [scope: full]")
   })
 })
+
+describe("POST /api/blog-companion — fiction structured terminal + reasoning stream", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("fiction mode selects submit_fiction_review, NOT propose_edit, in the tools array", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async () => ({ role: "assistant", content: "Clean.", tool_calls: [], finish_reason: "stop" }))
+    await POST(makeRequest({ message: "review this story", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full", reviewMode: "fiction" }))
+    const tools = (mistralMock.mistralStream.mock.calls[0][0] as any).tools as { function: { name: string } }[]
+    const names = tools.map((t) => t.function.name)
+    expect(names).toContain("submit_fiction_review")
+    expect(names).not.toContain("propose_edit")
+  })
+
+  it("non-fiction mode keeps propose_edit (no submit_fiction_review)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async () => ({ role: "assistant", content: "x", tool_calls: [], finish_reason: "stop" }))
+    await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full", reviewMode: "prose" }))
+    const tools = (mistralMock.mistralStream.mock.calls[0][0] as any).tools as { function: { name: string } }[]
+    const names = tools.map((t) => t.function.name)
+    expect(names).toContain("propose_edit")
+    expect(names).not.toContain("submit_fiction_review")
+  })
+
+  it("forwards onReasoning chunks as reasoning SSE events", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onReasoning?.("the trace")
+      opts.onContent?.("the answer")
+      return { role: "assistant", content: "the answer", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full", reviewMode: "fiction" }))
+    const events = await drainSSE(res)
+    const reasoning = events.filter((e) => e.type === "reasoning")
+    expect(reasoning.length).toBe(1)
+    expect((reasoning[0] as any).delta).toBe("the trace")
+  })
+
+  it("fiction preamble content is truncated to 2 sentences", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("One. Two. Three. Four.")
+      return { role: "assistant", content: "One. Two. Three. Four.", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full", reviewMode: "fiction" }))
+    const events = await drainSSE(res)
+    const content = events.filter((e) => e.type === "content").map((e) => (e as any).delta).join("")
+    expect(content).toBe("One. Two.")
+    expect(content).not.toContain("Three")
+    expect(content).not.toContain("Four")
+  })
+
+  it("non-fiction content is NOT truncated (all sentences forwarded)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("One. Two. Three. Four.")
+      return { role: "assistant", content: "One. Two. Three. Four.", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full", reviewMode: "prose" }))
+    const events = await drainSSE(res)
+    const content = events.filter((e) => e.type === "content").map((e) => (e as any).delta).join("")
+    expect(content).toBe("One. Two. Three. Four.")
+  })
+
+  it("submit_fiction_review emits a fiction_review event + a proposal per finding-edit", async () => {
+    setupOk()
+    let call = 0
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      call += 1
+      if (call === 1) {
+        opts.onContent?.("One clean fix here.")
+        return {
+          role: "assistant",
+          content: "One clean fix here.",
+          tool_calls: [
+            {
+              id: "fr1",
+              type: "function",
+              function: {
+                name: "submit_fiction_review",
+                arguments: JSON.stringify({
+                  assessment: "Opening tense inconsistency; one surgical fix.",
+                  noChange: false,
+                  findings: [
+                    {
+                      diagnosis: "Tense shift in the opening.",
+                      principleId: "Z2",
+                      original: "The opening repeats the title.",
+                      replacement: "The opening restates the premise.",
+                      rationale: "Diagnosis: tense. Basis: Z2. Tradeoff: none.",
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+          finish_reason: "tool_calls",
+        }
+      }
+      opts.onContent?.("Done.")
+      return { role: "assistant", content: "Done.", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "review this story", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full", reviewMode: "fiction" }))
+    const events = await drainSSE(res)
+    const review = events.find((e) => e.type === "fiction_review")
+    expect(review).toBeDefined()
+    expect((review as any).noChange).toBe(false)
+    expect((review as any).assessment).toBe("Opening tense inconsistency; one surgical fix.")
+    expect((review as any).findings[0].hasEdit).toBe(true)
+    const proposals = events.filter((e) => e.type === "proposal")
+    expect(proposals.length).toBe(1)
+    expect((proposals[0] as any).field).toBe("body")
+    expect((proposals[0] as any).original).toBe("The opening repeats the title.")
+  })
+
+  it("submit_fiction_review noChange:true emits a NO CHANGE fiction_review, 0 proposals", async () => {
+    setupOk()
+    let call = 0
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      call += 1
+      if (call === 1) {
+        return {
+          role: "assistant",
+          content: "Clean.",
+          tool_calls: [
+            { id: "fr1", type: "function", function: { name: "submit_fiction_review", arguments: JSON.stringify({ assessment: "Clean draft.", noChange: true, findings: [] }) } },
+          ],
+          finish_reason: "tool_calls",
+        }
+      }
+      opts.onContent?.("Done.")
+      return { role: "assistant", content: "Done.", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "review this story", subjectType: "post", subjectKey: "post-1", draft: DRAFT, scope: "full", reviewMode: "fiction" }))
+    const events = await drainSSE(res)
+    const review = events.find((e) => e.type === "fiction_review")
+    expect((review as any).noChange).toBe(true)
+    expect(events.filter((e) => e.type === "proposal").length).toBe(0)
+  })
+})

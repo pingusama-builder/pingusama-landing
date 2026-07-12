@@ -12,7 +12,7 @@ import {
 import { buildWritingContext } from "@/lib/chat/writing-context"
 import { buildCompanionPrompt } from "@/lib/chat/companion-prompt"
 import {
-  COMPANION_TOOLS,
+  companionToolsFor,
   executeCompanionToolCall,
   type CompanionDraft,
   type CompanionToolResult,
@@ -88,6 +88,49 @@ function proposeEditArgsDedupeKey(rawArgs: string): string | null {
     return proposalDedupeKey({ field: a.field, original: a.original, replacement: a.replacement })
   } catch {
     return null
+  }
+}
+
+// ── Fiction preamble cap (advisor phase B8 structured-terminal) ──────────
+// In fiction mode the model may emit a short companion-voice preamble before
+// the submit_fiction_review call. Cap the FORWARDED content at 2 sentences
+// (mechanical post-output guard — a prompt "be brief" clause would be
+// probabilistic on the substrate). The assessment itself lives inside the tool
+// call, so the preamble cannot become an edit-narration slot. Non-fiction mode
+// forwards content unchanged. Robust to streaming: forward only the new slice
+// of the 2-sentence prefix of the accumulated preamble; once 2 sentences have
+// passed, lock and drop further content deltas.
+function isSentenceEnder(s: string, k: number): boolean {
+  return /[.!?]/.test(s[k]) && (k + 1 >= s.length || /\s/.test(s[k + 1]))
+}
+function firstTwoSentences(s: string): string {
+  let count = 0
+  for (let k = 0; k < s.length; k++) {
+    if (isSentenceEnder(s, k)) {
+      count += 1
+      if (count === 2) return s.slice(0, k + 1)
+    }
+  }
+  return s // fewer than 2 sentences so far → return all
+}
+function sentenceCount(s: string): number {
+  let count = 0
+  for (let k = 0; k < s.length; k++) if (isSentenceEnder(s, k)) count += 1
+  return count
+}
+function fictionPreambleForwarder(send: (o: Record<string, unknown>) => void) {
+  let acc = ""
+  let sentChars = 0
+  let locked = false
+  return (delta: string) => {
+    if (locked) return
+    acc += delta
+    const firstTwo = firstTwoSentences(acc)
+    if (firstTwo.length > sentChars) {
+      send({ type: "content", delta: firstTwo.slice(sentChars) })
+      sentChars = firstTwo.length
+    }
+    if (sentenceCount(acc) >= 2) locked = true
   }
 }
 
@@ -286,19 +329,30 @@ export async function POST(request: Request) {
         const emittedProposalKeys = new Set<string>()
         const attemptedProposalArgKeys = new Set<string>()
         let turns = 0
+        // Fiction mode: the structured terminal (submit_fiction_review) is the
+        // only edit path; the prose preamble is capped at 2 sentences. Other
+        // modes keep the blog tool set + uncapped content.
+        const tools = companionToolsFor(reviewMode)
+        const forwardContent =
+          reviewMode === "fiction"
+            ? fictionPreambleForwarder(send)
+            : (delta: string) => send({ type: "content", delta })
         while (turns < MAX_TURNS) {
           turns += 1
           const isFinalGuess = turns === MAX_TURNS
 
           const acc = await mistralStream({
             messages: mistralMessages,
-            tools: COMPANION_TOOLS,
+            tools,
             model: modelId,
             maxTokens: isFinalGuess ? MAX_TOKENS_FINAL : MAX_TOKENS,
             signal: request.signal,
             onContent: (delta) => {
               emitted = true
-              send({ type: "content", delta })
+              forwardContent(delta)
+            },
+            onReasoning: (delta) => {
+              send({ type: "reasoning", delta })
             },
           })
 
@@ -378,6 +432,33 @@ export async function POST(request: Request) {
                   result: `Proposal dropped: per-turn cap (${MAX_PROPOSALS_PER_TURN}) reached.`,
                 })
               }
+            }
+            // submit_fiction_review returns multiple proposals (one per
+            // finding-with-edit) + a fictionReview payload. Emit each proposal
+            // through the same dedupe + per-turn cap as a single propose_edit,
+            // then the one fiction_review event for the UI.
+            if (result.proposals && result.proposals.length > 0) {
+              for (const p of result.proposals) {
+                const key = proposalDedupeKey(p)
+                if (emittedProposalKeys.has(key)) continue
+                if (proposalsThisTurn >= MAX_PROPOSALS_PER_TURN) {
+                  send({
+                    type: "tool",
+                    name: call.function.name,
+                    status: "done",
+                    result: `Proposal dropped: per-turn cap (${MAX_PROPOSALS_PER_TURN}) reached.`,
+                  })
+                  break
+                }
+                emittedProposalKeys.add(key)
+                proposalsThisTurn += 1
+                emitted = true
+                send({ type: "proposal", ...p })
+              }
+            }
+            if (result.fictionReview) {
+              emitted = true
+              send({ type: "fiction_review", ...result.fictionReview })
             }
             await appendMessage({
               threadId,
