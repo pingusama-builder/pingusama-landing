@@ -154,6 +154,40 @@ export function extractTextContent(content: unknown): string {
   return out
 }
 
+/** Extract the model's internal reasoning trace from a content payload — the
+ * MIRROR of extractTextContent. Mistral-r embeds the trace in a
+ * type:"thinking" chunk whose `thinking` field is ITSELF an array of
+ * {type:"text"} sub-chunks (the real shape, per the substrate check), so we
+ * reuse extractTextContent to pull the text out of that nested array. Flat
+ * string variants are read defensively. This feeds the author-facing
+ * "Thinking…" UI panel on a SEPARATE channel — extractTextContent still drops
+ * thinking from `content`, so the two partition a chunk array with no leakage
+ * either way. Plain-string content → "" (reasoning never rides the answer
+ * string). Unknown shapes → "" (safe empty). Pure + env-free → unit-testable. */
+export function extractReasoningContent(content: unknown): string {
+  if (!Array.isArray(content)) return ""
+  let out = ""
+  for (const chunk of content) {
+    if (
+      chunk &&
+      typeof chunk === "object" &&
+      (chunk as { type?: string }).type === "thinking"
+    ) {
+      const c = chunk as { thinking?: unknown; text?: unknown; reasoning?: unknown }
+      if (Array.isArray(c.thinking)) {
+        out += extractTextContent(c.thinking)
+      } else if (typeof c.thinking === "string") {
+        out += c.thinking
+      } else if (typeof c.text === "string") {
+        out += c.text
+      } else if (typeof c.reasoning === "string") {
+        out += c.reasoning
+      }
+    }
+  }
+  return out
+}
+
 interface CallOptions {
   messages: MistralMessage[]
   tools?: MistralTool[]
@@ -162,6 +196,7 @@ interface CallOptions {
   model?: string
   signal?: AbortSignal
   onContent?: (chunk: string) => void
+  onReasoning?: (chunk: string) => void
 }
 
 async function callMistral(opts: CallOptions, stream: boolean): Promise<AccumulatedMessage> {
@@ -253,6 +288,7 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
         choices?: {
           delta?: {
             content?: string | null
+            reasoning_content?: string | null
             tool_calls?: {
               index: number
               id?: string
@@ -266,13 +302,20 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
       const delta = choice?.delta
       if (delta?.content) {
         // Reasoning substrate: delta.content may be a chunk array (ThinkChunk +
-        // TextChunk) during the thinking phase. Extract ONLY text so the model's
-        // internal reasoning never reaches the author-facing onContent stream.
+        // TextChunk). Forward text to the author; forward thinking to the
+        // reasoning channel. extractTextContent drops thinking; extractReasoningContent
+        // drops text — together they partition the array with no leakage either way.
         const text = extractTextContent(delta.content)
         if (text) {
           content += text
           opts.onContent?.(text)
         }
+        const reasoning = extractReasoningContent(delta.content)
+        if (reasoning) opts.onReasoning?.(reasoning)
+      }
+      if (delta?.reasoning_content) {
+        // GLM (Ollama) puts reasoning in a separate string field, not chunked.
+        opts.onReasoning?.(delta.reasoning_content)
       }
       if (delta?.tool_calls) {
         for (const tc of delta.tool_calls) {

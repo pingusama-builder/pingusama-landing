@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 
 import {
   extractTextContent,
+  extractReasoningContent,
   isReasoningModel,
   getReasoningEffort,
 } from "@/lib/chat/mistral"
@@ -137,5 +138,51 @@ describe("Mistral reasoning substrate — source wiring (covers)", () => {
     // The old leak shape (content += delta.content with delta.content possibly an
     // array) must be gone from the streaming path.
     expect(mistralSrc).not.toMatch(/content \+= delta\.content\b/)
+  })
+
+  it("routes reasoning to a separate onReasoning channel (streaming)", () => {
+    expect(mistralSrc).toContain("onReasoning")
+    expect(mistralSrc).toContain("extractReasoningContent")
+    // GLM puts reasoning in a separate string field, not chunked.
+    expect(mistralSrc).toContain("reasoning_content")
+  })
+})
+
+// extractReasoningContent is the mirror of extractTextContent: it pulls the
+// model's internal reasoning trace OUT of a chunk array so it can be streamed to
+// the author-facing "Thinking…" UI panel on a SEPARATE channel (content stays
+// clean — extractTextContent still drops thinking). Partition, no leakage
+// either way.
+describe("Mistral reasoning substrate — extractReasoningContent (thinking channel)", () => {
+  it("pulls the trace from a nested type:thinking chunk (the real Mistral-r shape)", () => {
+    const delta = [
+      { type: "thinking", thinking: [{ type: "text", text: "SECRET INTERNAL REASONING" }] },
+      { type: "text", text: "answer to author" },
+    ]
+    expect(extractReasoningContent(delta)).toBe("SECRET INTERNAL REASONING")
+  })
+
+  it("emits ONLY thinking from a mixed chunk array (the answer never appears on the reasoning channel)", () => {
+    const delta = [
+      { type: "text", text: "Finding 1: " },
+      { type: "thinking", thinking: [{ type: "text", text: "THE TRACE" }] },
+      { type: "text", text: "voice is intentional." },
+    ]
+    expect(extractReasoningContent(delta)).toBe("THE TRACE")
+  })
+
+  it("reads a flat-string thinking field too (defensive variant)", () => {
+    expect(extractReasoningContent([{ type: "thinking", thinking: "flat trace" }])).toBe("flat trace")
+  })
+
+  it("returns empty for a plain-string content (reasoning never rides the answer string)", () => {
+    expect(extractReasoningContent("an answer")).toBe("")
+  })
+
+  it("returns empty for null/unknown shapes (safe empty, no stringify)", () => {
+    expect(extractReasoningContent(null)).toBe("")
+    expect(extractReasoningContent({ odd: true })).toBe("")
+    expect(extractReasoningContent([{ type: "text", text: "x" }])).toBe("")
+    expect(extractReasoningContent([{ type: "unknown" }])).toBe("")
   })
 })
