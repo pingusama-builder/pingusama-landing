@@ -5,7 +5,7 @@
 // with a cheap heuristic and only spends a mistral-small call when the
 // score lands in a borderline band.
 
-import { mistralTurn } from "@/lib/chat/mistral"
+import { mistralTurn, getNarrowSubstrate } from "@/lib/chat/mistral"
 
 export type ModelTier = "small" | "medium" | "large"
 export type ModelPreference = "auto" | ModelTier
@@ -33,17 +33,29 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL
 const COMPANION_REASONING_EFFORT = process.env.COMPANION_REASONING_EFFORT
 const MISTRAL_REASONING_MODEL = process.env.MISTRAL_REASONING_MODEL || "mistral-medium-3-5"
 
+// Advisor phase B9 Q3 — narrow-scope substrate override. When
+// COMPANION_NARROW_SUBSTRATE=model|effort is set (e.g. "mistral-medium-3-5|high"
+// or "mistral-medium-3-5|none"), the medium tier resolves to `model` so the
+// three-arm matched narrow-scope A/B test (baseline mistral-medium-latest /
+// 3.5+high / 3.5+none) can run with no prompt, tool, cap, or security change.
+// lib/chat/mistral.ts sends the matching `effort` as reasoning_effort for that
+// model. Dormant when unset (null) → medium stays mistral-medium-latest, the
+// unchanged prod default. Read once at module eval (same pattern as the other
+// substrate env reads); the parser itself is env-at-call-time and unit-tested
+// in companion-reasoning-substrate.test.ts. See VERDICT-phaseB9.md Q3.
+const NARROW_MODEL = getNarrowSubstrate()?.model
+
 export const MODEL_TIERS: Record<ModelTier, string> = OLLAMA_MODEL
   ? { small: OLLAMA_MODEL, medium: OLLAMA_MODEL, large: OLLAMA_MODEL }
   : COMPANION_REASONING_EFFORT
     ? {
         small: "mistral-small-latest",
-        medium: "mistral-medium-latest",
+        medium: NARROW_MODEL ?? "mistral-medium-latest",
         large: MISTRAL_REASONING_MODEL,
       }
     : {
         small: "mistral-small-latest",
-        medium: "mistral-medium-latest",
+        medium: NARROW_MODEL ?? "mistral-medium-latest",
         large: "mistral-large-latest",
       }
 

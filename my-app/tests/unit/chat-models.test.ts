@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 
 // Single module mock for @/lib/chat/mistral. By default the mocked mistralTurn
 // delegates to the real implementation, so the Task-2 fetch-stub tests below
@@ -168,5 +170,25 @@ describe("resolveModel priority chain", () => {
 describe("MODEL_PREFERENCES", () => {
   it("lists auto + the three tiers", () => {
     expect(MODEL_PREFERENCES).toEqual(["auto", "small", "medium", "large"])
+  })
+})
+
+// ── Advisor phase B9 Q3 ────────────────────────────────────────────────────
+// Narrow-scope substrate override: when COMPANION_NARROW_SUBSTRATE=model|effort
+// is set, the medium tier resolves to the override model (e.g.
+// mistral-medium-3-5) so the three-arm matched narrow-scope A/B test can run.
+// Dormant when unset. MODEL_TIERS is module-evaluated once (the env is read at
+// import time, same as COMPANION_REASONING_EFFORT), so the behavioral test of
+// the parser lives in companion-reasoning-substrate.test.ts (getNarrowSubstrate,
+// env-at-call-time); here we cover the wiring. See VERDICT-phaseB9.md Q3.
+describe("MODEL_TIERS — narrow-substrate override wiring (advisor phase B9 Q3)", () => {
+  const modelsSrc = readFileSync(fileURLToPath(new URL("../../lib/chat/models.ts", import.meta.url)), "utf8")
+
+  it("routes the medium tier through the narrow-substrate override", () => {
+    expect(modelsSrc).toContain("getNarrowSubstrate")
+    expect(modelsSrc).toContain("COMPANION_NARROW_SUBSTRATE")
+    // The override is the fallback source for the medium tier (dormant → null →
+    // mistral-medium-latest, the unchanged prod default).
+    expect(modelsSrc).toMatch(/NARROW_MODEL\s*\?\?\s*"mistral-medium-latest"/)
   })
 })
