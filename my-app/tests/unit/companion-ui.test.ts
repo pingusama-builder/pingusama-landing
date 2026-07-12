@@ -114,3 +114,41 @@ describe("BlogCompanion.tsx — mode-aware quick actions (advisor §B)", () => {
     expect(file).toMatch(/\.slice\(0,\s*5\)|slice\(0, 5\)/)
   })
 })
+
+describe("BlogCompanion.tsx — reasoning stream + toggle (advisor phase B8)", () => {
+  it("handles the reasoning SSE event into a reasoningText state", () => {
+    expect(file).toContain('case "reasoning"')
+    expect(file).toContain("reasoningText")
+  })
+  it("has a Show-reasoning toggle persisted in localStorage (default on)", () => {
+    expect(file).toContain("companion-show-reasoning")
+    expect(file).toContain("showReasoning")
+    // default on: the initializer reads the key and treats only "0" as off
+    expect(file).toMatch(/companion-show-reasoning[\s\S]*?"0"/)
+  })
+  it("renders a collapsible Thinking panel with a live pulse while streaming", () => {
+    expect(file).toContain("companion-thinking")
+    expect(file).toMatch(/Thinking/)
+    expect(file).toMatch(/pulse|companion-thinking-pulse/)
+  })
+  it("renders a minimal Working indicator when reasoning is hidden (never-hung)", () => {
+    expect(file).toMatch(/Working/)
+  })
+  it("auto-collapses the Thinking panel when a proposal / fiction_review / done arrives", () => {
+    expect(file).toMatch(/reasoningCollapsed|setReasoningCollapsed/)
+  })
+})
+
+describe("BlogCompanion.tsx — fiction_review event (structured terminal)", () => {
+  it("handles the fiction_review SSE event into a fictionReview state", () => {
+    expect(file).toContain('case "fiction_review"')
+    expect(file).toContain("fictionReview")
+  })
+  it("renders the assessment + a NO CHANGE badge", () => {
+    expect(file).toContain("companion-review-assessment")
+    expect(file).toMatch(/NO CHANGE/)
+  })
+  it("renders finding headers (diagnosis + principleId)", () => {
+    expect(file).toContain("companion-review-finding")
+  })
+})

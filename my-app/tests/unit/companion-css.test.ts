@@ -53,4 +53,11 @@ describe("companion CSS (spec §9 + mobile rule)", () => {
     expect(file).toMatch(/grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/)
     expect(file).toMatch(/\.companion-scroll[\s\S]*?overflow-y:\s*auto/)
   })
+  it("the Thinking panel is capped + scrollable + narrow-viewport-safe (advisor phase B8)", () => {
+    expect(file).toContain(".companion-thinking")
+    expect(file).toMatch(/\.companion-thinking[\s\S]*?max-height:\s*30vh/)
+    expect(file).toMatch(/\.companion-thinking[\s\S]*?overflow-y:\s*auto/)
+    // narrow viewport rule exists so the panel stays usable at 390px
+    expect(file).toMatch(/max-width:\s*390px/)
+  })
 })

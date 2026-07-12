@@ -140,6 +140,23 @@ export default function BlogCompanion(props: BlogCompanionProps) {
   const [modelValue, setModelValue] = useState<"auto" | "small" | "medium" | "large">("auto")
   const [reviewMode, setReviewMode] = useState<ReviewMode>("auto")
   const [visible, setVisible] = useState(true)
+  // Reasoning stream (advisor phase B8): the model's thinking tokens stream on
+  // a separate SSE channel into a collapsible "Thinking…" panel so the long
+  // reasoning latency never looks hung. Toggle (default ON) is per-browser
+  // persisted; OFF hides the text but a minimal "Working…" pulse still shows.
+  const [reasoningText, setReasoningText] = useState("")
+  const [reasoningCollapsed, setReasoningCollapsed] = useState(false)
+  const [showReasoning, setShowReasoning] = useState<boolean>(() => {
+    if (typeof localStorage === "undefined") return true
+    return localStorage.getItem("companion-show-reasoning") !== "0"
+  })
+  // Structured fiction review (submit_fiction_review terminal): assessment +
+  // finding headers + a NO CHANGE badge, rendered above the proposal cards.
+  const [fictionReview, setFictionReview] = useState<{
+    assessment: string
+    noChange: boolean
+    findings: { diagnosis: string; principleId: string; hasEdit: boolean }[]
+  } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const pendingCount = cards.filter(
@@ -158,6 +175,9 @@ export default function BlogCompanion(props: BlogCompanionProps) {
       setError(null)
       setStreaming(true)
       setLiveRegion("Reviewing…")
+      setReasoningText("")
+      setReasoningCollapsed(false)
+      setFictionReview(null)
       setLines((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "" }])
 
       const ac = new AbortController()
@@ -247,6 +267,8 @@ export default function BlogCompanion(props: BlogCompanionProps) {
         } else {
           setLiveRegion("Rejected an invalid proposal event.")
         }
+        // The review's findings have arrived → collapse the Thinking panel.
+        setReasoningCollapsed(true)
         break
       }
       case "tool":
@@ -254,10 +276,38 @@ export default function BlogCompanion(props: BlogCompanionProps) {
           setLog((prev) => [...prev, `${evt.name}: ${evt.result}`])
         }
         break
+      case "fiction_review": {
+        const r = evt as {
+          assessment?: unknown
+          noChange?: unknown
+          findings?: unknown
+        }
+        if (typeof r.assessment === "string" && typeof r.noChange === "boolean" && Array.isArray(r.findings)) {
+          setFictionReview({
+            assessment: r.assessment,
+            noChange: r.noChange,
+            findings: r.findings
+              .filter((f) => f && typeof f === "object")
+              .map((f) => ({
+                diagnosis: typeof (f as { diagnosis?: unknown }).diagnosis === "string" ? (f as { diagnosis: string }).diagnosis : "",
+                principleId: typeof (f as { principleId?: unknown }).principleId === "string" ? (f as { principleId: string }).principleId : "",
+                hasEdit: (f as { hasEdit?: unknown }).hasEdit === true,
+              })),
+          })
+        }
+        setReasoningCollapsed(true)
+        break
+      }
+      case "reasoning":
+        if (typeof evt.delta === "string") {
+          setReasoningText((prev) => prev + (evt.delta as string))
+        }
+        break
       case "done":
         setCards((prev) =>
           prev.map((c) => (c.status === "pending" ? { ...c, status: "applicable" } : c))
         )
+        setReasoningCollapsed(true)
         setLiveRegion("Review complete.")
         break
       case "error":
@@ -377,6 +427,22 @@ export default function BlogCompanion(props: BlogCompanionProps) {
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+          <label className="companion-reasoning-toggle" title="Show the model's reasoning while it thinks">
+            <input
+              type="checkbox"
+              checked={showReasoning}
+              onChange={(e) => {
+                const v = e.target.checked
+                setShowReasoning(v)
+                try {
+                  localStorage.setItem("companion-show-reasoning", v ? "1" : "0")
+                } catch {
+                  /* ignore (private mode / disabled storage) */
+                }
+              }}
+            />
+            <span>Show reasoning</span>
+          </label>
           <button
             type="button"
             className="companion-hide-btn"
@@ -405,6 +471,51 @@ export default function BlogCompanion(props: BlogCompanionProps) {
       </div>
 
       <div className="companion-scroll">
+      {streaming && showReasoning && reasoningText && !reasoningCollapsed && (
+        <div className="companion-thinking" aria-label="Model reasoning">
+          <button
+            type="button"
+            className="companion-thinking-label"
+            aria-expanded={true}
+            onClick={() => setReasoningCollapsed(true)}
+          >
+            <span className="companion-thinking-pulse" aria-hidden="true" />
+            Thinking…
+          </button>
+          <div className="companion-thinking-body">
+            {reasoningText}
+          </div>
+        </div>
+      )}
+      {streaming && !showReasoning && (
+        <p className="companion-working" aria-label="Working">
+          <span className="companion-thinking-pulse" aria-hidden="true" />
+          Working…
+        </p>
+      )}
+      {streaming && showReasoning && !reasoningText && !reasoningCollapsed && (
+        <p className="companion-working" aria-label="Working">
+          <span className="companion-thinking-pulse" aria-hidden="true" />
+          Working…
+        </p>
+      )}
+      {fictionReview && (
+        <div className="companion-fiction-review">
+          {fictionReview.noChange ? (
+            <p className="companion-review-nochange">NO CHANGE — the draft holds up as written.</p>
+          ) : (
+            <p className="companion-review-assessment">{fictionReview.assessment}</p>
+          )}
+          {fictionReview.findings.map((f, i) => (
+            <p key={`finding-${i}`} className="companion-review-finding">
+              <span className="companion-review-principle">{f.principleId}</span>
+              {" — "}
+              {f.diagnosis}
+              {f.hasEdit ? "" : " (observation)"}
+            </p>
+          ))}
+        </div>
+      )}
       <div className="companion-transcript" aria-live="off">
         {lines.map((l, i) =>
           l.role === "user" ? (
