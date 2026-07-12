@@ -502,4 +502,33 @@ describe("buildCompanionPrompt", () => {
       expect(p).toMatch(/ask one focused question or recommend NO CHANGE/)
     }
   })
+
+  it("OUTPUT closes the prose-edit loophole with a no-third-option rule (cross-mode)", () => {
+    // Advisor phase B7 Q1: the post-8218cbb run wrote "Proposed edit:" as prose
+    // instead of calling propose_edit, bypassing the tool layer (dedupe, anchor
+    // matching, voice-marker protection). The model invented a third path
+    // between "emit a tool call" and "ask or NO CHANGE." Close it: no third
+    // option. Cross-mode — the loophole applies in every mode.
+    for (const mode of ["auto", "prose", "fiction", "line-edit"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).toMatch(/Do not narrate a proposed edit in prose/)
+      expect(p).toContain("For a locally repairable, unambiguous fix, call `propose_edit`")
+      expect(p).toMatch(/For an uncertain voice choice, ask one focused question or recommend NO CHANGE/)
+      expect(p).toMatch(/There is no third option/)
+    }
+  })
+
+  it("OUTPUT uses a fixed labeled assessment slot (cross-mode)", () => {
+    // Advisor phase B7 Q4: the countable budget was leaky — the Overall
+    // assessment was three bullets plus a voice paragraph, not the mandated
+    // "at most one two-sentence assessment." Make the opening a fixed labeled
+    // slot so expansion is visibly malformed, folded into this patch. The
+    // labeled ASSESSMENT/FINDING 1 shape competes less with the finding budget.
+    // Cross-mode — the shape applies in every mode.
+    for (const mode of ["auto", "prose", "fiction", "line-edit"] as const) {
+      const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: mode })
+      expect(p).toMatch(/ASSESSMENT \(at most two sentences\)/)
+      expect(p).toMatch(/FINDING 1:/)
+    }
+  })
 })
