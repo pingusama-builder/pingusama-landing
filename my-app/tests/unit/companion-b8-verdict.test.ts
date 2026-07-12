@@ -34,3 +34,15 @@ describe("BlogCompanion.tsx — basis-ID authority calibration (advisor §B8 Q4)
     expect(comp).toContain("CRAFT_NOTE_LABELS")
   })
 })
+
+describe("blog-companion route — blind-isolation memory condition (advisor §B8 cross-draft matrix)", () => {
+  it("gates a memory-suppression switch on COMPANION_BLIND_REVIEW (dormant when unset)", () => {
+    expect(route).toContain("COMPANION_BLIND_REVIEW")
+    // The suppression is a mechanical input guard (empty array when set), not a
+    // prompt clause asking the model to ignore memory.
+    expect(route).toContain("process.env.COMPANION_BLIND_REVIEW ? [] : memories")
+  })
+  it("documents it as dormant unless the env is set", () => {
+    expect(route).toMatch(/Dormant when unset/)
+  })
+})

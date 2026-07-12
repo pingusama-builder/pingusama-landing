@@ -242,9 +242,18 @@ export async function POST(request: Request) {
     recallMemories({ limit: 40, includeSite: false }),
     getMessages(threadId),
   ])
+  // Blind-isolation memory condition (advisor phase B8 cross-draft matrix —
+  // the Prof. Golden blind-isolation runs in eval/substrate-matrix.md): when
+  // COMPANION_BLIND_REVIEW is set, suppress ALL recalled memories so the review
+  // assesses the submitted text only (no profile/work/author/style bias). The
+  // site memory store is global (not per-user), so a fresh test admin user
+  // would still recall it — suppression must be explicit. Dormant when unset;
+  // the production path recalls memories exactly as before. This is a
+  // mechanical input guard (the doctrine), not a prompt clause.
+  const recalledMemories = process.env.COMPANION_BLIND_REVIEW ? [] : memories
   const systemPrompt = buildCompanionPrompt({
     writingContext,
-    memories,
+    memories: recalledMemories,
     draft: companionDraft,
     scope,
     reviewMode,
