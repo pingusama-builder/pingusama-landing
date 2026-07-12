@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 const authMock = vi.hoisted(() => ({ getCurrentUser: vi.fn(), isAdmin: vi.fn() }))
 const chatMock = vi.hoisted(() => ({
@@ -784,5 +784,129 @@ describe("POST /api/blog-companion — fiction structured terminal + reasoning s
     // assistant turn (the hallucinated call never reached history).
     const turn1 = seenMessages[0]
     expect(turn1.some((m: any) => m.role === "assistant" && m.tool_calls?.some?.((tc: any) => tc.function?.name === "propose_edit"))).toBe(false)
+  })
+})
+
+// ── Advisor phase B9 ───────────────────────────────────────────────────────
+// Per-turn telemetry (response_model is the decisive confound field) + a
+// non-mutating pseudo-tool bypass notice (the structured terminal is the only
+// edit path in fiction mode; narrating propose_edit:{...} as prose bypasses it).
+// See VERDICT-phaseB9.md Q1 + Q6.
+describe("POST /api/blog-companion — telemetry + protocol_bypass (advisor phase B9)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    delete process.env.COMPANION_TELEMETRY
+  })
+  afterEach(() => {
+    delete process.env.COMPANION_TELEMETRY
+  })
+
+  it("emits a telemetry event per fiction turn with response_model + reasoning_effort_sent", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ASSESSMENT: ok.")
+      return {
+        role: "assistant",
+        content: "ASSESSMENT: ok.",
+        tool_calls: [],
+        finish_reason: "stop",
+        response_model: "mistral-medium-3-5",
+        reasoning_effort_sent: "high",
+        content_chunk_types: ["text"],
+        reasoning_chars: 0,
+        text_chars: 14,
+      }
+    })
+    const res = await POST(
+      makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "fiction", scope: "section" })
+    )
+    const events = await drainSSE(res)
+    const tel = events.find((e) => e.type === "telemetry")
+    expect(tel).toBeDefined()
+    expect((tel as any).response_model).toBe("mistral-medium-3-5")
+    expect((tel as any).reasoning_effort_sent).toBe("high")
+    expect((tel as any).requested_model).toBe("mistral-medium-latest") // mocked MODEL_TIERS.medium
+    expect((tel as any).scope).toBe("section")
+    expect((tel as any).tier).toBe("medium")
+    expect(Array.isArray(tel?.tools_offered)).toBe(true)
+    expect((tel as any).fiction_terminal_called).toBe(false)
+  })
+
+  it("emits a protocol_bypass event when fiction content narrates propose_edit and the terminal was not called", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ASSESSMENT: ok.")
+      return {
+        role: "assistant",
+        content:
+          "ASSESSMENT: ok.\npropose_edit:{'field': 'body', 'original': 'x', 'replacement': 'y', 'rationale': 'Diagnosis: tense. Basis: Z2.', 'principleId': 'Z2'}",
+        tool_calls: [],
+        finish_reason: "stop",
+      }
+    })
+    const res = await POST(
+      makeRequest({ message: "check scene movement", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "fiction", scope: "section" })
+    )
+    const events = await drainSSE(res)
+    const bypass = events.find((e) => e.type === "protocol_bypass")
+    expect(bypass).toBeDefined()
+    expect((bypass as any).tool).toBe("propose_edit")
+    expect(typeof (bypass as any).notice).toBe("string")
+    expect((bypass as any).notice).toMatch(/unsubmitted edit payload/i)
+    // No proposal was created from the narrated payload (no laundering of prose
+    // into an action — the verdict's Q6 rule).
+    expect(events.filter((e) => e.type === "proposal")).toHaveLength(0)
+  })
+
+  it("does NOT emit protocol_bypass when the terminal was actually called (real submit_fiction_review)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ASSESSMENT: ok.")
+      return {
+        role: "assistant",
+        content: "ASSESSMENT: ok.",
+        tool_calls: [
+          {
+            id: "fr1",
+            type: "function",
+            function: {
+              name: "submit_fiction_review",
+              arguments: JSON.stringify({ assessment: "ok", noChange: true, findings: [] }),
+            },
+          },
+        ],
+        finish_reason: "tool_calls",
+      }
+    })
+    const res = await POST(
+      makeRequest({ message: "review this story", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "fiction", scope: "full" })
+    )
+    const events = await drainSSE(res)
+    expect(events.find((e) => e.type === "protocol_bypass")).toBeFalsy()
+  })
+
+  it("does not emit telemetry in prose mode unless COMPANION_TELEMETRY is set", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "prose" }))
+    const events = await drainSSE(res)
+    expect(events.find((e) => e.type === "telemetry")).toBeFalsy()
+  })
+
+  it("emits telemetry in prose mode when COMPANION_TELEMETRY is set", async () => {
+    setupOk()
+    process.env.COMPANION_TELEMETRY = "1"
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop", response_model: "mistral-medium-latest" }
+    })
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "prose" }))
+    const events = await drainSSE(res)
+    const tel = events.find((e) => e.type === "telemetry")
+    expect(tel).toBeDefined()
+    expect((tel as any).response_model).toBe("mistral-medium-latest")
   })
 })

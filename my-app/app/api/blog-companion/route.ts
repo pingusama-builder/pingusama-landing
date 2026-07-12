@@ -24,6 +24,7 @@ import {
   type ModelPreference,
 } from "@/lib/chat/models"
 import { mistralStream, type MistralMessage, type MistralToolCall } from "@/lib/chat/mistral"
+import { detectPseudoToolCall } from "@/lib/chat/fiction-terminal"
 import type { DraftSnapshot } from "@/lib/blog/proposals"
 
 export const maxDuration = 60
@@ -391,6 +392,68 @@ export async function POST(request: Request) {
               name: s.function.name,
               status: "done",
               result: `Skipped: ${s.function.name} is not offered in this mode — use the offered review tool.`,
+            })
+          }
+
+          // Advisor phase B9 Q6 — non-mutating pseudo-tool bypass detector. In
+          // fiction mode the structured terminal (submit_fiction_review) is the
+          // only edit path; if the model narrates a tool call as prose
+          // (propose_edit:{...} / submit_fiction_review:{...} / fenced JSON tool
+          // payload) AND did NOT actually call submit_fiction_review, surface a
+          // neutral protocol-status notice. Do NOT strip, auto-convert, or
+          // execute the payload — only observe (no laundering of prose into an
+          // action). The notice prevents a misleading empty UI state and makes
+          // the failure a crisp metric for the A/B test.
+          if (reviewMode === "fiction") {
+            const bypass = detectPseudoToolCall(acc.content)
+            const terminalCalled = calls.some((c) => c.function.name === "submit_fiction_review")
+            if (bypass && !terminalCalled) {
+              send({
+                type: "protocol_bypass",
+                tool: bypass.tool,
+                notice: "The review contained an unsubmitted edit payload; no edit proposal was created.",
+              })
+              // Server-side log: model, scope, tier, request id, offered tools
+              // (the verdict's Q6 logging contract — the crisp metric).
+              console.warn(
+                "[terminal_protocol_bypass]",
+                JSON.stringify({
+                  tool: bypass.tool,
+                  threadId,
+                  scope: scope ?? null,
+                  tier,
+                  model: modelId,
+                  tools_offered: tools.map((t) => t.function.name),
+                })
+              )
+            }
+          }
+
+          // Advisor phase B9 Q1 — per-turn telemetry. response_model is the
+          // DECISIVE confound field (the configured alias is NOT proof of which
+          // model answered — the alias could resolve unexpectedly, an SDK/proxy
+          // could transform the request, or the parser could misclassify).
+          // Emitted in fiction mode (the substrate-experiment surface) or when
+          // COMPANION_TELEMETRY is set; dormant otherwise to keep prose/line-edit
+          // clean. char proxies stand in for token counts (no tokenizer).
+          if (reviewMode === "fiction" || process.env.COMPANION_TELEMETRY) {
+            send({
+              type: "telemetry",
+              turn: turns,
+              scope: scope ?? null,
+              tier,
+              requested_model: modelId,
+              response_model: acc.response_model ?? "",
+              reasoning_effort_sent: acc.reasoning_effort_sent ?? null,
+              content_chunk_types: acc.content_chunk_types ?? [],
+              reasoning_chars: acc.reasoning_chars ?? 0,
+              text_chars: acc.text_chars ?? 0,
+              finish_reason: acc.finish_reason ?? null,
+              tools_offered: tools.map((t) => t.function.name),
+              tool_calls_received: calls.map((c) => c.function.name),
+              fiction_terminal_called: calls.some(
+                (c) => c.function.name === "submit_fiction_review"
+              ),
             })
           }
 
