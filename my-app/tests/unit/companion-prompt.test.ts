@@ -253,10 +253,25 @@ describe("buildCompanionPrompt", () => {
     expect(p).toMatch(/diagnostic lenses, not universal laws/)
   })
 
-  it("in fiction mode emits the fiction propose_edit restriction", () => {
+  it("in fiction mode emits the fiction edit restriction", () => {
     const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
-    expect(p).toMatch(/issue propose_edit only when the failure is locally repairable and unambiguous/i)
+    expect(p).toMatch(/attach a surgical edit \(inside submit_fiction_review\) only when the failure is locally repairable and unambiguous/i)
     expect(p).toMatch(/Never replace a title solely to make it darker, higher-stakes, or more genre-conventional/)
+  })
+
+  it("in fiction mode emits the structured-terminal override (submit_fiction_review, not propose_edit)", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "fiction" })
+    expect(p).toContain("submit_fiction_review")
+    expect(p).toMatch(/Fiction mode override/)
+    expect(p).toMatch(/propose_edit.*is not offered to you in fiction mode/i)
+    expect(p).toMatch(/Submit your WHOLE review as ONE .submit_fiction_review. tool call/)
+    expect(p).toMatch(/optional.*preamble|preamble of at most two sentences/i)
+  })
+
+  it("omits the structured-terminal override in prose mode", () => {
+    const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "prose" })
+    expect(p).not.toContain("submit_fiction_review")
+    expect(p).not.toMatch(/Fiction mode override/)
   })
 
   it("places fiction rules below voice preservation in the hierarchy", () => {
@@ -270,7 +285,7 @@ describe("buildCompanionPrompt", () => {
   it("omits the fiction lenses + restriction in prose mode", () => {
     const p = buildCompanionPrompt({ writingContext: "ctx", memories: [], draft, reviewMode: "prose" })
     expect(p).not.toContain("F1 — Narrative promise")
-    expect(p).not.toMatch(/issue propose_edit only when the failure is locally repairable/i)
+    expect(p).not.toMatch(/attach a surgical edit \(inside submit_fiction_review\) only when the failure is locally repairable/i)
   })
 
   it("in fiction mode emits the fiction contrastive examples block", () => {
