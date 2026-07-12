@@ -63,10 +63,6 @@ export const CRAFT_NOTE_LABELS: Record<string, string> = {
   F4: "POV & distance", F5: "Dialogue as action", F6: "Worldbuilding",
 }
 
-function craftNote(principleId: string): string {
-  return CRAFT_NOTE_LABELS[principleId] ?? principleId
-}
-
 type ProposalStatus = "pending" | "applicable" | "applied" | "stale" | "rejected"
 
 interface ProposalCard {
@@ -450,9 +446,6 @@ export default function BlogCompanion(props: BlogCompanionProps) {
                 <span className="companion-current">{current}</span>
                 {" → "}
                 <span className="companion-proposed">{p.replacement}</span>
-              </p>
-              <p className="companion-card-principle" title={`principle: ${p.principleId}`}>
-                {craftNote(p.principleId)}
               </p>
               <MarkdownText className="companion-card-rationale">
                 {p.rationale}
