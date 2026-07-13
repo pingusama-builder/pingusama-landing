@@ -27,7 +27,12 @@ import { mistralStream, type MistralMessage, type MistralToolCall } from "@/lib/
 import { detectPseudoToolCall, evaluateTerminalExpectation } from "@/lib/chat/fiction-terminal"
 import type { DraftSnapshot } from "@/lib/blog/proposals"
 
-export const maxDuration = 60
+// Advisor phase B10 Q1 — raised 60 → 240. Vercel Hobby now allows 300s under
+// Fluid Compute; 60 was self-imposed. The observed full-review max was 202s,
+// so 240 is a proportionate ceiling (not 300). This is a route-level Next.js
+// export (applies to all scopes; narrow scopes finish in ~5s and never reach
+// it). Keep the route export; vercel.ts is not needed (verdict Q1).
+export const maxDuration = 240
 export const runtime = "nodejs"
 
 // SECURITY: this route imports ONLY the chat data layer (read + constrained
@@ -89,6 +94,57 @@ function proposeEditArgsDedupeKey(rawArgs: string): string | null {
     return proposalDedupeKey({ field: a.field, original: a.original, replacement: a.replacement })
   } catch {
     return null
+  }
+}
+
+// Advisor phase B10 Q4 — stop-rule instrumentation. One aggregate object per
+// run, emitted as an SSE event (admin Diagnostics) + a structured console log
+// (for log-based stop-rule evaluation post-deploy). The fields map 1:1 to the
+// verdict's stop rules: native terminal rate (terminal_called_any), bypass
+// rate (bypass_any), cap-exhaustion/timeout rate (finish_reasons), latency
+// (elapsed_ms), reasoning volume (total_reasoning_chars). See VERDICT-phaseB10
+// Q4 "Stop rules".
+interface RunSummary {
+  scope: string | null
+  tier: ModelTier
+  model: string
+  response_model: string
+  turns: number
+  terminal_called_any: boolean
+  bypass_any: boolean
+  finish_reasons: (string | null)[]
+  total_reasoning_chars: number
+  total_text_chars: number
+  elapsed_ms: number
+  had_transport_error: boolean
+}
+function buildRunSummary(args: {
+  scope: CompanionScope | undefined
+  tier: ModelTier
+  modelId: string
+  responseModel: string
+  turns: number
+  terminalCalledAny: boolean
+  bypassAny: boolean
+  finishReasons: (string | null)[]
+  totalReasoningChars: number
+  totalTextChars: number
+  startedAt: number
+  hadTransportError: boolean
+}): RunSummary {
+  return {
+    scope: args.scope ?? null,
+    tier: args.tier,
+    model: args.modelId,
+    response_model: args.responseModel,
+    turns: args.turns,
+    terminal_called_any: args.terminalCalledAny,
+    bypass_any: args.bypassAny,
+    finish_reasons: args.finishReasons,
+    total_reasoning_chars: args.totalReasoningChars,
+    total_text_chars: args.totalTextChars,
+    elapsed_ms: Date.now() - args.startedAt,
+    had_transport_error: args.hadTransportError,
   }
 }
 
@@ -332,6 +388,8 @@ export async function POST(request: Request) {
       let totalTextChars = 0
       const startedAt = Date.now()
       let hadTransportError = false
+      let lastResponseModel = ""
+      let turns = 0
       try {
         send({ type: "thread", threadId })
         send({ type: "model", tier, modelId, reason })
@@ -344,7 +402,6 @@ export async function POST(request: Request) {
         let proposalsThisTurn = 0
         const emittedProposalKeys = new Set<string>()
         const attemptedProposalArgKeys = new Set<string>()
-        let turns = 0
         // Fiction mode: the structured terminal (submit_fiction_review) is the
         // only edit path; the prose preamble is capped at 2 sentences. Other
         // modes keep the blog tool set + uncapped content.
@@ -388,6 +445,7 @@ export async function POST(request: Request) {
           finishReasons.push(acc.finish_reason ?? null)
           totalReasoningChars += acc.reasoning_chars ?? 0
           totalTextChars += acc.text_chars ?? 0
+          if (acc.response_model) lastResponseModel = acc.response_model
 
           // Filter to offered tools (see offeredToolNames comment above).
           const calls = acc.tool_calls.filter((c) => offeredToolNames.has(c.function.name))
@@ -612,9 +670,78 @@ export async function POST(request: Request) {
           }
         }
 
+        // Advisor phase B10 Q4 — run_summary (stop-rule instrumentation). Same
+        // gate as per-turn telemetry: fiction mode OR COMPANION_TELEMETRY, so
+        // prose/line-edit stay clean. The structured log is fiction-only (the
+        // server-side stop-rule feed); the SSE event is admin Diagnostics.
+        if (reviewMode === "fiction" || process.env.COMPANION_TELEMETRY) {
+          const summary = buildRunSummary({
+            scope,
+            tier,
+            modelId,
+            responseModel: lastResponseModel,
+            turns,
+            terminalCalledAny,
+            bypassAny,
+            finishReasons,
+            totalReasoningChars,
+            totalTextChars,
+            startedAt,
+            hadTransportError,
+          })
+          send({ type: "run_summary", ...summary })
+        }
+        if (reviewMode === "fiction") {
+          // Best-effort structured log; never let logging break the stream.
+          try {
+            console.info(
+              "[companion_run_summary]",
+              JSON.stringify({
+                scope: scope ?? null,
+                tier,
+                model: modelId,
+                response_model: lastResponseModel,
+                turns,
+                terminal_called_any: terminalCalledAny,
+                bypass_any: bypassAny,
+                finish_reasons: finishReasons,
+                total_reasoning_chars: totalReasoningChars,
+                total_text_chars: totalTextChars,
+                elapsed_ms: Date.now() - startedAt,
+                had_transport_error: hadTransportError,
+              })
+            )
+          } catch {
+            /* ignore log failure */
+          }
+        }
+
         send({ type: "done", threadId })
       } catch (err) {
         hadTransportError = true
+        if (reviewMode === "fiction" || process.env.COMPANION_TELEMETRY) {
+          try {
+            send({
+              type: "run_summary",
+              ...buildRunSummary({
+                scope,
+                tier,
+                modelId,
+                responseModel: lastResponseModel,
+                turns,
+                terminalCalledAny,
+                bypassAny,
+                finishReasons,
+                totalReasoningChars,
+                totalTextChars,
+                startedAt,
+                hadTransportError: true,
+              }),
+            })
+          } catch {
+            /* best-effort: don't let summary emission break the error path */
+          }
+        }
         const msg = err instanceof Error ? err.message : "Companion failed"
         send({ type: "error", message: msg, partial: emitted })
       } finally {

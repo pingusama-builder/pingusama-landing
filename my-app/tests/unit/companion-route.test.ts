@@ -40,7 +40,7 @@ vi.mock("@/lib/chat/mistral", () => ({ mistralStream: mistralMock.mistralStream,
 // buildCompanionPrompt + companion-tools run REAL (pure prompt build + allowlist dispatch).
 // They only reach the mocked @/lib/db/chat for save_writing_preference / set_model.
 
-import { POST } from "@/app/api/blog-companion/route"
+import { POST, maxDuration } from "@/app/api/blog-companion/route"
 
 const DRAFT = {
   content_markdown: "The opening repeats the title.",
@@ -1010,5 +1010,107 @@ describe("POST /api/blog-companion — terminal_expected notice (advisor phase B
     )
     const events = await drainSSE(res)
     expect(events.find((e) => e.type === "terminal_expected")).toBeFalsy()
+  })
+})
+
+describe("POST /api/blog-companion — maxDuration + run_summary (advisor phase B10 Q1/Q4)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    delete process.env.COMPANION_TELEMETRY
+  })
+  afterEach(() => {
+    delete process.env.COMPANION_TELEMETRY
+  })
+
+  it("exports maxDuration = 240 (raised from 60; 202s observed max → 240 margin)", () => {
+    expect(maxDuration).toBe(240)
+  })
+
+  it("emits a run_summary event in fiction mode with the stop-rule aggregate fields", async () => {
+    setupOk()
+    let call = 0
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      call += 1
+      if (call === 1) {
+        opts.onContent?.("ASSESSMENT: ok.")
+        return {
+          role: "assistant",
+          content: "ASSESSMENT: ok.",
+          tool_calls: [
+            { id: "fr1", type: "function", function: { name: "submit_fiction_review", arguments: JSON.stringify({ assessment: "ok", noChange: true, findings: [] }) } },
+          ],
+          finish_reason: "tool_calls",
+          response_model: "mistral-large-latest",
+          reasoning_effort_sent: "high",
+          reasoning_chars: 1500,
+          text_chars: 14,
+        }
+      }
+      opts.onContent?.("Done.")
+      return { role: "assistant", content: "Done.", tool_calls: [], finish_reason: "stop", response_model: "mistral-large-latest", reasoning_chars: 100, text_chars: 5 }
+    })
+    const res = await POST(
+      makeRequest({ message: "review this story", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "fiction", scope: "full" })
+    )
+    const events = await drainSSE(res)
+    const rs = events.find((e) => e.type === "run_summary")
+    expect(rs).toBeDefined()
+    expect((rs as any).scope).toBe("full")
+    expect((rs as any).tier).toBe("large")
+    expect((rs as any).model).toBe("mistral-large-latest")
+    expect((rs as any).response_model).toBe("mistral-large-latest")
+    expect((rs as any).turns).toBe(2)
+    expect((rs as any).terminal_called_any).toBe(true)
+    expect((rs as any).bypass_any).toBe(false)
+    expect((rs as any).finish_reasons).toEqual(["tool_calls", "stop"])
+    expect((rs as any).total_reasoning_chars).toBe(1600)
+    expect((rs as any).total_text_chars).toBe(19)
+    expect(typeof (rs as any).elapsed_ms).toBe("number")
+    expect((rs as any).elapsed_ms).toBeGreaterThanOrEqual(0)
+  })
+
+  it("run_summary reflects terminal_called_any=false and bypass_any=true on a bypass run", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ASSESSMENT: ok.")
+      return {
+        role: "assistant",
+        content: "ASSESSMENT: ok.\npropose_edit:{'field':'body','original':'x','replacement':'y','rationale':'r','principleId':'Z2'}",
+        tool_calls: [],
+        finish_reason: "stop",
+      }
+    })
+    const res = await POST(
+      makeRequest({ message: "check scene movement", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "fiction", scope: "section" })
+    )
+    const events = await drainSSE(res)
+    const rs = events.find((e) => e.type === "run_summary")
+    expect(rs).toBeDefined()
+    expect((rs as any).terminal_called_any).toBe(false)
+    expect((rs as any).bypass_any).toBe(true)
+    expect((rs as any).finish_reasons).toEqual(["stop"])
+  })
+
+  it("does NOT emit run_summary in prose mode unless COMPANION_TELEMETRY is set", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "prose" }))
+    const events = await drainSSE(res)
+    expect(events.find((e) => e.type === "run_summary")).toBeFalsy()
+  })
+
+  it("emits run_summary in prose mode when COMPANION_TELEMETRY is set", async () => {
+    setupOk()
+    process.env.COMPANION_TELEMETRY = "1"
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop", response_model: "mistral-medium-latest" }
+    })
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "prose" }))
+    const events = await drainSSE(res)
+    expect(events.find((e) => e.type === "run_summary")).toBeDefined()
   })
 })
