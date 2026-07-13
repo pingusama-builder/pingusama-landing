@@ -1,6 +1,6 @@
 "use client";
 
-import { ToolKey } from "@/lib/tools";
+import { ToolKey, getCompassTools, type CompassDirection } from "@/lib/tools";
 
 interface WheelProps {
   lockedKey: ToolKey | null;
@@ -15,15 +15,23 @@ interface PointConfig {
   label: string;
   cx: number;
   cy: number;
+  direction: CompassDirection;
   title: string;
 }
 
-const POINTS: PointConfig[] = [
-  { key: "epub", label: "EPUB", cx: 100, cy: 42, title: "EPUB Converter — open the panel" },
-  { key: "vn", label: "VN", cx: 158, cy: 100, title: "VN Finder — open the panel" },
-  { key: "sw", label: "SW", cx: 100, cy: 158, title: "Summoners War Parser — open the panel" },
-  { key: "words", label: "Words", cx: 42, cy: 100, title: "Name of the Words — open the panel" },
+const COMPASS_POINTS: PointConfig[] = [
+  { key: "epub", label: "EPUB", cx: 100, cy: 42, direction: "north", title: "EPUB Converter — open the panel" },
+  { key: "vn", label: "VN", cx: 158, cy: 100, direction: "east", title: "VN Finder — open the panel" },
+  { key: "sw", label: "SW", cx: 100, cy: 158, direction: "south", title: "Summoners War Parser — open the panel" },
+  { key: "words", label: "Words", cx: 42, cy: 100, direction: "west", title: "Name of the Words — open the panel" },
 ];
+
+const DIRECTION_LABELS: Record<CompassDirection, string> = {
+  north: "N",
+  east: "E",
+  south: "S",
+  west: "W",
+};
 
 function ToolPoint({
   cfg,
@@ -191,6 +199,10 @@ export default function Wheel({
   onClick,
   onLeave,
 }: WheelProps) {
+  // Defensive: the compass is intentionally fixed at four points. If the data
+  // model drifts, render the four configured positions rather than expanding.
+  const points = COMPASS_POINTS;
+
   return (
     <div className="wheel-wrap" id="wheel-wrap" onMouseLeave={onLeave}>
       <svg
@@ -332,7 +344,7 @@ export default function Wheel({
             <line x1="100" y1="100" x2="42" y2="100" />
           </g>
 
-          {POINTS.map((cfg) => (
+          {points.map((cfg) => (
             <ToolPoint
               key={cfg.key}
               cfg={cfg}

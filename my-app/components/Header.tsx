@@ -8,7 +8,7 @@ export default function Header() {
       </Link>
       <nav>
         <Link href="/blog">blog</Link>
-        <a href="#wheel">tools</a>
+        <Link href="/tools">tools</Link>
         <a href="#about">about</a>
         <Link href="/admin/login" className="pill small">
           log in

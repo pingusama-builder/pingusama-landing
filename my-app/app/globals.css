@@ -2049,6 +2049,368 @@ a:hover { color: var(--terracotta); border-bottom-color: var(--terracotta); }
   outline-offset: 1px;
 }
 
+/* =====================================================
+   WORKBENCH — recently on the workbench feature card
+   ===================================================== */
+.workbench-band {
+  max-width: 620px;
+  margin: 28px auto 0;
+  padding: 0 4px;
+  text-align: left;
+}
+.workbench-section-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--dusk);
+  font-weight: 800;
+  margin: 0 0 10px;
+}
+.workbench-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 20px;
+  background: var(--bg-card-hi);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.workbench-feature:hover {
+  transform: translateY(-2px);
+  border-color: var(--terracotta);
+  box-shadow: var(--shadow-hover);
+}
+.workbench-icon {
+  flex: 0 0 auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #FBF4DF;
+  border: 1.5px solid var(--terracotta);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(62,44,32,.10);
+}
+.workbench-icon svg { width: 32px; height: 32px; }
+.workbench-body { min-width: 0; flex: 1; }
+.workbench-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.workbench-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--dusk);
+  font-weight: 800;
+}
+.workbench-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1.5px solid var(--dusk);
+  background: #E4ECF0;
+  color: var(--dusk);
+}
+.workbench-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 24px;
+  margin: 0 0 4px;
+  color: var(--walnut);
+  line-height: 1.1;
+}
+.workbench-nature {
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--terracotta-d);
+  font-size: 16px;
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+.workbench-desc {
+  margin: 0 0 12px;
+  color: var(--walnut-soft);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+.workbench-foot {
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+.workbench-link {
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--terracotta-d);
+  border: none;
+}
+.workbench-link:hover { color: var(--terracotta); }
+
+.workbench-tools-link {
+  margin-top: 14px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+}
+.workbench-tools-link a {
+  color: var(--terracotta-d);
+  border-bottom: 1.5px solid transparent;
+}
+.workbench-tools-link a:hover {
+  color: var(--terracotta);
+  border-bottom-color: var(--terracotta);
+}
+
+@media (max-width: 640px) {
+  .workbench-band {
+    margin-top: 22px;
+    padding: 0;
+  }
+  .workbench-feature {
+    padding: 16px;
+    gap: 12px;
+  }
+  .workbench-icon {
+    width: 48px;
+    height: 48px;
+  }
+  .workbench-icon svg { width: 28px; height: 28px; }
+  .workbench-title { font-size: 22px; }
+  .workbench-nature { font-size: 15px; }
+  .workbench-desc { font-size: 14px; }
+  .workbench-tools-link { text-align: left; }
+}
+
+@media (max-width: 390px) {
+  .workbench-feature {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .workbench-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .workbench-title { font-size: 20px; }
+  .workbench-nature,
+  .workbench-desc {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* =====================================================
+   TOOLS PAGE — workshop inventory
+   ===================================================== */
+.tools-page {
+  padding: 18px 0 40px;
+}
+.tools-page h1 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(32px, 5vw, 44px);
+  line-height: 1.05;
+  margin: 0 0 10px;
+  color: var(--walnut);
+}
+.tools-lede {
+  color: var(--walnut-soft);
+  max-width: 620px;
+  margin: 0 0 28px;
+  font-size: clamp(15px, 1.7vw, 17px);
+  line-height: 1.55;
+}
+.tool-group { margin-bottom: 32px; }
+.tool-group-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 22px;
+  margin: 0 0 14px;
+  color: var(--walnut);
+}
+.tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tool-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition: transform .14s ease, border-color .14s ease;
+}
+.tool-row:hover {
+  transform: translateX(2px);
+  border-color: var(--terracotta);
+}
+.tool-row-icon {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #FBF4DF;
+  border: 1.5px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tool-row-icon svg { width: 26px; height: 26px; }
+.tool-row-body { min-width: 0; flex: 1; }
+.tool-row-eyebrow {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dusk);
+  font-weight: 800;
+  margin-bottom: 2px;
+}
+.tool-row-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  margin: 0 0 4px;
+  color: var(--walnut);
+  line-height: 1.15;
+}
+.tool-row-desc {
+  margin: 0 0 10px;
+  color: var(--walnut-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.tool-row-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tool-row-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1.5px solid var(--line);
+  background: #FBF4DF;
+  color: var(--walnut-soft);
+}
+.tool-row-status.live {
+  color: var(--sage-deep);
+  border-color: var(--sage);
+  background: #EAF1DE;
+}
+.tool-row-status.live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sage);
+  display: inline-block;
+}
+.tool-row-status.in-progress {
+  color: var(--terracotta-d);
+  border-color: var(--terracotta);
+  background: #F6E2D6;
+}
+.tool-row-status.in-progress::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--terracotta);
+  display: inline-block;
+}
+.tool-row-status.resting {
+  color: var(--dusk);
+  border-color: var(--dusk);
+  background: #E4ECF0;
+}
+.tool-row-status.resting::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dusk);
+  display: inline-block;
+}
+.tool-row-link {
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--terracotta-d);
+  border: none;
+}
+.tool-row-link:hover { color: var(--terracotta); }
+.tools-back {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--line);
+  font-size: 14px;
+  font-weight: 700;
+}
+.tools-back a {
+  color: var(--terracotta-d);
+  border-bottom: 1.5px solid transparent;
+}
+.tools-back a:hover {
+  color: var(--terracotta);
+  border-bottom-color: var(--terracotta);
+}
+
+@media (max-width: 640px) {
+  .tool-row {
+    padding: 14px;
+    gap: 12px;
+  }
+  .tool-row-icon {
+    width: 40px;
+    height: 40px;
+  }
+  .tool-row-icon svg { width: 24px; height: 24px; }
+  .tool-row-title { font-size: 18px; }
+  .tool-group-title { font-size: 20px; }
+}
+
+@media (max-width: 390px) {
+  .tools-page h1 { font-size: 28px; }
+  .tool-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .tool-row-desc,
+  .tools-lede {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* ≤390px: tighten padding so before/after text wraps without overflow. */
 @media (max-width: 390px) {
   .companion {

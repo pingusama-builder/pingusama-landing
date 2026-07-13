@@ -51,7 +51,7 @@ export default function DetailPanel({
             {t ? t.eyebrow : "the workshop"}
           </span>
           {t && (
-            <span className={`pill ${t.statusKind}`}>{t.status}</span>
+            <span className={`pill ${t.status}`}>{t.statusLabel}</span>
           )}
         </div>
         <h2 className="detail-title">

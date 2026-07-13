@@ -10,9 +10,10 @@ import BenchWagon from "./BenchWagon";
 import BenchOverlay from "./BenchOverlay";
 import DetailPanel from "./DetailPanel";
 import PostCard from "./PostCard";
-import { TOOLS, type ToolKey } from "@/lib/tools";
+import { TOOLS, type ToolKey, getWorkbenchTool } from "@/lib/tools";
 import { Post } from "@/lib/db/posts";
 import type { ResolvedShelf, VaultData } from "@/lib/books";
+import WorkbenchFeature from "./WorkbenchFeature";
 
 export default function LandingPage({
   frames,
@@ -25,6 +26,7 @@ export default function LandingPage({
   shelf: ResolvedShelf;
   vault: VaultData;
 }) {
+  const workbenchTool = getWorkbenchTool();
   const [activeKey, setActiveKey] = useState<ToolKey | null>(null);
   const [lockedKey, setLockedKey] = useState<ToolKey | null>(null);
   const [benchOpen, setBenchOpen] = useState(false);
@@ -48,7 +50,7 @@ export default function LandingPage({
     setActiveKey(key);
     const becomingLocked = lockedKey !== key;
     setLockedKey((prev) => (prev === key ? null : key));
-    if (becomingLocked && TOOLS[key].statusKind === "local") {
+    if (becomingLocked && TOOLS[key].status === "resting") {
       window.open(TOOLS[key].href, "_blank", "noopener");
     }
   };
@@ -98,6 +100,20 @@ export default function LandingPage({
           </div>
 
           <DetailPanel currentKey={lockedKey || activeKey} locked={!!lockedKey} />
+
+          {workbenchTool && (
+            <section
+              id="workbench"
+              className="workbench-band"
+              aria-label="Recently on the workbench"
+            >
+              <p className="workbench-section-eyebrow">Recently on the workbench</p>
+              <WorkbenchFeature tool={workbenchTool} />
+              <div className="workbench-tools-link">
+                <a href="/tools">See all contraptions →</a>
+              </div>
+            </section>
+          )}
         </section>
 
         <div className="divider" aria-hidden="true">
