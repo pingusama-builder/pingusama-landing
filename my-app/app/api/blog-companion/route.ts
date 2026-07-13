@@ -742,6 +742,30 @@ export async function POST(request: Request) {
             /* best-effort: don't let summary emission break the error path */
           }
         }
+        // Best-effort structured log on the error path too (I-1): the stop-rule feed must see had_transport_error: true.
+        if (reviewMode === "fiction") {
+          try {
+            console.info(
+              "[companion_run_summary]",
+              JSON.stringify({
+                scope: scope ?? null,
+                tier,
+                model: modelId,
+                response_model: lastResponseModel,
+                turns,
+                terminal_called_any: terminalCalledAny,
+                bypass_any: bypassAny,
+                finish_reasons: finishReasons,
+                total_reasoning_chars: totalReasoningChars,
+                total_text_chars: totalTextChars,
+                elapsed_ms: Date.now() - startedAt,
+                had_transport_error: hadTransportError,
+              })
+            )
+          } catch {
+            /* ignore log failure */
+          }
+        }
         const msg = err instanceof Error ? err.message : "Companion failed"
         send({ type: "error", message: msg, partial: emitted })
       } finally {

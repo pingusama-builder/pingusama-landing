@@ -1113,4 +1113,27 @@ describe("POST /api/blog-companion — maxDuration + run_summary (advisor phase 
     const events = await drainSSE(res)
     expect(events.find((e) => e.type === "run_summary")).toBeDefined()
   })
+
+  it("emits the structured [companion_run_summary] log with had_transport_error:true on a fiction transport error (I-1)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockRejectedValueOnce(new Error("transport down"))
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
+    try {
+      const res = await POST(
+        makeRequest({ message: "review this story", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "fiction", scope: "full" })
+      )
+      const events = await drainSSE(res)
+      // Sanity: the error path ran.
+      expect(events.find((e) => e.type === "error")).toBeDefined()
+      const summaryCall = infoSpy.mock.calls.find((c) => c[0] === "[companion_run_summary]")
+      expect(summaryCall).toBeDefined()
+      const payload = JSON.parse(summaryCall![1] as string)
+      expect(payload.had_transport_error).toBe(true)
+      expect(payload.scope).toBe("full")
+      expect(payload.model).toBe("mistral-large-latest")
+      expect(typeof payload.elapsed_ms).toBe("number")
+    } finally {
+      infoSpy.mockRestore()
+    }
+  })
 })
