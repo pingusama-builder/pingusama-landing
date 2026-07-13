@@ -174,6 +174,13 @@ export default function BlogCompanion(props: BlogCompanionProps) {
   // the bypass notice is a visible protocol-status line. See VERDICT-phaseB9.md.
   const [telemetry, setTelemetry] = useState<Record<string, unknown> | null>(null)
   const [protocolBypass, setProtocolBypass] = useState<string | null>(null)
+  // Advisor phase B10 Q5 — terminal-expectation notice (non-mutating). Fires
+  // when a fiction run ended normally with no submit_fiction_review and no
+  // prose bypass (the "clean NO CHANGE. prose, no terminal" skip mode).
+  const [terminalExpected, setTerminalExpected] = useState<string | null>(null)
+  // Advisor phase B10 Q4 — run_summary (stop-rule instrumentation aggregate),
+  // rendered in the Diagnostics block.
+  const [runSummary, setRunSummary] = useState<Record<string, unknown> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const pendingCount = cards.filter(
@@ -197,6 +204,8 @@ export default function BlogCompanion(props: BlogCompanionProps) {
       setFictionReview(null)
       setTelemetry(null)
       setProtocolBypass(null)
+      setTerminalExpected(null)
+      setRunSummary(null)
       setLines((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "" }])
 
       const ac = new AbortController()
@@ -332,6 +341,20 @@ export default function BlogCompanion(props: BlogCompanionProps) {
           setProtocolBypass(evt.notice as string)
           setLiveRegion(evt.notice as string)
         }
+        break
+      case "terminal_expected":
+        // Advisor phase B10 Q5 — non-mutating notice: the fiction run ended
+        // without the required terminal submission. Surface the route's neutral
+        // notice string (no payload echo). Do NOT strip/convert/retry.
+        if (typeof evt.notice === "string") {
+          setTerminalExpected(evt.notice as string)
+          setLiveRegion(evt.notice as string)
+        }
+        break
+      case "run_summary":
+        // Advisor phase B10 Q4 — run-level aggregate for the Diagnostics block
+        // (stop-rule instrumentation). Stored, not surfaced as content.
+        if (typeof evt === "object" && evt !== null) setRunSummary(evt as Record<string, unknown>)
         break
       case "reasoning":
         if (typeof evt.delta === "string") {
@@ -516,6 +539,11 @@ export default function BlogCompanion(props: BlogCompanionProps) {
       </div>
 
       <div className="companion-scroll">
+      {streaming && reviewMode === "fiction" && scope === "full" && (
+        <p className="companion-beta-note" role="status">
+          Full story review is a slow-path beta — it can take several minutes.
+        </p>
+      )}
       {streaming && showReasoning && reasoningText && !reasoningCollapsed && (
         <div className="companion-thinking" aria-label="Model reasoning">
           <button
@@ -566,6 +594,11 @@ export default function BlogCompanion(props: BlogCompanionProps) {
           {protocolBypass}
         </p>
       )}
+      {terminalExpected && (
+        <p className="companion-terminal-expected" role="status">
+          {terminalExpected}
+        </p>
+      )}
       {telemetry && (
         <details className="companion-diagnostics">
           <summary>Diagnostics</summary>
@@ -590,6 +623,31 @@ export default function BlogCompanion(props: BlogCompanionProps) {
             </dd>
             <dt>terminal called</dt>
             <dd>{String(telemetry.fiction_terminal_called ?? false)}</dd>
+          </dl>
+        </details>
+      )}
+      {runSummary && (
+        <details className="companion-diagnostics">
+          <summary>Run summary</summary>
+          <dl>
+            <dt>turns</dt>
+            <dd>{String(runSummary.turns ?? "—")}</dd>
+            <dt>terminal_called_any</dt>
+            <dd>{String(runSummary.terminal_called_any ?? false)}</dd>
+            <dt>bypass_any</dt>
+            <dd>{String(runSummary.bypass_any ?? false)}</dd>
+            <dt>finish_reasons</dt>
+            <dd>
+              {Array.isArray(runSummary.finish_reasons)
+                ? (runSummary.finish_reasons as string[]).join(", ")
+                : "—"}
+            </dd>
+            <dt>reasoning chars (total)</dt>
+            <dd>{String(runSummary.total_reasoning_chars ?? 0)}</dd>
+            <dt>elapsed_ms</dt>
+            <dd>{String(runSummary.elapsed_ms ?? "—")}</dd>
+            <dt>had_transport_error</dt>
+            <dd>{String(runSummary.had_transport_error ?? false)}</dd>
           </dl>
         </details>
       )}

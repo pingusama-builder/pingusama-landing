@@ -180,3 +180,33 @@ describe("BlogCompanion.tsx — telemetry + protocol_bypass (advisor phase B9)",
     expect(file).toContain("response_model")
   })
 })
+
+describe("BlogCompanion.tsx — terminal_expected notice (advisor phase B10 Q5)", () => {
+  it("handles the terminal_expected SSE event into a terminalExpected state", () => {
+    expect(file).toContain('case "terminal_expected"')
+    expect(file).toMatch(/setTerminalExpected|terminalExpected/)
+  })
+  it("renders a terminal-expected notice line (distinct from protocol_bypass)", () => {
+    expect(file).toContain("companion-terminal-expected")
+  })
+})
+
+describe("BlogCompanion.tsx — run_summary diagnostics (advisor phase B10 Q4)", () => {
+  it("handles the run_summary SSE event into a runSummary state", () => {
+    expect(file).toContain('case "run_summary"')
+    expect(file).toMatch(/setRunSummary|runSummary/)
+  })
+  it("surfaces run_summary fields in the Diagnostics block", () => {
+    expect(file).toMatch(/terminal_called_any|runSummary/)
+  })
+})
+
+describe("BlogCompanion.tsx — slow-path beta note (advisor phase B10 Q1)", () => {
+  it("declares the beta-note text for full-scope fiction reviews", () => {
+    expect(file).toMatch(/slow-path beta/i)
+    expect(file).toMatch(/several minutes/i)
+  })
+  it("renders the beta note under a companion-beta-note class", () => {
+    expect(file).toContain("companion-beta-note")
+  })
+})
