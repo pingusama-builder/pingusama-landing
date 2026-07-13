@@ -46,3 +46,42 @@ export function detectPseudoToolCall(content: string): { tool: string } | null {
   }
   return null
 }
+
+// ── Terminal-expectation notice trigger (advisor phase B10 Q5) ───────────
+// In fiction mode the structured terminal (submit_fiction_review) is the only
+// edit path. A demonstrated failure mode (the B9 A/B "Arm 3" skip): the model
+// ends normally (finish_reason=stop) with clean prose — e.g. "NO CHANGE." —
+// but never calls submit_fiction_review, so no assessment/findings/edit cards
+// are produced and the author sees a misleading empty state. This helper is
+// the NON-MUTATING trigger for a neutral admin-only notice. It MUST NOT cause
+// the route to strip, synthesize, execute, or retry anything.
+//
+// Fire only when ALL hold: finish_reason === "stop" (a normal end, not a
+// cap-exhaustion "length" or a transport error), no submit_fiction_review was
+// called across the whole run (terminalCalledAny), and no prose bypass was
+// detected (bypassAny — the protocol_bypass notice already covers that case,
+// so suppressing here avoids a double-emit). A genuine NO CHANGE review must
+// still submit the terminal with an empty finding set; this notice flags the
+// one that did not.
+//
+// See ai-advisor/refinement-03-fiction-examples-extension/VERDICT-phaseB10.md Q5.
+
+export interface TerminalExpectationInput {
+  /** Last-turn finish_reason. Only "stop" fires the notice. */
+  finishReason: string | null
+  /** True if any turn called submit_fiction_review. */
+  terminalCalledAny: boolean
+  /** True if any turn's prose tripped detectPseudoToolCall (with no terminal). */
+  bypassAny: boolean
+  /** True if the stream threw / aborted (a transport or API error). */
+  hadTransportError: boolean
+}
+
+export function evaluateTerminalExpectation(input: TerminalExpectationInput): boolean {
+  return (
+    input.finishReason === "stop" &&
+    !input.terminalCalledAny &&
+    !input.bypassAny &&
+    !input.hadTransportError
+  )
+}
