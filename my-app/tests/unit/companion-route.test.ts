@@ -910,3 +910,105 @@ describe("POST /api/blog-companion — telemetry + protocol_bypass (advisor phas
     expect((tel as any).response_model).toBe("mistral-medium-latest")
   })
 })
+
+describe("POST /api/blog-companion — terminal_expected notice (advisor phase B10 Q5)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    delete process.env.COMPANION_TELEMETRY
+  })
+  afterEach(() => {
+    delete process.env.COMPANION_TELEMETRY
+  })
+
+  it("emits terminal_expected when a fiction turn ends stop with no terminal call and no bypass", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("NO CHANGE. The draft holds up.")
+      return {
+        role: "assistant",
+        content: "NO CHANGE. The draft holds up.",
+        tool_calls: [],
+        finish_reason: "stop",
+      }
+    })
+    const res = await POST(
+      makeRequest({ message: "review this story", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "fiction", scope: "full" })
+    )
+    const events = await drainSSE(res)
+    const te = events.find((e) => e.type === "terminal_expected")
+    expect(te).toBeDefined()
+    expect((te as any).notice).toBe(
+      "Review completed without the required fiction terminal submission; no validated findings or edit cards were created."
+    )
+  })
+
+  it("does NOT emit terminal_expected when submit_fiction_review was called", async () => {
+    setupOk()
+    let call = 0
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      call += 1
+      if (call === 1) {
+        return {
+          role: "assistant",
+          content: "ASSESSMENT: ok.",
+          tool_calls: [
+            { id: "fr1", type: "function", function: { name: "submit_fiction_review", arguments: JSON.stringify({ assessment: "ok", noChange: true, findings: [] }) } },
+          ],
+          finish_reason: "tool_calls",
+        }
+      }
+      opts.onContent?.("Done.")
+      return { role: "assistant", content: "Done.", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(
+      makeRequest({ message: "review this story", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "fiction", scope: "full" })
+    )
+    const events = await drainSSE(res)
+    expect(events.find((e) => e.type === "terminal_expected")).toBeFalsy()
+  })
+
+  it("does NOT emit terminal_expected when a prose bypass fired (the bypass notice covers it)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ASSESSMENT: ok.")
+      return {
+        role: "assistant",
+        content: "ASSESSMENT: ok.\npropose_edit:{'field':'body','original':'x','replacement':'y','rationale':'r','principleId':'Z2'}",
+        tool_calls: [],
+        finish_reason: "stop",
+      }
+    })
+    const res = await POST(
+      makeRequest({ message: "check scene movement", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "fiction", scope: "section" })
+    )
+    const events = await drainSSE(res)
+    expect(events.find((e) => e.type === "protocol_bypass")).toBeDefined()
+    expect(events.find((e) => e.type === "terminal_expected")).toBeFalsy()
+  })
+
+  it("does NOT emit terminal_expected on a length finish (cap-exhaustion, not the skip mode)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("FINDING 1: ...")
+      return { role: "assistant", content: "FINDING 1: ...", tool_calls: [], finish_reason: "length" }
+    })
+    const res = await POST(
+      makeRequest({ message: "review this story", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "fiction", scope: "full" })
+    )
+    const events = await drainSSE(res)
+    expect(events.find((e) => e.type === "terminal_expected")).toBeFalsy()
+  })
+
+  it("does NOT emit terminal_expected in prose mode (fiction-only guard)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("Looks good.")
+      return { role: "assistant", content: "Looks good.", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(
+      makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT, reviewMode: "prose", scope: "full" })
+    )
+    const events = await drainSSE(res)
+    expect(events.find((e) => e.type === "terminal_expected")).toBeFalsy()
+  })
+})

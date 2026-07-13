@@ -24,7 +24,7 @@ import {
   type ModelPreference,
 } from "@/lib/chat/models"
 import { mistralStream, type MistralMessage, type MistralToolCall } from "@/lib/chat/mistral"
-import { detectPseudoToolCall } from "@/lib/chat/fiction-terminal"
+import { detectPseudoToolCall, evaluateTerminalExpectation } from "@/lib/chat/fiction-terminal"
 import type { DraftSnapshot } from "@/lib/blog/proposals"
 
 export const maxDuration = 60
@@ -317,6 +317,21 @@ export async function POST(request: Request) {
       const send = (obj: Record<string, unknown>) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`))
       let emitted = false // content or a proposal was sent → partial-aware error
+      // ── Advisor phase B10 — cross-run accumulators ───────────────────
+      // terminal_expected (Q5) + run_summary (Q4) aggregate across all turns
+      // in this run. terminalCalledAny: any submit_fiction_review this run.
+      // bypassAny: any prose pseudo-tool bypass this run (the protocol_bypass
+      // notice already covered that turn). finishReasons: per-turn finishes
+      // (the last one drives the Q5 trigger; the list feeds the stop rules).
+      // Declared outside `try` so the catch block can set hadTransportError
+      // (same scoping pattern as `emitted` above).
+      let terminalCalledAny = false
+      let bypassAny = false
+      const finishReasons: (string | null)[] = []
+      let totalReasoningChars = 0
+      let totalTextChars = 0
+      const startedAt = Date.now()
+      let hadTransportError = false
       try {
         send({ type: "thread", threadId })
         send({ type: "model", tier, modelId, reason })
@@ -370,6 +385,10 @@ export async function POST(request: Request) {
             },
           })
 
+          finishReasons.push(acc.finish_reason ?? null)
+          totalReasoningChars += acc.reasoning_chars ?? 0
+          totalTextChars += acc.text_chars ?? 0
+
           // Filter to offered tools (see offeredToolNames comment above).
           const calls = acc.tool_calls.filter((c) => offeredToolNames.has(c.function.name))
           const stripped = acc.tool_calls.filter((c) => !offeredToolNames.has(c.function.name))
@@ -407,7 +426,9 @@ export async function POST(request: Request) {
           if (reviewMode === "fiction") {
             const bypass = detectPseudoToolCall(acc.content)
             const terminalCalled = calls.some((c) => c.function.name === "submit_fiction_review")
+            if (terminalCalled) terminalCalledAny = true
             if (bypass && !terminalCalled) {
+              bypassAny = true
               send({
                 type: "protocol_bypass",
                 tool: bypass.tool,
@@ -567,8 +588,33 @@ export async function POST(request: Request) {
           }
         }
 
+        // Advisor phase B10 Q5 — terminal-expectation notice. Non-mutating:
+        // observe + notice only (no strip/convert/execute/retry). Fires when a
+        // fiction run ended normally (last finish=stop) with no submit_fiction_
+        // review call and no prose bypass — the "clean NO CHANGE. prose, no
+        // terminal" skip mode. hadTransportError is false on this clean path
+        // (a thrown error jumps to catch before reaching here).
+        if (reviewMode === "fiction") {
+          const lastFinish = finishReasons[finishReasons.length - 1] ?? null
+          if (
+            evaluateTerminalExpectation({
+              finishReason: lastFinish,
+              terminalCalledAny,
+              bypassAny,
+              hadTransportError,
+            })
+          ) {
+            send({
+              type: "terminal_expected",
+              notice:
+                "Review completed without the required fiction terminal submission; no validated findings or edit cards were created.",
+            })
+          }
+        }
+
         send({ type: "done", threadId })
       } catch (err) {
+        hadTransportError = true
         const msg = err instanceof Error ? err.message : "Companion failed"
         send({ type: "error", message: msg, partial: emitted })
       } finally {
