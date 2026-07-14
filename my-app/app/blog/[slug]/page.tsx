@@ -8,7 +8,7 @@ import TagList from "@/components/TagList"
 import { categoryPath } from "@/lib/categories"
 import { getPublishedPostBySlug } from "@/lib/db/posts"
 
-export const revalidate = 60
+export const revalidate = 3600
 
 type PostPageProps = {
   params: Promise<{ slug: string }>
