@@ -35,6 +35,10 @@ const mistralMock = vi.hoisted(() => ({
   mistralStream: vi.fn(),
   mistralTurn: vi.fn(),
 }))
+const tavilyMock = vi.hoisted(() => ({
+  searchWeb: vi.fn(),
+  formatWebEvidence: vi.fn(),
+}))
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: authMock.getCurrentUser,
@@ -61,6 +65,10 @@ vi.mock("@/lib/chat/awareness", () => ({
 vi.mock("@/lib/chat/mistral", () => ({
   mistralStream: mistralMock.mistralStream,
   mistralTurn: mistralMock.mistralTurn,
+}))
+vi.mock("@/lib/chat/tavily-search", () => ({
+  searchWeb: tavilyMock.searchWeb,
+  formatWebEvidence: tavilyMock.formatWebEvidence,
 }))
 
 import { POST } from "@/app/api/chat/route"
@@ -139,6 +147,8 @@ function setupOk() {
   chatMock.recallMemories.mockResolvedValue([])
   awarenessMock.buildSiteContext.mockResolvedValue("SITE_CTX")
   modelsMock.classifyDifficultyHybrid.mockResolvedValue({ band: "easy", via: "heuristic" })
+  tavilyMock.searchWeb.mockResolvedValue({ provider: "tavily", query: "", searchedAt: new Date().toISOString(), sources: [] })
+  tavilyMock.formatWebEvidence.mockReturnValue("")
 }
 
 describe("POST /api/chat — admin gate", () => {
@@ -339,6 +349,133 @@ describe("POST /api/chat — model resolution", () => {
     expect((modelEvt as any).tier).toBe("large")
     expect(modelsMock.classifyDifficultyHybrid).not.toHaveBeenCalled()
     expect(chatMock.consumeOneTurnOverride).toHaveBeenCalledWith("t-new")
+  })
+})
+
+describe("POST /api/chat — Tavily web research", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    delete process.env.TAVILY_API_KEY
+  })
+
+  it("does not call Tavily when webEnabled is false and no /web prefix", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "hi" }))
+    expect(res.status).toBe(200)
+    const events = await drainSSE(res)
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+    expect(events.some((e) => e.type === "web_sources")).toBe(false)
+    expect(events.some((e) => e.type === "web_status")).toBe(false)
+  })
+
+  it("calls Tavily once when webEnabled is true", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "current weather Paris",
+      searchedAt: "2026-07-14T12:00:00Z",
+      sources: [
+        { title: "Weather.com", url: "https://weather.com", domain: "weather.com", snippet: "Paris: 22°C", score: 0.9 },
+      ],
+    })
+    tavilyMock.formatWebEvidence.mockReturnValue("[PUBLIC WEB EVIDENCE]\n1. Weather.com — https://weather.com\n   Snippet: Paris: 22°C")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("It's 22°C in Paris.")
+      return { role: "assistant", content: "It's 22°C in Paris.", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "current weather Paris", webEnabled: true }))
+    expect(res.status).toBe(200)
+    const events = await drainSSE(res)
+
+    expect(tavilyMock.searchWeb).toHaveBeenCalledTimes(1)
+    expect(tavilyMock.searchWeb).toHaveBeenCalledWith("current weather Paris")
+    const ws = events.find((e) => e.type === "web_sources")
+    expect(ws).toBeDefined()
+    expect((ws as any).sources).toHaveLength(1)
+    expect((ws as any).query).toBe("current weather Paris")
+
+    // Evidence is injected into the system prompt sent to Mistral.
+    const messages = mistralMock.mistralStream.mock.calls[0][0].messages
+    const system = messages.find((m: any) => m.role === "system")
+    expect(system?.content).toContain("[PUBLIC WEB EVIDENCE]")
+    expect(system?.content).toContain("https://weather.com")
+  })
+
+  it("strips /web prefix and enables search", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "Paris weather",
+      searchedAt: "2026-07-14T12:00:00Z",
+      sources: [],
+    })
+    tavilyMock.formatWebEvidence.mockReturnValue("")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "/web Paris weather" }))
+    expect(res.status).toBe(200)
+    await drainSSE(res)
+
+    expect(tavilyMock.searchWeb).toHaveBeenCalledWith("Paris weather")
+    // The stored user message should not contain the /web prefix.
+    const userAppend = chatMock.appendMessage.mock.calls.find((c) => c[0].role === "user")
+    expect(userAppend?.[0].content).toBe("Paris weather")
+  })
+
+  it("emits web_status:unavailable when key is missing", async () => {
+    setupOk()
+    // TAVILY_API_KEY is deleted in beforeEach
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "hi", webEnabled: true }))
+    expect(res.status).toBe(200)
+    const events = await drainSSE(res)
+
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+    const status = events.find((e) => e.type === "web_status")
+    expect(status).toBeDefined()
+    expect((status as any).status).toBe("unavailable")
+    expect((status as any).reason).toMatch(/Tavily API key not configured/)
+  })
+
+  it("emits web_status:empty when search returns no sources", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "xyz123nonsense",
+      searchedAt: "2026-07-14T12:00:00Z",
+      sources: [],
+    })
+    tavilyMock.formatWebEvidence.mockReturnValue("")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "xyz123nonsense", webEnabled: true }))
+    expect(res.status).toBe(200)
+    const events = await drainSSE(res)
+
+    const ws = events.find((e) => e.type === "web_sources")
+    expect(ws).toBeDefined()
+    expect((ws as any).sources).toHaveLength(0)
+    const status = events.find((e) => e.type === "web_status")
+    expect(status).toBeDefined()
+    expect((status as any).status).toBe("empty")
   })
 })
 

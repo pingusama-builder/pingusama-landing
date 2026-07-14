@@ -11,6 +11,7 @@ import {
 import type { ModelPreference } from "@/lib/chat/models";
 import { appendAssistantDelta } from "@/lib/chat/stream-updater";
 import { MarkdownText } from "@/components/MarkdownText";
+import type { WebSource } from "@/lib/chat/tavily-search";
 
 interface UIMessage {
   id: string;
@@ -34,6 +35,10 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
   const [liveModel, setLiveModel] = useState<string | null>(null); // tier shown while streaming
   const [inferPending, startInferTransition] = useTransition();
   const [inferStatus, setInferStatus] = useState<string | null>(null);
+  const [webEnabled, setWebEnabled] = useState(false);
+  const [webSources, setWebSources] = useState<WebSource[]>([]);
+  const [webQuery, setWebQuery] = useState<string | null>(null);
+  const [webStatus, setWebStatus] = useState<{ status: "empty" | "unavailable"; reason?: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
   const nextId = () => `m${++idCounter.current}`;
@@ -48,6 +53,9 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
       setError(null);
       setToolLog([]);
       setLiveModel(null);
+      setWebSources([]);
+      setWebQuery(null);
+      setWebStatus(null);
       const { thread, messages: rows } = await getThreadAction(id);
       setModelPref(thread?.model_preference ?? "auto");
       setMessages(
@@ -73,6 +81,10 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     setError(null);
     setModelPref("auto");
     setLiveModel(null);
+    setWebEnabled(false);
+    setWebSources([]);
+    setWebQuery(null);
+    setWebStatus(null);
   };
 
   const inferNow = () => {
@@ -109,6 +121,9 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     setError(null);
     setStreaming(true);
     setToolLog([]);
+    setWebSources([]);
+    setWebQuery(null);
+    setWebStatus(null);
 
     const userMsg: UIMessage = { id: nextId(), role: "user", content: text };
     const assistantMsg: UIMessage = { id: nextId(), role: "assistant", content: "", streaming: true };
@@ -118,7 +133,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: activeId, message: text }),
+        body: JSON.stringify({ threadId: activeId, message: text, webEnabled }),
       });
       if (!res.ok || !res.body) {
         const errText = await res.text().catch(() => res.statusText);
@@ -164,6 +179,18 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
             const name = (evt.name as string) ?? "tool";
             const status = (evt.status as string) ?? "";
             setToolLog((l) => [...l, `${name} · ${status}`]);
+            break;
+          }
+          case "web_sources": {
+            setWebQuery((evt.query as string) ?? null);
+            setWebSources((evt.sources as WebSource[]) ?? []);
+            break;
+          }
+          case "web_status": {
+            setWebStatus({
+              status: evt.status as "empty" | "unavailable",
+              reason: (evt.reason as string) ?? undefined,
+            });
             break;
           }
           case "done":
@@ -361,6 +388,41 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
 
         {error && <div className="chat-error">{error}</div>}
 
+        {(webSources.length > 0 || webStatus) && (
+          <div className="chat-web-panel" data-web-status={webStatus?.status ?? "ok"}>
+            {webSources.length > 0 && (
+              <>
+                <div className="chat-web-header">
+                  Public sources{webQuery ? ` for “${webQuery}”` : ""}
+                </div>
+                <ul className="chat-web-list">
+                  {webSources.map((s, i) => (
+                    <li key={`${s.url}-${i}`} className="chat-web-item">
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="chat-web-link"
+                      >
+                        {s.title || s.domain}
+                      </a>
+                      <span className="chat-web-domain"> · {s.domain}</span>
+                      {s.snippet && <p className="chat-web-snippet">{s.snippet}</p>}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {webStatus && (
+              <div className={`chat-web-status chat-web-status-${webStatus.status}`}>
+                {webStatus.status === "empty"
+                  ? "No public web results found."
+                  : `Web search unavailable${webStatus.reason ? `: ${webStatus.reason}` : "."}`}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="chat-composer">
           <textarea
             className="chat-input"
@@ -371,6 +433,16 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
             rows={2}
             disabled={streaming}
           />
+          <button
+            type="button"
+            className={`chat-web-toggle${webEnabled ? " active" : ""}`}
+            onClick={() => setWebEnabled((w) => !w)}
+            disabled={streaming}
+            aria-pressed={webEnabled}
+            title="Search public web sources before answering"
+          >
+            查公開資料
+          </button>
           <button className="chat-send" onClick={send} disabled={streaming || !input.trim()}>
             {streaming ? "…" : "Send"}
           </button>

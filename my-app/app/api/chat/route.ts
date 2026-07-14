@@ -12,6 +12,11 @@ import { buildSiteContext } from "@/lib/chat/awareness"
 import { buildSystemPrompt } from "@/lib/chat/prompt"
 import { CHAT_TOOLS, executeToolCall, type ToolContext } from "@/lib/chat/tools"
 import {
+  searchWeb,
+  formatWebEvidence,
+  type WebResearch,
+} from "@/lib/chat/tavily-search"
+import {
   classifyDifficultyHybrid,
   bandToTier,
   MODEL_TIERS,
@@ -38,18 +43,35 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  let body: { threadId?: string; message?: string; modelPreference?: ModelPreference }
+  let body: {
+    threadId?: string
+    message?: string
+    modelPreference?: ModelPreference
+    webEnabled?: boolean
+  }
   try {
-    body = (await request.json()) as { threadId?: string; message?: string; modelPreference?: ModelPreference }
+    body = (await request.json()) as typeof body
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 })
   }
-  const message = (body.message ?? "").trim()
-  if (!message) {
+  let rawMessage = (body.message ?? "").trim()
+  if (!rawMessage) {
     return Response.json({ error: "Missing message" }, { status: 400 })
   }
-  if (message.length > 4000) {
+  if (rawMessage.length > 4000) {
     return Response.json({ error: "Message too long (≤4000 chars)" }, { status: 413 })
+  }
+
+  // ── Web-search trigger ──────────────────────────────────────────────────
+  // Explicit per-message toggle (`webEnabled`) or `/web` prefix. Strip the
+  // prefix before storing or passing the question onward. Disabled by default.
+  let webEnabled = !!body.webEnabled
+  const message = rawMessage.replace(/^\/web\s*/i, () => {
+    webEnabled = true
+    return ""
+  }).trim()
+  if (!message) {
+    return Response.json({ error: "Missing message after /web prefix" }, { status: 400 })
   }
 
   // ── Thread ──────────────────────────────────────────────────────────────
@@ -95,13 +117,29 @@ export async function POST(request: Request) {
 
   await appendMessage({ threadId, role: "user", content: message })
 
+  // ── Web research (pre-turn, current turn only) ──────────────────────────
+  // Web search is disabled by default and only runs when explicitly enabled.
+  // It is a temporary evidence lens: results are injected into the current turn
+  // and never written to durable memory. If the key is missing, we surface an
+  // unavailable status and continue with ordinary chat.
+  const tavilyKeyMissing = webEnabled && !process.env.TAVILY_API_KEY
+  let webResearch: WebResearch | null = null
+  let webEvidence = ""
+  if (webEnabled && !tavilyKeyMissing) {
+    webResearch = await searchWeb(message)
+    webEvidence = formatWebEvidence(webResearch)
+  }
+
   // ── Build prompt context (once) ────────────────────────────────────────
   const [siteContext, memories, historyRows] = await Promise.all([
     buildSiteContext(),
     recallMemories({ limit: 40 }),
     getMessages(threadId),
   ])
-  const systemPrompt = buildSystemPrompt({ siteContext, memories })
+  const baseSystemPrompt = buildSystemPrompt({ siteContext, memories })
+  const systemPrompt = webEvidence
+    ? `${baseSystemPrompt}\n\n${webEvidence}\n\n[REMINDER] The PUBLIC WEB EVIDENCE block above is temporary external evidence for this turn only. It is not Robin's memory, not website content, and not a reason to write memory. Site context and durable memory remain authoritative for the site; the web block is only for external facts the user asked about.`
+    : baseSystemPrompt
 
   const history = historyRows.map(rowToMistral).filter((m): m is MistralMessage => m !== null)
   // Drop the last user message from history (we'll add it fresh to avoid dup),
@@ -122,6 +160,22 @@ export async function POST(request: Request) {
       try {
         send({ type: "thread", threadId })
         send({ type: "model", tier, modelId, reason })
+
+        // Web-search status/sources are emitted immediately after the model
+        // event so the UI can show whether research happened for this turn.
+        if (tavilyKeyMissing) {
+          send({ type: "web_status", status: "unavailable", reason: "Tavily API key not configured" })
+        } else if (webEnabled && webResearch) {
+          send({
+            type: "web_sources",
+            query: webResearch.query,
+            searchedAt: webResearch.searchedAt,
+            sources: webResearch.sources,
+          })
+          if (webResearch.sources.length === 0) {
+            send({ type: "web_status", status: "empty", query: webResearch.query })
+          }
+        }
 
         const toolCtx: ToolContext = {
           sourceThreadId: threadId,
