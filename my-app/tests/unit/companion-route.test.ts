@@ -548,6 +548,89 @@ describe("POST /api/blog-companion — failure handling (partial-aware)", () => 
   })
 })
 
+describe("POST /api/blog-companion — message history hygiene", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("drops degenerate assistant rows (no content + no tool_calls) from history sent to Mistral", async () => {
+    setupOk()
+    chatMock.getMessages.mockResolvedValue([
+      {
+        id: "m1",
+        thread_id: "c-1",
+        role: "user",
+        content: "previous turn",
+        tool_calls: null,
+        created_at: "2026-07-11",
+      },
+      {
+        id: "m2",
+        thread_id: "c-1",
+        role: "assistant",
+        content: null,
+        tool_calls: null,
+        created_at: "2026-07-11",
+      },
+      {
+        id: "m3",
+        thread_id: "c-1",
+        role: "user",
+        content: "review",
+        tool_calls: null,
+        created_at: "2026-07-11",
+      },
+    ])
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("Findings: the opening repeats the title.")
+      return { role: "assistant", content: "Findings: the opening repeats the title.", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT }))
+    expect(res.status).toBe(200)
+    await drainSSE(res)
+
+    const messages = mistralMock.mistralStream.mock.calls[0][0].messages
+    const assistantMessages = messages.filter((m: any) => m.role === "assistant")
+    expect(assistantMessages).toHaveLength(0)
+    expect(messages.some((m: any) => m.role === "user" && m.content === "previous turn")).toBe(true)
+    expect(messages.some((m: any) => m.role === "user" && m.content === "review")).toBe(true)
+  })
+
+  it("keeps assistant rows that have tool_calls even when content is empty/null", async () => {
+    setupOk()
+    chatMock.getMessages.mockResolvedValue([
+      {
+        id: "m1",
+        thread_id: "c-1",
+        role: "assistant",
+        content: "",
+        tool_calls: [{ id: "call_1", type: "function", function: { name: "propose_edit", arguments: "{}" } }],
+        created_at: "2026-07-11",
+      },
+      {
+        id: "m2",
+        thread_id: "c-1",
+        role: "user",
+        content: "review",
+        tool_calls: null,
+        created_at: "2026-07-11",
+      },
+    ])
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("Findings.")
+      return { role: "assistant", content: "Findings.", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "review", subjectType: "post", subjectKey: "post-1", draft: DRAFT }))
+    expect(res.status).toBe(200)
+    await drainSSE(res)
+
+    const messages = mistralMock.mistralStream.mock.calls[0][0].messages
+    const assistantMessages = messages.filter((m: any) => m.role === "assistant")
+    expect(assistantMessages).toHaveLength(1)
+    expect(assistantMessages[0].tool_calls).toHaveLength(1)
+  })
+})
+
 describe("POST /api/blog-companion — review mode (advisor §B)", () => {
   beforeEach(() => vi.clearAllMocks())
 

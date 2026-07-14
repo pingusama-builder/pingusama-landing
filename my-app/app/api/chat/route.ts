@@ -6,7 +6,6 @@ import {
   getMessages,
   consumeOneTurnOverride,
   type MessageRole,
-  type ChatMessageRow,
 } from "@/lib/db/chat"
 import { recallMemories } from "@/lib/db/chat"
 import { buildSiteContext } from "@/lib/chat/awareness"
@@ -23,36 +22,14 @@ import {
 import {
   mistralStream,
   type MistralMessage,
-  type MistralToolCall,
 } from "@/lib/chat/mistral"
+import { rowToMistral } from "@/lib/chat/messages"
 
 export const maxDuration = 60
 export const runtime = "nodejs"
 
 const MAX_TURNS = 6
 const MAX_MEMORY_WRITES = 3
-
-function rowToMistral(row: ChatMessageRow): MistralMessage | null {
-  if (row.role === "user") return { role: "user", content: row.content ?? "" }
-  if (row.role === "assistant") {
-    const msg: MistralMessage = {
-      role: "assistant",
-      content: row.content && row.content.length > 0 ? row.content : null,
-    }
-    const tc = row.tool_calls as MistralToolCall[] | null
-    if (tc && tc.length > 0) msg.tool_calls = tc
-    return msg
-  }
-  if (row.role === "tool") {
-    const meta = row.tool_calls as { tool_call_id?: string } | null
-    return {
-      role: "tool",
-      content: row.content ?? "",
-      tool_call_id: meta?.tool_call_id ?? "",
-    }
-  }
-  return null
-}
 
 export async function POST(request: Request) {
   // ── Admin gate (the API route is NOT under /admin/, so middleware doesn't cover it) ──

@@ -7,7 +7,6 @@ import {
   consumeOneTurnOverride,
   recallMemories,
   type MessageRole,
-  type ChatMessageRow,
 } from "@/lib/db/chat"
 import { buildWritingContext } from "@/lib/chat/writing-context"
 import { buildCompanionPrompt } from "@/lib/chat/companion-prompt"
@@ -23,7 +22,8 @@ import {
   type ModelTier,
   type ModelPreference,
 } from "@/lib/chat/models"
-import { mistralStream, type MistralMessage, type MistralToolCall } from "@/lib/chat/mistral"
+import { mistralStream, type MistralMessage } from "@/lib/chat/mistral"
+import { rowToMistral } from "@/lib/chat/messages"
 import { detectPseudoToolCall, evaluateTerminalExpectation } from "@/lib/chat/fiction-terminal"
 import type { DraftSnapshot } from "@/lib/blog/proposals"
 
@@ -189,28 +189,6 @@ function fictionPreambleForwarder(send: (o: Record<string, unknown>) => void) {
     }
     if (sentenceCount(acc) >= 2) locked = true
   }
-}
-
-function rowToMistral(row: ChatMessageRow): MistralMessage | null {
-  if (row.role === "user") return { role: "user", content: row.content ?? "" }
-  if (row.role === "assistant") {
-    const msg: MistralMessage = {
-      role: "assistant",
-      content: row.content && row.content.length > 0 ? row.content : null,
-    }
-    const tc = row.tool_calls as MistralToolCall[] | null
-    if (tc && tc.length > 0) msg.tool_calls = tc
-    return msg
-  }
-  if (row.role === "tool") {
-    const meta = row.tool_calls as { tool_call_id?: string } | null
-    return {
-      role: "tool",
-      content: row.content ?? "",
-      tool_call_id: meta?.tool_call_id ?? "",
-    }
-  }
-  return null
 }
 
 function sameOrigin(request: Request): boolean {

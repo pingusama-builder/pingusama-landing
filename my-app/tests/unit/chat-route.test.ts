@@ -342,6 +342,90 @@ describe("POST /api/chat — model resolution", () => {
   })
 })
 
+describe("POST /api/chat — message history hygiene", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("drops degenerate assistant rows (no content + no tool_calls) from history sent to Mistral", async () => {
+    setupOk()
+    chatMock.getMessages.mockResolvedValue([
+      {
+        id: "m1",
+        thread_id: "t-new",
+        role: "user",
+        content: "previous turn",
+        tool_calls: null,
+        created_at: "2026-07-11",
+      },
+      {
+        id: "m2",
+        thread_id: "t-new",
+        role: "assistant",
+        content: null,
+        tool_calls: null,
+        created_at: "2026-07-11",
+      },
+      {
+        id: "m3",
+        thread_id: "t-new",
+        role: "user",
+        content: "hi",
+        tool_calls: null,
+        created_at: "2026-07-11",
+      },
+    ])
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("Hello there.")
+      return { role: "assistant", content: "Hello there.", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "hi" }))
+    expect(res.status).toBe(200)
+    await drainSSE(res)
+
+    const messages = mistralMock.mistralStream.mock.calls[0][0].messages
+    const assistantMessages = messages.filter((m: any) => m.role === "assistant")
+    expect(assistantMessages).toHaveLength(0)
+    // The valid user messages remain, plus system + the current user message.
+    expect(messages.some((m: any) => m.role === "user" && m.content === "previous turn")).toBe(true)
+    expect(messages.some((m: any) => m.role === "user" && m.content === "hi")).toBe(true)
+  })
+
+  it("keeps assistant rows that have tool_calls even when content is empty/null", async () => {
+    setupOk()
+    chatMock.getMessages.mockResolvedValue([
+      {
+        id: "m1",
+        thread_id: "t-new",
+        role: "assistant",
+        content: "",
+        tool_calls: [{ id: "call_1", type: "function", function: { name: "save_memory", arguments: "{}" } }],
+        created_at: "2026-07-11",
+      },
+      {
+        id: "m2",
+        thread_id: "t-new",
+        role: "user",
+        content: "hi",
+        tool_calls: null,
+        created_at: "2026-07-11",
+      },
+    ])
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("Hello there.")
+      return { role: "assistant", content: "Hello there.", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "hi" }))
+    expect(res.status).toBe(200)
+    await drainSSE(res)
+
+    const messages = mistralMock.mistralStream.mock.calls[0][0].messages
+    const assistantMessages = messages.filter((m: any) => m.role === "assistant")
+    expect(assistantMessages).toHaveLength(1)
+    expect(assistantMessages[0].tool_calls).toHaveLength(1)
+  })
+})
+
 describe("POST /api/chat — companion-thread rejection", () => {
   beforeEach(() => vi.clearAllMocks())
 
