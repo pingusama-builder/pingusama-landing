@@ -172,6 +172,97 @@ export async function searchWeb(query: string): Promise<WebResearch> {
   return { provider: "tavily", query, searchedAt, sources }
 }
 
+// ── Tavily /extract (full-page depth) ─────────────────────────────────────
+// Complements the snippet-only searchWeb with clean, query-relevant page text
+// for the top source(s). Same untrusted-external-data security note as above:
+// never persisted to memory, never written to site content, rendered safely.
+
+export type ExtractedPage = { url: string; title?: string; content: string }
+
+const EXTRACT_ENDPOINT = "https://api.tavily.com/extract"
+const EXTRACT_TIMEOUT_MS = 10_000
+export const MAX_EXTRACT_CHARS_PER_PAGE = 2500
+
+interface TavilyExtractResult {
+  url?: string
+  raw_content?: string
+  title?: string
+}
+interface TavilyExtractResponse {
+  results?: TavilyExtractResult[]
+  failed_results?: { url?: string; error?: string }[]
+}
+
+/** Extract clean, query-relevant page text for the top source(s) via Tavily
+ * /extract (basic depth, text format, chunks_per_source=4 → ~4 query-relevant
+ * ~500-char chunks per page). Returns { pages, failed }. On any recoverable
+ * failure (timeout, non-2xx, malformed JSON, no usable results) returns
+ * { pages: [], failed: [] } so the route degrades to snippets-only. Throws
+ * ONLY when TAVILY_API_KEY is missing (configuration error, same as searchWeb). */
+export async function extractPages(
+  urls: string[],
+  query: string
+): Promise<{ pages: ExtractedPage[]; failed: { url: string; error: string }[] }> {
+  const key = getTavilyApiKey()
+  const validUrls = urls.filter((u) => isHttpUrl(u))
+  if (validUrls.length === 0) return { pages: [], failed: [] }
+
+  const body = {
+    urls: validUrls,
+    extract_depth: "basic",
+    format: "text",
+    query,
+    chunks_per_source: 4,
+    include_images: false,
+  }
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT_MS)
+
+  let res: Response
+  try {
+    res = await fetch(EXTRACT_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") console.warn("[tavily] extract timed out")
+    else console.warn("[tavily] extract fetch failed:", err)
+    return { pages: [], failed: [] }
+  } finally {
+    clearTimeout(timeout)
+  }
+
+  if (!res.ok) {
+    console.warn(`[tavily] extract returned ${res.status}`)
+    return { pages: [], failed: [] }
+  }
+
+  let json: TavilyExtractResponse
+  try {
+    json = (await res.json()) as TavilyExtractResponse
+  } catch {
+    return { pages: [], failed: [] }
+  }
+
+  const pages: ExtractedPage[] = []
+  for (const r of json.results ?? []) {
+    const url = r.url?.trim() ?? ""
+    const content = (r.raw_content ?? "").trim()
+    if (!url || !content) continue
+    pages.push({
+      url,
+      title: r.title?.trim() || undefined,
+      content: truncate(content, MAX_EXTRACT_CHARS_PER_PAGE),
+    })
+  }
+  const failed = (json.failed_results ?? [])
+    .filter((f) => f.url)
+    .map((f) => ({ url: f.url as string, error: f.error ?? "unknown" }))
+  return { pages, failed }
+}
+
 export interface FormatEvidenceOptions {
   maxResultsInBlock?: number
   maxSnippetChars?: number

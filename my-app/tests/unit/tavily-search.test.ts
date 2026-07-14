@@ -4,6 +4,7 @@ import {
   formatWebEvidence,
   formatWebEvidenceGuarded,
   subjectInSources,
+  extractPages,
   type WebResearch,
   type WebSource,
 } from "@/lib/chat/tavily-search"
@@ -326,6 +327,85 @@ describe("tavily-search adapter", () => {
       // The raw snippet must NOT be offered as evidence to misattribute.
       expect(block).not.toContain("簡立峰")
       expect(block).not.toContain("數位分身")
+    })
+  })
+
+  describe("extractPages", () => {
+    // Inherits the outer beforeEach (TAVILY_API_KEY="tvly-test-key", fake timers)
+    // and afterEach (restore fetch + env + real timers).
+
+    it("calls /extract with text format, query, chunks_per_source 4, bearer auth", async () => {
+      const fetchMock = mockFetch(true, {
+        results: [{ url: "https://a.com", raw_content: "page text about Dan Koe" }],
+        failed_results: [],
+      })
+      globalThis.fetch = fetchMock
+      const out = await extractPages(["https://a.com"], "Dan Koe AI")
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const [url, init] = fetchMock.mock.calls[0]
+      expect(url).toBe("https://api.tavily.com/extract")
+      expect(init?.method).toBe("POST")
+      const body = JSON.parse(init?.body as string)
+      expect(body).toMatchObject({
+        urls: ["https://a.com"],
+        extract_depth: "basic",
+        format: "text",
+        query: "Dan Koe AI",
+        chunks_per_source: 4,
+        include_images: false,
+      })
+      expect(init?.headers).toMatchObject({ Authorization: "Bearer tvly-test-key" })
+      expect(out.pages).toEqual([{ url: "https://a.com", content: "page text about Dan Koe" }])
+      expect(out.failed).toEqual([])
+    })
+
+    it("maps failed_results and preserves title when present", async () => {
+      const fetchMock = mockFetch(true, {
+        results: [{ url: "https://a.com", raw_content: "ok", title: "A" }],
+        failed_results: [{ url: "https://b.com", error: "404" }],
+      })
+      globalThis.fetch = fetchMock
+      const out = await extractPages(["https://a.com", "https://b.com"], "q")
+      expect(out.pages[0].title).toBe("A")
+      expect(out.failed).toEqual([{ url: "https://b.com", error: "404" }])
+    })
+
+    it("drops non-HTTP urls before calling /extract", async () => {
+      const fetchMock = mockFetch(true, { results: [], failed_results: [] })
+      globalThis.fetch = fetchMock
+      await extractPages(["ftp://x.com", "https://a.com"], "q")
+      const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+      expect(body.urls).toEqual(["https://a.com"])
+    })
+
+    it("returns empty pages on non-2xx (degrades to snippets-only, never throws)", async () => {
+      const fetchMock = mockFetch(false, { error: "rate" }, 429)
+      globalThis.fetch = fetchMock
+      const out = await extractPages(["https://a.com"], "q")
+      expect(out.pages).toEqual([])
+    })
+
+    it("returns empty pages on timeout", async () => {
+      globalThis.fetch = vi.fn().mockImplementation((_u: string, init?: RequestInit) =>
+        new Promise((_, reject) => {
+          const signal = init?.signal
+          const onAbort = () => {
+            const e = new Error("aborted")
+            e.name = "AbortError"
+            reject(e)
+          }
+          signal?.addEventListener("abort", onAbort)
+        })
+      )
+      const p = extractPages(["https://a.com"], "q")
+      vi.advanceTimersByTime(11_000)
+      const out = await p
+      expect(out.pages).toEqual([])
+    })
+
+    it("throws only when the key is missing (configuration error)", async () => {
+      delete process.env.TAVILY_API_KEY
+      await expect(extractPages(["https://a.com"], "q")).rejects.toThrow(/TAVILY_API_KEY/)
     })
   })
 })
