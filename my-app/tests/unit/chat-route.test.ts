@@ -34,15 +34,19 @@ const awarenessMock = vi.hoisted(() => ({
 const mistralMock = vi.hoisted(() => ({
   mistralStream: vi.fn(),
   mistralTurn: vi.fn(),
+  reasoningEffortForModel: vi.fn(),
 }))
 const tavilyMock = vi.hoisted(() => ({
   searchWeb: vi.fn(),
   formatWebEvidence: vi.fn(),
   formatWebEvidenceGuarded: vi.fn(),
   subjectInSources: vi.fn(),
+  mergeWebResearch: vi.fn(),
+  rankSources: vi.fn(),
+  extractPages: vi.fn(),
 }))
 const rewriteMock = vi.hoisted(() => ({
-  rewriteSearchQuery: vi.fn(),
+  rewriteSearchQueries: vi.fn(),
 }))
 
 vi.mock("@/lib/auth", () => ({
@@ -70,15 +74,19 @@ vi.mock("@/lib/chat/awareness", () => ({
 vi.mock("@/lib/chat/mistral", () => ({
   mistralStream: mistralMock.mistralStream,
   mistralTurn: mistralMock.mistralTurn,
+  reasoningEffortForModel: mistralMock.reasoningEffortForModel,
 }))
 vi.mock("@/lib/chat/tavily-search", () => ({
   searchWeb: tavilyMock.searchWeb,
   formatWebEvidence: tavilyMock.formatWebEvidence,
   formatWebEvidenceGuarded: tavilyMock.formatWebEvidenceGuarded,
   subjectInSources: tavilyMock.subjectInSources,
+  mergeWebResearch: tavilyMock.mergeWebResearch,
+  rankSources: tavilyMock.rankSources,
+  extractPages: tavilyMock.extractPages,
 }))
 vi.mock("@/lib/chat/query-rewrite", () => ({
-  rewriteSearchQuery: rewriteMock.rewriteSearchQuery,
+  rewriteSearchQueries: rewriteMock.rewriteSearchQueries,
 }))
 
 import { POST } from "@/app/api/chat/route"
@@ -161,9 +169,17 @@ function setupOk() {
   tavilyMock.formatWebEvidence.mockReturnValue("")
   tavilyMock.formatWebEvidenceGuarded.mockReturnValue("")
   tavilyMock.subjectInSources.mockReturnValue(true)
-  // Default passthrough: rewrite returns the raw message, no subject. Existing
+  // Pipeline defaults: merge returns the first study; rank is passthrough;
+  // extract returns no pages (snippets-only); reasoning substrate inactive.
+  tavilyMock.mergeWebResearch.mockImplementation((studies: any[]) =>
+    studies[0] ?? { provider: "tavily", query: "", searchedAt: "", sources: [] }
+  )
+  tavilyMock.rankSources.mockImplementation((srcs: any[]) => srcs)
+  tavilyMock.extractPages.mockResolvedValue({ pages: [], failed: [] })
+  mistralMock.reasoningEffortForModel.mockReturnValue(undefined) // non-reasoning by default
+  // Default passthrough: rewrite returns [raw message], no subject. Existing
   // tests assert searchWeb receives the raw message; this preserves that.
-  rewriteMock.rewriteSearchQuery.mockImplementation(async (msg: string) => ({ query: msg, subject: null }))
+  rewriteMock.rewriteSearchQueries.mockImplementation(async (msg: string) => ({ queries: [msg], subject: null }))
 }
 
 describe("POST /api/chat — admin gate", () => {
@@ -497,7 +513,7 @@ describe("POST /api/chat — Tavily web research", () => {
   it("rewrites the query before searching and surfaces the rewritten query + subject", async () => {
     setupOk()
     process.env.TAVILY_API_KEY = "tvly-test"
-    rewriteMock.rewriteSearchQuery.mockResolvedValue({ query: "Dan Koe AI 2025 2026", subject: "Dan Koe" })
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["Dan Koe AI 2025 2026"], subject: "Dan Koe" })
     tavilyMock.searchWeb.mockResolvedValue({
       provider: "tavily",
       query: "Dan Koe AI 2025 2026",
@@ -517,8 +533,8 @@ describe("POST /api/chat — Tavily web research", () => {
     const events = await drainSSE(res)
 
     // Rewrite was called with the raw message and the prior-history rows.
-    expect(rewriteMock.rewriteSearchQuery).toHaveBeenCalledTimes(1)
-    expect(rewriteMock.rewriteSearchQuery.mock.calls[0][0]).toBe("2025-2026他有講AI內容?")
+    expect(rewriteMock.rewriteSearchQueries).toHaveBeenCalledTimes(1)
+    expect(rewriteMock.rewriteSearchQueries.mock.calls[0][0]).toBe("2025-2026他有講AI內容?")
     // searchWeb received the REWRITTEN query, not the raw pronoun-bearing message.
     expect(tavilyMock.searchWeb).toHaveBeenCalledWith("Dan Koe AI 2025 2026")
     const ws = events.find((e) => e.type === "web_sources")
@@ -532,7 +548,7 @@ describe("POST /api/chat — Tavily web research", () => {
   it("subject-absent guard: emits subject_absent + injects the guard block, not raw evidence", async () => {
     setupOk()
     process.env.TAVILY_API_KEY = "tvly-test"
-    rewriteMock.rewriteSearchQuery.mockResolvedValue({ query: "Dan Koe AI 2025 2026", subject: "Dan Koe" })
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["Dan Koe AI 2025 2026"], subject: "Dan Koe" })
     tavilyMock.searchWeb.mockResolvedValue({
       provider: "tavily",
       query: "Dan Koe AI 2025 2026",
@@ -689,5 +705,219 @@ describe("POST /api/chat — companion-thread rejection", () => {
     const res = await POST(makeRequest({ message: "hi" }))
     expect(res.status).toBe(200)
     expect(chatMock.createThread).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("POST /api/chat — web pipeline (depth + breadth)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    delete process.env.TAVILY_API_KEY
+  })
+
+  it("runs parallel searches for multiple queries, merges, extracts top sources, emits web_phase + readFull", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    mistralMock.reasoningEffortForModel.mockReturnValue("high")
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({
+      queries: ["Dan Koe AI 2025", "Dan Koe essays"],
+      subject: "Dan Koe",
+    })
+    tavilyMock.searchWeb.mockImplementation(async (q: string) => ({
+      provider: "tavily",
+      query: q,
+      searchedAt: "x",
+      sources: q.includes("essays")
+        ? [{ title: "Dan Koe essays", url: "https://dankoe.com/essays", domain: "dankoe.com", snippet: "Dan Koe essay", score: 0.9 }]
+        : [{ title: "Dan Koe on AI", url: "https://dankoe.com/ai", domain: "dankoe.com", snippet: "Dan Koe on AI", score: 0.85 }],
+    }))
+    tavilyMock.mergeWebResearch.mockReturnValue({
+      provider: "tavily",
+      query: "Dan Koe AI 2025",
+      searchedAt: "x",
+      sources: [
+        { title: "Dan Koe on AI", url: "https://dankoe.com/ai", domain: "dankoe.com", snippet: "Dan Koe on AI", score: 0.85 },
+        { title: "Dan Koe essays", url: "https://dankoe.com/essays", domain: "dankoe.com", snippet: "Dan Koe essay", score: 0.9 },
+      ],
+    })
+    tavilyMock.rankSources.mockImplementation((s: any[]) => s)
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    tavilyMock.extractPages.mockResolvedValue({
+      pages: [{ url: "https://dankoe.com/ai", content: "Full essay text." }],
+      failed: [],
+    })
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue(
+      "[PUBLIC WEB EVIDENCE]\nREAD IN FULL:\n— https://dankoe.com/ai\nFull essay text."
+    )
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "what has Dan Koe said about AI", webEnabled: true }))
+    const events = await drainSSE(res)
+
+    // Two parallel searches (one per expanded query).
+    expect(tavilyMock.searchWeb).toHaveBeenCalledTimes(2)
+    // /extract ran once on the top URLs.
+    expect(tavilyMock.extractPages).toHaveBeenCalledTimes(1)
+    // web_phase events fired in order.
+    const phases = events.filter((e) => e.type === "web_phase").map((e) => (e as any).phase)
+    expect(phases).toEqual(["rewriting", "searching", "reading", "done"])
+    // web_sources carries queries + readFull.
+    const ws = events.find((e) => e.type === "web_sources") as any
+    expect(ws.queries).toEqual(["Dan Koe AI 2025", "Dan Koe essays"])
+    const sources = ws.sources as any[]
+    const rf = ws.readFull as boolean[]
+    expect(rf).toBeDefined()
+    expect(rf[sources.findIndex((s) => s.url === "https://dankoe.com/ai")]).toBe(true)
+    expect(rf[sources.findIndex((s) => s.url === "https://dankoe.com/essays")]).toBe(false)
+    // Evidence injected into the system prompt.
+    const system = mistralMock.mistralStream.mock.calls[0][0].messages.find((m: any) => m.role === "system")
+    expect(system?.content).toContain("READ IN FULL")
+  })
+
+  it("extract failure degrades to snippets-only (no readFull, no extract crash)", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["q"], subject: "Dan Koe" })
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "q",
+      searchedAt: "x",
+      sources: [{ title: "Dan Koe", url: "https://dankoe.com", domain: "dankoe.com", snippet: "Dan Koe", score: 0.9 }],
+    })
+    tavilyMock.mergeWebResearch.mockReturnValue({
+      provider: "tavily",
+      query: "q",
+      searchedAt: "x",
+      sources: [{ title: "Dan Koe", url: "https://dankoe.com", domain: "dankoe.com", snippet: "Dan Koe", score: 0.9 }],
+    })
+    tavilyMock.rankSources.mockImplementation((s: any[]) => s)
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    tavilyMock.extractPages.mockResolvedValue({ pages: [], failed: [{ url: "https://dankoe.com", error: "500" }] })
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[PUBLIC WEB EVIDENCE]\n1. Dan Koe — https://dankoe.com\n   Snippet: Dan Koe")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "q", webEnabled: true }))
+    const events = await drainSSE(res)
+    const ws = events.find((e) => e.type === "web_sources") as any
+    expect((ws.readFull as boolean[]).every((x) => x === false)).toBe(true)
+    expect(events.some((e) => e.type === "error")).toBe(false)
+  })
+})
+
+describe("POST /api/chat — web synthesis tier + effort + budget", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    delete process.env.TAVILY_API_KEY
+  })
+
+  it("forces the large tier on web turns, sends high effort + 8000 budget + a deadline signal", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    mistralMock.reasoningEffortForModel.mockReturnValue("high") // reasoning-capable large tier
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["q"], subject: "Dan Koe" })
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "q",
+      searchedAt: "x",
+      sources: [{ title: "Dan Koe", url: "https://dankoe.com", domain: "dankoe.com", snippet: "Dan Koe", score: 0.9 }],
+    })
+    tavilyMock.mergeWebResearch.mockImplementation((s: any[]) => s[0])
+    tavilyMock.rankSources.mockImplementation((s: any[]) => s)
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    tavilyMock.extractPages.mockResolvedValue({ pages: [{ url: "https://dankoe.com", content: "full" }], failed: [] })
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[EVIDENCE]")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "q", webEnabled: true }))
+    const events = await drainSSE(res)
+    const modelEvt = events.find((e) => e.type === "model") as any
+    expect(modelEvt.tier).toBe("large")
+    expect(modelEvt.reason).toMatch(/web → large/)
+    const callOpts = mistralMock.mistralStream.mock.calls[0][0]
+    expect(callOpts.maxTokens).toBe(8000) // full pages → high budget
+    expect(callOpts.reasoningEffort).toBe("high")
+    expect(callOpts.signal).toBeDefined() // 55s deadline AbortSignal propagated
+  })
+
+  it("snippets-only → medium effort + 4000; empty/guard → low + 1500", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    mistralMock.reasoningEffortForModel.mockReturnValue("high")
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["q"], subject: "Dan Koe" })
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "q",
+      searchedAt: "x",
+      sources: [{ title: "Dan Koe", url: "https://dankoe.com", domain: "dankoe.com", snippet: "Dan Koe", score: 0.9 }],
+    })
+    tavilyMock.mergeWebResearch.mockImplementation((s: any[]) => s[0])
+    tavilyMock.rankSources.mockImplementation((s: any[]) => s)
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    tavilyMock.extractPages.mockResolvedValue({ pages: [], failed: [] }) // snippets only
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[EVIDENCE]")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+
+    let res = await POST(makeRequest({ message: "q", webEnabled: true }))
+    await drainSSE(res)
+    expect(mistralMock.mistralStream.mock.calls[0][0].maxTokens).toBe(4000)
+    expect(mistralMock.mistralStream.mock.calls[0][0].reasoningEffort).toBe("medium")
+
+    // empty/guard → low + 1500
+    vi.clearAllMocks()
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    mistralMock.reasoningEffortForModel.mockReturnValue("high")
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["q"], subject: "Dan Koe" })
+    tavilyMock.searchWeb.mockResolvedValue({ provider: "tavily", query: "q", searchedAt: "x", sources: [] })
+    tavilyMock.mergeWebResearch.mockReturnValue({ provider: "tavily", query: "q", searchedAt: "x", sources: [] })
+    tavilyMock.subjectInSources.mockReturnValue(false)
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[GUARD]")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    res = await POST(makeRequest({ message: "q", webEnabled: true }))
+    await drainSSE(res)
+    expect(mistralMock.mistralStream.mock.calls[0][0].maxTokens).toBe(1500)
+    expect(mistralMock.mistralStream.mock.calls[0][0].reasoningEffort).toBe("low")
+  })
+
+  it("base (non-web) chat uses the raised 2000/4000 caps and no reasoning_effort", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "hi" }))
+    await drainSSE(res)
+    const opts = mistralMock.mistralStream.mock.calls[0][0]
+    expect(opts.maxTokens).toBe(2000) // non-final base cap
+    expect(opts.reasoningEffort).toBeUndefined()
+  })
+
+  it("persists partial assistant content + emits error when the stream throws mid-turn (deadline/abort graceful degradation)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("partial answer that should survive a mid-stream abort")
+      throw new Error("aborted mid-stream")
+    })
+    const res = await POST(makeRequest({ message: "hi" }))
+    const events = await drainSSE(res)
+    expect(events.some((e) => e.type === "error")).toBe(true)
+    const assistantCalls = chatMock.appendMessage.mock.calls.filter((c: any[]) => c[0]?.role === "assistant")
+    expect(
+      assistantCalls.some((c: any[]) => c[0]?.content === "partial answer that should survive a mid-stream abort")
+    ).toBe(true)
   })
 })
