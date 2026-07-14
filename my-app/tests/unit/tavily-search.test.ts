@@ -5,6 +5,8 @@ import {
   formatWebEvidenceGuarded,
   subjectInSources,
   extractPages,
+  mergeWebResearch,
+  rankSources,
   type WebResearch,
   type WebSource,
 } from "@/lib/chat/tavily-search"
@@ -406,6 +408,78 @@ describe("tavily-search adapter", () => {
     it("throws only when the key is missing (configuration error)", async () => {
       delete process.env.TAVILY_API_KEY
       await expect(extractPages(["https://a.com"], "q")).rejects.toThrow(/TAVILY_API_KEY/)
+    })
+  })
+
+  describe("mergeWebResearch", () => {
+    const mk = (
+      q: string,
+      srcs: Array<Partial<WebSource> & { url: string }>
+    ): WebResearch => ({
+      provider: "tavily",
+      query: q,
+      searchedAt: "x",
+      sources: srcs.map((s) => ({
+        title: s.title ?? "t",
+        url: s.url,
+        domain: s.domain ?? "d",
+        snippet: s.snippet ?? "s",
+        score: s.score,
+      })) as WebSource[],
+    })
+
+    it("dedupes by canonical URL across queries, keeping the highest-score instance", () => {
+      const merged = mergeWebResearch([
+        mk("q1", [{ url: "https://a.com?utm=1", score: 0.7, title: "A1" }]),
+        mk("q2", [{ url: "https://a.com?utm=2", score: 0.9, title: "A2" }]),
+        mk("q2", [{ url: "https://b.com", score: 0.5, title: "B" }]),
+      ])
+      const urls = merged.sources.map((s) => s.url)
+      expect(urls).toEqual(["https://a.com?utm=2", "https://b.com"])
+      // canonicalUrl strips search, so both a.com?utm=1 and ?utm=2 dedupe; the
+      // higher-score (0.9, "A2") wins and its ORIGINAL url is kept.
+      expect(merged.sources[0].title).toBe("A2")
+      expect(merged.sources[0].score).toBe(0.9)
+    })
+
+    it("uses the first study's query + searchedAt as the merged identity", () => {
+      const merged = mergeWebResearch([mk("q1", []), mk("q2", [])])
+      expect(merged.query).toBe("q1")
+    })
+
+    it("handles a single study unchanged (aside from map ordering)", () => {
+      const merged = mergeWebResearch([mk("only", [{ url: "https://x.com", score: 0.9 }])])
+      expect(merged.sources).toHaveLength(1)
+      expect(merged.sources[0].url).toBe("https://x.com")
+    })
+
+    it("returns an empty research for no studies", () => {
+      const merged = mergeWebResearch([])
+      expect(merged.sources).toEqual([])
+      expect(merged.query).toBe("")
+    })
+  })
+
+  describe("rankSources", () => {
+    const srcs: WebSource[] = [
+      { title: "Low", url: "https://low.com", domain: "low.com", snippet: "no subject here", score: 0.95 },
+      { title: "MidMatch", url: "https://mid.com", domain: "mid.com", snippet: "Dan Koe writes", score: 0.8 },
+      { title: "High", url: "https://high.com", domain: "high.com", snippet: "no subject here", score: 0.9 },
+    ]
+
+    it("boosts subject-matching sources above higher-score non-matching ones", () => {
+      const ranked = rankSources(srcs, "Dan Koe")
+      expect(ranked[0].url).toBe("https://mid.com") // subject match wins over 0.95
+      // remaining two sorted by score desc
+      expect(ranked[1].url).toBe("https://low.com")
+      expect(ranked[2].url).toBe("https://high.com")
+    })
+
+    it("falls back to score-desc when no subject is given", () => {
+      const ranked = rankSources(srcs, null)
+      expect(ranked[0].url).toBe("https://low.com") // 0.95
+      expect(ranked[1].url).toBe("https://high.com") // 0.9
+      expect(ranked[2].url).toBe("https://mid.com") // 0.8
     })
   })
 })
