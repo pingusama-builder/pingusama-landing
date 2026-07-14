@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ChatUI from "@/components/ChatUI";
@@ -35,5 +37,15 @@ describe("ChatUI — web research UI", () => {
     const html = renderToStaticMarkup(<ChatUI initialThreads={threads} />);
     expect(html).toContain('class="chat-web-toggle');
     expect(html).toContain('aria-pressed="false"');
+  });
+
+  it("component source wires web_phase + readFull + queries and stays free of dangerouslySetInnerHTML (static-grep)", () => {
+    const src = readFileSync(fileURLToPath(new URL("../../components/ChatUI.tsx", import.meta.url)), "utf8");
+    expect(src).toContain('"web_phase"');
+    expect(src).toContain("readFull");
+    expect(src).toContain("queries");
+    expect(src).toContain("chat-web-phase");
+    expect(src).toContain("chat-web-readfull");
+    expect(src).not.toContain("dangerouslySetInnerHTML");
   });
 });

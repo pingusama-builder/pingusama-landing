@@ -44,6 +44,8 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     subject?: string;
     query?: string;
   } | null>(null);
+  const [webPhase, setWebPhase] = useState<string | null>(null);
+  const [webQueries, setWebQueries] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
   const nextId = () => `m${++idCounter.current}`;
@@ -61,6 +63,8 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
       setWebSources([]);
       setWebQuery(null);
       setWebStatus(null);
+      setWebPhase(null);
+      setWebQueries([]);
       const { thread, messages: rows } = await getThreadAction(id);
       setModelPref(thread?.model_preference ?? "auto");
       setMessages(
@@ -90,6 +94,8 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     setWebSources([]);
     setWebQuery(null);
     setWebStatus(null);
+    setWebPhase(null);
+    setWebQueries([]);
   };
 
   const inferNow = () => {
@@ -129,6 +135,8 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     setWebSources([]);
     setWebQuery(null);
     setWebStatus(null);
+    setWebPhase(null);
+    setWebQueries([]);
 
     const userMsg: UIMessage = { id: nextId(), role: "user", content: text };
     const assistantMsg: UIMessage = { id: nextId(), role: "assistant", content: "", streaming: true };
@@ -186,9 +194,14 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
             setToolLog((l) => [...l, `${name} · ${status}`]);
             break;
           }
+          case "web_phase": {
+            setWebPhase((evt.phase as string) ?? null);
+            break;
+          }
           case "web_sources": {
             setWebQuery((evt.query as string) ?? null);
             setWebSources((evt.sources as WebSource[]) ?? []);
+            setWebQueries((evt.queries as string[]) ?? []);
             break;
           }
           case "web_status": {
@@ -395,13 +408,27 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
 
         {error && <div className="chat-error">{error}</div>}
 
-        {(webSources.length > 0 || webStatus) && (
+        {(webSources.length > 0 || webStatus || (webEnabled && webPhase && webPhase !== "done")) && (
           <div className="chat-web-panel" data-web-status={webStatus?.status ?? "ok"}>
+            {webPhase && webPhase !== "done" && (
+              <div className="chat-web-phase" aria-live="polite">
+                {webPhase === "rewriting"
+                  ? "Rewriting the search…"
+                  : webPhase === "searching"
+                    ? "Searching public sources…"
+                    : webPhase === "reading"
+                      ? "Reading the top sources…"
+                      : ""}
+              </div>
+            )}
             {webSources.length > 0 && (
               <>
                 <div className="chat-web-header">
                   Public sources{webQuery ? ` for “${webQuery}”` : ""}
                 </div>
+                {webQueries.length > 0 && (
+                  <div className="chat-web-queries">Queries: {webQueries.join(" · ")}</div>
+                )}
                 <ul className="chat-web-list">
                   {webSources.map((s, i) => (
                     <li key={`${s.url}-${i}`} className="chat-web-item">
@@ -414,6 +441,9 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
                         {s.title || s.domain}
                       </a>
                       <span className="chat-web-domain"> · {s.domain}</span>
+                      {(s as WebSource & { readFull?: boolean }).readFull && (
+                        <span className="chat-web-readfull"> · read in full</span>
+                      )}
                       {s.snippet && <p className="chat-web-snippet">{s.snippet}</p>}
                     </li>
                   ))}
