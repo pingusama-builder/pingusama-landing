@@ -82,7 +82,7 @@ export const TOOLS: Record<ToolKey, Tool> = {
     desc: "Set your interests and a schema for what good karma candidates look like. The explorer scans communities and proposes the posts most likely to reward a genuine reply — no ghostwritten comments, just a shorter list of better places to show up.",
     status: "live",
     statusLabel: "Live",
-    href: "https://reddit-explorer-rouge.vercel.app",
+    href: "https://reddit-explorer-rogue.vercel.app/",
     placement: "workbench",
     featuredAt: "2026-07-14",
   },
