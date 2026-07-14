@@ -23,13 +23,16 @@ import { MODEL_TIERS } from "@/lib/chat/models"
 import type { ChatMessageRow } from "@/lib/db/chat"
 
 export interface SearchQueryRewrite {
-  query: string
+  queries: string[]
   subject: string | null
 }
 
 const MAX_HISTORY_TURNS = 6
 const MAX_ROW_CHARS = 300
-const REWRITE_MAX_TOKENS = 120
+const REWRITE_MAX_TOKENS = 200
+const MAX_QUERIES = 3
+const MAX_QUERY_CHARS = 200
+const MAX_SUBJECT_CHARS = 80
 
 /** Build a compact oldest→newest conversation digest from prior rows (user +
  * assistant text only). Tool rows and tool_calls are dropped: the rewrite only
@@ -60,10 +63,10 @@ function conversationDigest(priorRows: ChatMessageRow[]): string {
  * valid JSON, do NOT "fix" it by re-wording the prompt (the substrate trap) —
  * the normalizeRewrite + try/catch fallback in rewriteSearchQuery already
  * degrades gracefully to the raw message. */
-export function parseRewriteJson(raw: string): { query?: unknown; subject?: unknown } | null {
+export function parseRewriteJson(raw: string): { queries?: unknown; query?: unknown; subject?: unknown } | null {
   const start = raw.indexOf("{")
   if (start < 0) return null
-  // Scan for the matching closing brace (naive — fine for a flat 2-field object).
+  // Scan for the matching closing brace (naive — fine for a flat 2–3-field object).
   let depth = 0
   let end = -1
   for (let i = start; i < raw.length; i++) {
@@ -78,47 +81,61 @@ export function parseRewriteJson(raw: string): { query?: unknown; subject?: unkn
   }
   if (end < 0) return null
   try {
-    return JSON.parse(raw.slice(start, end + 1)) as { query?: unknown; subject?: unknown }
+    return JSON.parse(raw.slice(start, end + 1)) as { queries?: unknown; query?: unknown; subject?: unknown }
   } catch {
     return null
   }
 }
 
-/** Normalize a rewrite result: query is a non-empty string, subject is a
- * trimmed proper name or null. Pure. */
+/** Normalize a rewrite result into 1–3 self-contained queries + a trimmed
+ * subject proper name (or null). Prefers the multi-query `queries` array;
+ * falls back to a single legacy `query` string; falls back to [fallback] when
+ * neither is usable. Dedupes, trims, caps. Pure. */
 export function normalizeRewrite(parsed: {
+  queries?: unknown
   query?: unknown
   subject?: unknown
 } | null, fallback: string): SearchQueryRewrite {
-  if (!parsed) return { query: fallback, subject: null }
-  const query =
-    typeof parsed.query === "string" && parsed.query.trim()
-      ? parsed.query.trim().slice(0, 200)
-      : fallback
+  if (!parsed) return { queries: [fallback], subject: null }
+  const rawList: unknown[] = Array.isArray(parsed.queries)
+    ? parsed.queries
+    : typeof parsed.query === "string" && parsed.query.trim()
+      ? [parsed.query]
+      : []
+  const queries: string[] = []
+  for (const q of rawList) {
+    if (typeof q !== "string") continue
+    const t = q.trim()
+    if (!t) continue
+    if (queries.includes(t)) continue
+    queries.push(t.slice(0, MAX_QUERY_CHARS))
+    if (queries.length >= MAX_QUERIES) break
+  }
+  if (queries.length === 0) queries.push(fallback)
   const subjectRaw = typeof parsed.subject === "string" ? parsed.subject.trim() : ""
-  const subject = subjectRaw && subjectRaw.toLowerCase() !== "null" ? subjectRaw.slice(0, 80) : null
-  return { query, subject }
+  const subject = subjectRaw && subjectRaw.toLowerCase() !== "null" ? subjectRaw.slice(0, MAX_SUBJECT_CHARS) : null
+  return { queries, subject }
 }
 
-const REWRITE_SYSTEM = `You rewrite a user's chat message into a self-contained web search query, and name the entity the question is about.
+const REWRITE_SYSTEM = `You rewrite a user's chat message into 1–3 self-contained web search queries, and name the entity the question is about.
 
 The message may use pronouns or shorthand (他/她/它/this/that/they) that refer to a person, brand, or topic discussed earlier in the conversation. Resolve them to the explicit name.
 
 Reply with ONE JSON object and nothing else — no prose, no code fences:
-{"query": "<self-contained search query>", "subject": "<proper name of the entity, or null>"}
+{"queries": ["<primary self-contained query>", "<optional alternate angle>", "<optional alternate angle>"], "subject": "<proper name of the entity, or null>"}
 
 Rules:
-- query MUST be self-contained: no pronouns; include the subject's name explicitly.
-- If the subject is an English-language figure, brand, or company, write the query in English. Otherwise keep the user's language.
-- query is a concise web-search string (≤ 12 words), not a full sentence.
+- queries MUST be self-contained: no pronouns; include the subject's name explicitly.
+- Give 1 query for a simple lookup; up to 3 DISTINCT angles for a broader question. Each ≤ 12 words.
+- If the subject is an English-language figure, brand, or company, write the queries in English. Otherwise keep the user's language.
 - subject is a short proper name (e.g. "Dan Koe", "OpenAI", "Supabase") or null if there is no single named entity.
 - Output JSON only.`
 
-/** Rewrite a user message into a self-contained search query + extract the
+/** Rewrite a user message into 1–3 self-contained search queries + extract the
  * subject entity, using recent conversation history to resolve pronouns.
- * Falls back to { query: message, subject: null } on any error so the turn
+ * Falls back to { queries: [message], subject: null } on any error so the turn
  * never blocks. `priorRows` should exclude the current user message. */
-export async function rewriteSearchQuery(
+export async function rewriteSearchQueries(
   message: string,
   priorRows: ChatMessageRow[]
 ): Promise<SearchQueryRewrite> {
@@ -139,6 +156,6 @@ export async function rewriteSearchQuery(
     return normalizeRewrite(parseRewriteJson(acc.content), message)
   } catch {
     // Never block the turn — search the raw message as before.
-    return { query: message, subject: null }
+    return { queries: [message], subject: null }
   }
 }

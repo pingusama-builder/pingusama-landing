@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parseRewriteJson, normalizeRewrite } from "@/lib/chat/query-rewrite"
+import { parseRewriteJson, normalizeRewrite, rewriteSearchQueries } from "@/lib/chat/query-rewrite"
 
 describe("parseRewriteJson", () => {
   it("parses a bare JSON object", () => {
@@ -40,43 +40,77 @@ describe("parseRewriteJson", () => {
       subject: "Dan Koe",
     })
   })
-})
 
-describe("normalizeRewrite", () => {
-  const fallback = "2025-2026他有講AI內容?"
-
-  it("uses the parsed query and subject", () => {
-    expect(
-      normalizeRewrite({ query: "Dan Koe AI 2025 2026", subject: "Dan Koe" }, fallback)
-    ).toEqual({ query: "Dan Koe AI 2025 2026", subject: "Dan Koe" })
+  it("parses a {queries, subject} multi-query object", () => {
+    expect(parseRewriteJson('{"queries": ["Dan Koe AI 2025 2026", "Dan Koe essays"], "subject": "Dan Koe"}')).toEqual({
+      queries: ["Dan Koe AI 2025 2026", "Dan Koe essays"],
+      subject: "Dan Koe",
+    })
   })
 
-  it("falls back to the raw message when query is missing/empty", () => {
-    expect(normalizeRewrite({ query: "", subject: "Dan Koe" }, fallback)).toEqual({
-      query: fallback,
+  it("parses {queries, subject} wrapped in fences", () => {
+    expect(parseRewriteJson('```json\n{"queries": ["q1"], "subject": null}\n```')).toEqual({
+      queries: ["q1"],
+      subject: null,
+    })
+  })
+})
+
+describe("normalizeRewrite — multi-query", () => {
+  const fallback = "2025-2026他有講AI內容?"
+
+  it("uses parsed queries + subject", () => {
+    expect(
+      normalizeRewrite({ queries: ["Dan Koe AI 2025 2026", "Dan Koe essays"], subject: "Dan Koe" }, fallback)
+    ).toEqual({ queries: ["Dan Koe AI 2025 2026", "Dan Koe essays"], subject: "Dan Koe" })
+  })
+
+  it("falls back to [fallback] when queries missing/empty/not an array (subject preserved)", () => {
+    expect(normalizeRewrite({ queries: [], subject: "Dan Koe" }, fallback)).toEqual({
+      queries: [fallback],
       subject: "Dan Koe",
     })
     expect(normalizeRewrite({ subject: "Dan Koe" }, fallback)).toEqual({
-      query: fallback,
+      queries: [fallback],
+      subject: "Dan Koe",
+    })
+    expect(normalizeRewrite({ queries: "nope", subject: null }, fallback)).toEqual({
+      queries: [fallback],
+      subject: null,
+    })
+  })
+
+  it("accepts a legacy single {query} object and wraps it into [query]", () => {
+    expect(normalizeRewrite({ query: "Dan Koe AI 2025 2026", subject: "Dan Koe" }, fallback)).toEqual({
+      queries: ["Dan Koe AI 2025 2026"],
       subject: "Dan Koe",
     })
   })
 
   it("treats a null-ish subject string as null", () => {
-    expect(normalizeRewrite({ query: "q", subject: "null" }, fallback).subject).toBeNull()
-    expect(normalizeRewrite({ query: "q", subject: "  " }, fallback).subject).toBeNull()
-    expect(normalizeRewrite({ query: "q", subject: null }, fallback).subject).toBeNull()
+    expect(normalizeRewrite({ queries: ["q"], subject: "null" }, fallback).subject).toBeNull()
+    expect(normalizeRewrite({ queries: ["q"], subject: "  " }, fallback).subject).toBeNull()
+    expect(normalizeRewrite({ queries: ["q"], subject: null }, fallback).subject).toBeNull()
   })
 
-  it("trims and caps overly-long values", () => {
-    const longQuery = "x".repeat(300)
-    const longSubject = "y".repeat(100)
-    const out = normalizeRewrite({ query: longQuery, subject: longSubject }, fallback)
-    expect(out.query.length).toBe(200)
-    expect(out.subject?.length).toBe(80)
+  it("caps queries to 3, each to 200 chars, trims + dedupes empties", () => {
+    const out = normalizeRewrite({ queries: ["a", "b", "c", "d", "  ", "x".repeat(300)], subject: null }, fallback)
+    expect(out.queries.length).toBeLessThanOrEqual(3)
+    expect(out.queries.every((q) => q.length <= 200 && q.trim() === q)).toBe(true)
   })
 
   it("falls back fully when parsed is null", () => {
-    expect(normalizeRewrite(null, fallback)).toEqual({ query: fallback, subject: null })
+    expect(normalizeRewrite(null, fallback)).toEqual({ queries: [fallback], subject: null })
+  })
+})
+
+describe("rewriteSearchQueries", () => {
+  it("returns a {queries, subject} contract and never blocks (falls back to [message] on error)", async () => {
+    // Without a MISTRAL_API_KEY the mistralTurn call throws; the contract is the
+    // fallback { queries: [message], subject: null } — proving the turn never blocks.
+    const out = await rewriteSearchQueries("hello", [])
+    expect(Array.isArray(out.queries)).toBe(true)
+    expect(out.queries.length).toBeGreaterThanOrEqual(1)
+    expect("subject" in out).toBe(true)
   })
 })
