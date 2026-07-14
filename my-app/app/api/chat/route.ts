@@ -13,9 +13,11 @@ import { buildSystemPrompt } from "@/lib/chat/prompt"
 import { CHAT_TOOLS, executeToolCall, type ToolContext } from "@/lib/chat/tools"
 import {
   searchWeb,
-  formatWebEvidence,
+  formatWebEvidenceGuarded,
+  subjectInSources,
   type WebResearch,
 } from "@/lib/chat/tavily-search"
+import { rewriteSearchQuery } from "@/lib/chat/query-rewrite"
 import {
   classifyDifficultyHybrid,
   bandToTier,
@@ -117,28 +119,46 @@ export async function POST(request: Request) {
 
   await appendMessage({ threadId, role: "user", content: message })
 
-  // ── Web research (pre-turn, current turn only) ──────────────────────────
-  // Web search is disabled by default and only runs when explicitly enabled.
-  // It is a temporary evidence lens: results are injected into the current turn
-  // and never written to durable memory. If the key is missing, we surface an
-  // unavailable status and continue with ordinary chat.
-  const tavilyKeyMissing = webEnabled && !process.env.TAVILY_API_KEY
-  let webResearch: WebResearch | null = null
-  let webEvidence = ""
-  if (webEnabled && !tavilyKeyMissing) {
-    webResearch = await searchWeb(message)
-    webEvidence = formatWebEvidence(webResearch)
-  }
-
   // ── Build prompt context (once) ────────────────────────────────────────
+  // Fetched before web research so the query-rewrite step can use recent
+  // conversation history to resolve pronouns/shorthand ("他", "that") into the
+  // explicit subject the user is asking about.
   const [siteContext, memories, historyRows] = await Promise.all([
     buildSiteContext(),
     recallMemories({ limit: 40 }),
     getMessages(threadId),
   ])
+
+  // ── Web research (pre-turn, current turn only) ──────────────────────────
+  // Web search is disabled by default and only runs when explicitly enabled.
+  // Two-stage, both fixing the "very inaccurate" failure mode:
+  //  (1) Query rewrite — run a cheap small-model call to turn the raw message
+  //      + recent history into a self-contained query that names the subject
+  //      ("他有講AI內容?" → "Dan Koe AI 2025 2026"). Tavily has no conversation
+  //      context, so the raw message (which may use pronouns) searches the
+  //      wrong thing.
+  //  (2) Subject-presence guard — if the returned sources don't mention the
+  //      extracted subject at all, inject an explicit "these sources are NOT
+  //      about <subject>" block instead of raw snippets, so the answering model
+  //      cannot glue unrelated results onto the subject. Output-side "don't
+  //      claim verified" clauses are probabilistic on non-reasoning Mistral;
+  //      this input-side guard holds where they don't.
+  // Results are injected into the current turn and never written to durable
+  // memory. If the key is missing, surface an unavailable status and continue.
+  const tavilyKeyMissing = webEnabled && !process.env.TAVILY_API_KEY
+  let webResearch: WebResearch | null = null
+  let webEvidence = ""
+  let webSubject: string | null = null
+  if (webEnabled && !tavilyKeyMissing) {
+    const priorRows = historyRows.slice(0, -1) // exclude the just-appended current message
+    const rewrite = await rewriteSearchQuery(message, priorRows)
+    webSubject = rewrite.subject
+    webResearch = await searchWeb(rewrite.query || message)
+    webEvidence = formatWebEvidenceGuarded(webResearch, webSubject)
+  }
   const baseSystemPrompt = buildSystemPrompt({ siteContext, memories })
   const systemPrompt = webEvidence
-    ? `${baseSystemPrompt}\n\n${webEvidence}\n\n[REMINDER] The PUBLIC WEB EVIDENCE block above is temporary external evidence for this turn only. It is not Robin's memory, not website content, and not a reason to write memory. Site context and durable memory remain authoritative for the site; the web block is only for external facts the user asked about.`
+    ? `${baseSystemPrompt}\n\n${webEvidence}\n\n[REMINDER] The PUBLIC WEB EVIDENCE block above is temporary external evidence for this turn only. It is not Robin's memory, not website content, and not a reason to write memory. If the block states the sources do not mention a subject, do NOT attribute claims to that subject — tell the user you could not confirm from the web. Site context and durable memory remain authoritative for the site; the web block is only for external facts the user asked about.`
     : baseSystemPrompt
 
   const history = historyRows.map(rowToMistral).filter((m): m is MistralMessage => m !== null)
@@ -166,14 +186,28 @@ export async function POST(request: Request) {
         if (tavilyKeyMissing) {
           send({ type: "web_status", status: "unavailable", reason: "Tavily API key not configured" })
         } else if (webEnabled && webResearch) {
+          // subjectMatch is true when there is no subject (no guard), or when at
+          // least one source mentions the subject. False → the guard block was
+          // injected; surface it so the UI can show why the bot won't attribute.
+          const subjectMatch =
+            webResearch.sources.length === 0 || subjectInSources(webResearch, webSubject)
           send({
             type: "web_sources",
             query: webResearch.query,
             searchedAt: webResearch.searchedAt,
             sources: webResearch.sources,
+            subject: webSubject,
+            subjectMatch,
           })
           if (webResearch.sources.length === 0) {
             send({ type: "web_status", status: "empty", query: webResearch.query })
+          } else if (webSubject && !subjectMatch) {
+            send({
+              type: "web_status",
+              status: "subject_absent",
+              subject: webSubject,
+              query: webResearch.query,
+            })
           }
         }
 

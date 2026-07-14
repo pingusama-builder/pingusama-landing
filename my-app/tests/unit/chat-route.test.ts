@@ -38,6 +38,11 @@ const mistralMock = vi.hoisted(() => ({
 const tavilyMock = vi.hoisted(() => ({
   searchWeb: vi.fn(),
   formatWebEvidence: vi.fn(),
+  formatWebEvidenceGuarded: vi.fn(),
+  subjectInSources: vi.fn(),
+}))
+const rewriteMock = vi.hoisted(() => ({
+  rewriteSearchQuery: vi.fn(),
 }))
 
 vi.mock("@/lib/auth", () => ({
@@ -69,6 +74,11 @@ vi.mock("@/lib/chat/mistral", () => ({
 vi.mock("@/lib/chat/tavily-search", () => ({
   searchWeb: tavilyMock.searchWeb,
   formatWebEvidence: tavilyMock.formatWebEvidence,
+  formatWebEvidenceGuarded: tavilyMock.formatWebEvidenceGuarded,
+  subjectInSources: tavilyMock.subjectInSources,
+}))
+vi.mock("@/lib/chat/query-rewrite", () => ({
+  rewriteSearchQuery: rewriteMock.rewriteSearchQuery,
 }))
 
 import { POST } from "@/app/api/chat/route"
@@ -149,6 +159,11 @@ function setupOk() {
   modelsMock.classifyDifficultyHybrid.mockResolvedValue({ band: "easy", via: "heuristic" })
   tavilyMock.searchWeb.mockResolvedValue({ provider: "tavily", query: "", searchedAt: new Date().toISOString(), sources: [] })
   tavilyMock.formatWebEvidence.mockReturnValue("")
+  tavilyMock.formatWebEvidenceGuarded.mockReturnValue("")
+  tavilyMock.subjectInSources.mockReturnValue(true)
+  // Default passthrough: rewrite returns the raw message, no subject. Existing
+  // tests assert searchWeb receives the raw message; this preserves that.
+  rewriteMock.rewriteSearchQuery.mockImplementation(async (msg: string) => ({ query: msg, subject: null }))
 }
 
 describe("POST /api/chat — admin gate", () => {
@@ -384,6 +399,7 @@ describe("POST /api/chat — Tavily web research", () => {
       ],
     })
     tavilyMock.formatWebEvidence.mockReturnValue("[PUBLIC WEB EVIDENCE]\n1. Weather.com — https://weather.com\n   Snippet: Paris: 22°C")
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[PUBLIC WEB EVIDENCE]\n1. Weather.com — https://weather.com\n   Snippet: Paris: 22°C")
     mistralMock.mistralStream.mockImplementation(async (opts: any) => {
       opts.onContent?.("It's 22°C in Paris.")
       return { role: "assistant", content: "It's 22°C in Paris.", tool_calls: [], finish_reason: "stop" }
@@ -476,6 +492,84 @@ describe("POST /api/chat — Tavily web research", () => {
     const status = events.find((e) => e.type === "web_status")
     expect(status).toBeDefined()
     expect((status as any).status).toBe("empty")
+  })
+
+  it("rewrites the query before searching and surfaces the rewritten query + subject", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    rewriteMock.rewriteSearchQuery.mockResolvedValue({ query: "Dan Koe AI 2025 2026", subject: "Dan Koe" })
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "Dan Koe AI 2025 2026",
+      searchedAt: "2026-07-14T12:00:00Z",
+      sources: [
+        { title: "Dan Koe on AI", url: "https://dankoe.com/ai", domain: "dankoe.com", snippet: "Dan Koe writes about AI", score: 0.9 },
+      ],
+    })
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "2025-2026他有講AI內容?", webEnabled: true }))
+    expect(res.status).toBe(200)
+    const events = await drainSSE(res)
+
+    // Rewrite was called with the raw message and the prior-history rows.
+    expect(rewriteMock.rewriteSearchQuery).toHaveBeenCalledTimes(1)
+    expect(rewriteMock.rewriteSearchQuery.mock.calls[0][0]).toBe("2025-2026他有講AI內容?")
+    // searchWeb received the REWRITTEN query, not the raw pronoun-bearing message.
+    expect(tavilyMock.searchWeb).toHaveBeenCalledWith("Dan Koe AI 2025 2026")
+    const ws = events.find((e) => e.type === "web_sources")
+    expect((ws as any).query).toBe("Dan Koe AI 2025 2026")
+    expect((ws as any).subject).toBe("Dan Koe")
+    expect((ws as any).subjectMatch).toBe(true)
+    // No subject_absent status when the subject is present.
+    expect(events.some((e) => e.type === "web_status")).toBe(false)
+  })
+
+  it("subject-absent guard: emits subject_absent + injects the guard block, not raw evidence", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    rewriteMock.rewriteSearchQuery.mockResolvedValue({ query: "Dan Koe AI 2025 2026", subject: "Dan Koe" })
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "Dan Koe AI 2025 2026",
+      searchedAt: "2026-07-14T12:00:00Z",
+      sources: [
+        { title: "2026 AI 人才年會", url: "https://junyi.org", domain: "junyi.org", snippet: "簡立峰 talks about 數位分身", score: 0.9 },
+      ],
+    })
+    // No source mentions "Dan Koe".
+    tavilyMock.subjectInSources.mockReturnValue(false)
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue(
+      "[PUBLIC WEB EVIDENCE — UNTRUSTED REFERENCE MATERIAL]\nThe web search returned sources, but NONE mention \"Dan Koe\".\nDo NOT attribute any claim to \"Dan Koe\"."
+    )
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "2025-2026他有講AI內容?", webEnabled: true }))
+    expect(res.status).toBe(200)
+    const events = await drainSSE(res)
+
+    // The guarded formatter was called with the subject.
+    expect(tavilyMock.formatWebEvidenceGuarded).toHaveBeenCalledTimes(1)
+    // The guard block is injected into the system prompt, not raw snippets.
+    const messages = mistralMock.mistralStream.mock.calls[0][0].messages
+    const system = messages.find((m: any) => m.role === "system")
+    expect(system?.content).toContain('NONE mention "Dan Koe"')
+    expect(system?.content).toContain("Do NOT attribute")
+    // web_sources reports subjectMatch false.
+    const ws = events.find((e) => e.type === "web_sources")
+    expect((ws as any).subjectMatch).toBe(false)
+    // subject_absent status surfaced with the subject.
+    const status = events.find((e) => e.type === "web_status")
+    expect(status).toBeDefined()
+    expect((status as any).status).toBe("subject_absent")
+    expect((status as any).subject).toBe("Dan Koe")
   })
 })
 

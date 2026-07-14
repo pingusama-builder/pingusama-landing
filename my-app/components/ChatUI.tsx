@@ -38,7 +38,12 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
   const [webEnabled, setWebEnabled] = useState(false);
   const [webSources, setWebSources] = useState<WebSource[]>([]);
   const [webQuery, setWebQuery] = useState<string | null>(null);
-  const [webStatus, setWebStatus] = useState<{ status: "empty" | "unavailable"; reason?: string } | null>(null);
+  const [webStatus, setWebStatus] = useState<{
+    status: "empty" | "unavailable" | "subject_absent";
+    reason?: string;
+    subject?: string;
+    query?: string;
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
   const nextId = () => `m${++idCounter.current}`;
@@ -188,8 +193,10 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
           }
           case "web_status": {
             setWebStatus({
-              status: evt.status as "empty" | "unavailable",
+              status: evt.status as "empty" | "unavailable" | "subject_absent",
               reason: (evt.reason as string) ?? undefined,
+              subject: (evt.subject as string) ?? undefined,
+              query: (evt.query as string) ?? undefined,
             });
             break;
           }
@@ -417,7 +424,9 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
               <div className={`chat-web-status chat-web-status-${webStatus.status}`}>
                 {webStatus.status === "empty"
                   ? "No public web results found."
-                  : `Web search unavailable${webStatus.reason ? `: ${webStatus.reason}` : "."}`}
+                  : webStatus.status === "subject_absent"
+                    ? `Public sources found, but none mention “${webStatus.subject ?? "the subject"}” — the answer below will say it could not confirm from the web.`
+                    : `Web search unavailable${webStatus.reason ? `: ${webStatus.reason}` : "."}`}
               </div>
             )}
           </div>

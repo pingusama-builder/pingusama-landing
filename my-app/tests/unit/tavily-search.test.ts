@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { searchWeb, formatWebEvidence, type WebResearch, type WebSource } from "@/lib/chat/tavily-search"
+import {
+  searchWeb,
+  formatWebEvidence,
+  formatWebEvidenceGuarded,
+  subjectInSources,
+  type WebResearch,
+  type WebSource,
+} from "@/lib/chat/tavily-search"
 
 function mockFetch(ok: boolean, json: unknown, status = 200) {
   return vi.fn().mockResolvedValue({
@@ -226,6 +233,99 @@ describe("tavily-search adapter", () => {
       }
       const block = formatWebEvidence({ ...research, sources: [big] }, { maxTotalChars: 500 })
       expect(block.length).toBeLessThanOrEqual(500)
+    })
+  })
+
+  describe("subjectInSources", () => {
+    const research: WebResearch = {
+      provider: "tavily",
+      query: "Dan Koe AI 2025 2026",
+      searchedAt: "2026-07-14T12:00:00Z",
+      sources: [
+        { title: "Dan Koe on AI", url: "https://dankoe.com", domain: "dankoe.com", snippet: "Dan Koe writes about leverage", score: 0.9 },
+        { title: "2026 AI 人才年會", url: "https://junyi.org", domain: "junyi.org", snippet: "簡立峰 talks about 數位分身", score: 0.8 },
+      ],
+    }
+
+    it("returns true when no subject is given (no guard applied)", () => {
+      expect(subjectInSources(research, null)).toBe(true)
+      expect(subjectInSources(research, "")).toBe(true)
+      expect(subjectInSources(research, "   ")).toBe(true)
+    })
+
+    it("matches the full subject phrase case-insensitively", () => {
+      expect(subjectInSources(research, "Dan Koe")).toBe(true)
+      expect(subjectInSources(research, "dan koe")).toBe(true)
+      expect(subjectInSources(research, "DAN KOE")).toBe(true)
+    })
+
+    it("matches a distinctive single token of a multi-word subject (≥4 chars)", () => {
+      // "Mistral AI" → "mistral" is distinctive; a source saying only "Mistral" matches.
+      const r: WebResearch = {
+        ...research,
+        sources: [{ title: "Mistral docs", url: "https://mistral.ai", domain: "mistral.ai", snippet: "Mistral models", score: 0.9 }],
+      }
+      expect(subjectInSources(r, "Mistral AI")).toBe(true)
+    })
+
+    it("does NOT match short common tokens alone (avoids false positives)", () => {
+      // "Dan Koe" → "dan"/"koe" are both <4 chars and ASCII, so only the full
+      // phrase matches. A source containing "dan" but not "dan koe" must NOT
+      // pass the guard — that would let unrelated sources through.
+      const r: WebResearch = {
+        ...research,
+        sources: [{ title: "Jordan", url: "https://x.com", domain: "x.com", snippet: "dan and friends", score: 0.9 }],
+      }
+      expect(subjectInSources(r, "Dan Koe")).toBe(false)
+    })
+
+    it("matches a short CJK name (non-ASCII is distinctive even at 3 chars)", () => {
+      expect(subjectInSources(research, "簡立峰")).toBe(true)
+    })
+
+    it("returns false when no source mentions the subject at all", () => {
+      const r: WebResearch = {
+        ...research,
+        sources: [{ title: "Unrelated", url: "https://x.com", domain: "x.com", snippet: "Cal Newport deep work", score: 0.9 }],
+      }
+      expect(subjectInSources(r, "Dan Koe")).toBe(false)
+    })
+  })
+
+  describe("formatWebEvidenceGuarded", () => {
+    const research: WebResearch = {
+      provider: "tavily",
+      query: "Dan Koe AI 2025 2026",
+      searchedAt: "2026-07-14T12:00:00Z",
+      sources: [
+        { title: "2026 AI 人才年會", url: "https://junyi.org", domain: "junyi.org", snippet: "簡立峰 talks about 數位分身", score: 0.9 },
+      ],
+    }
+
+    it("returns empty string when there are no sources", () => {
+      expect(formatWebEvidenceGuarded({ ...research, sources: [] }, "Dan Koe")).toBe("")
+    })
+
+    it("delegates to formatWebEvidence when no subject is given", () => {
+      const noSubject = formatWebEvidenceGuarded(research, null)
+      const withSubjectPresent = formatWebEvidenceGuarded(
+        { ...research, sources: [{ title: "Dan Koe", url: "https://dankoe.com", domain: "dankoe.com", snippet: "Dan Koe on AI", score: 0.9 }] },
+        "Dan Koe"
+      )
+      expect(noSubject).toMatch(/PUBLIC WEB EVIDENCE — UNTRUSTED REFERENCE MATERIAL/)
+      expect(withSubjectPresent).toMatch(/PUBLIC WEB EVIDENCE — UNTRUSTED REFERENCE MATERIAL/)
+      // Normal evidence path lists sources, not the guard language.
+      expect(noSubject).toContain("2026 AI 人才年會")
+    })
+
+    it("injects the guard block when the subject is absent from all sources", () => {
+      const block = formatWebEvidenceGuarded(research, "Dan Koe")
+      expect(block).toMatch(/PUBLIC WEB EVIDENCE — UNTRUSTED REFERENCE MATERIAL/)
+      expect(block).toContain('NONE of them mention "Dan Koe"')
+      expect(block).toContain("Do NOT attribute")
+      // The raw snippet must NOT be offered as evidence to misattribute.
+      expect(block).not.toContain("簡立峰")
+      expect(block).not.toContain("數位分身")
     })
   })
 })
