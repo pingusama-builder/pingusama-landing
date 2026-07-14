@@ -1,0 +1,17 @@
+{
+  "name": "obscure-subject-guard",
+  "message": "what did Xyzqxlm say about AI?",
+  "priorRows": [],
+  "rewrite": { "queries": ["Xyzqxlm AI"], "subject": "Xyzqxlm" },
+  "studies": [
+    {
+      "query": "Xyzqxlm AI",
+      "searchedAt": "2026-07-15T00:00:00Z",
+      "sources": [
+        { "title": "2026 AI 人才年會", "url": "https://junyi.org", "domain": "junyi.org", "snippet": "簡立峰 talks about 數位分身", "score": 0.9 }
+      ]
+    }
+  ],
+  "expectGuard": true,
+  "expectReadFull": false
+}

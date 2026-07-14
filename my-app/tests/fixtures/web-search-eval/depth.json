@@ -1,0 +1,17 @@
+{
+  "name": "depth-read-and-summarize",
+  "message": "summarize Dan Koe's latest essay",
+  "priorRows": [],
+  "rewrite": { "queries": ["Dan Koe latest essay"], "subject": "Dan Koe" },
+  "studies": [
+    {
+      "query": "Dan Koe latest essay",
+      "searchedAt": "2026-07-15T00:00:00Z",
+      "sources": [
+        { "title": "Dan Koe essay", "url": "https://letters.thedankoe.com/essay", "domain": "letters.thedankoe.com", "snippet": "short teaser", "score": 0.9 }
+      ]
+    }
+  ],
+  "expectGuard": false,
+  "expectReadFull": true
+}

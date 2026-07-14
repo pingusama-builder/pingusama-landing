@@ -1,0 +1,20 @@
+{
+  "name": "dan-koe-attribution",
+  "message": "2025-2026他有講AI內容?",
+  "priorRows": [
+    { "role": "user", "content": "Tell me about Dan Koe" },
+    { "role": "assistant", "content": "Dan Koe is a writer on leverage and AI." }
+  ],
+  "rewrite": { "queries": ["Dan Koe AI 2025 2026", "Dan Koe AI content"], "subject": "Dan Koe" },
+  "studies": [
+    {
+      "query": "Dan Koe AI 2025 2026",
+      "searchedAt": "2026-07-15T00:00:00Z",
+      "sources": [
+        { "title": "Dan Koe on AI", "url": "https://dankoe.com/ai", "domain": "dankoe.com", "snippet": "Dan Koe writes about AI leverage", "score": 0.9 }
+      ]
+    }
+  ],
+  "expectGuard": false,
+  "expectReadFull": true
+}

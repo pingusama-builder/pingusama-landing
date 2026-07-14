@@ -1,0 +1,24 @@
+{
+  "name": "breadth-multi-angle",
+  "message": "what's new with Supabase and Postgres extensions?",
+  "priorRows": [],
+  "rewrite": { "queries": ["Supabase 2026 updates", "Supabase Postgres extensions"], "subject": "Supabase" },
+  "studies": [
+    {
+      "query": "Supabase 2026 updates",
+      "searchedAt": "2026-07-15T00:00:00Z",
+      "sources": [
+        { "title": "Supabase blog", "url": "https://supabase.com/blog", "domain": "supabase.com", "snippet": "Supabase updates", "score": 0.9 }
+      ]
+    },
+    {
+      "query": "Supabase Postgres extensions",
+      "searchedAt": "2026-07-15T00:00:00Z",
+      "sources": [
+        { "title": "Supabase extensions", "url": "https://supabase.com/docs/extensions", "domain": "supabase.com", "snippet": "Postgres extensions on Supabase", "score": 0.85 }
+      ]
+    }
+  ],
+  "expectGuard": false,
+  "expectReadFull": true
+}
