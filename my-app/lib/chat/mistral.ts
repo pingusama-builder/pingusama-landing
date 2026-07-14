@@ -243,6 +243,12 @@ interface CallOptions {
   toolChoice?: ToolChoice
   maxTokens?: number
   model?: string
+  /** Per-call reasoning_effort override. Applied ONLY when the resolved model is
+   * reasoning-capable (reasoningEffortForModel(model) is truthy — i.e. the env
+   * pins a reasoning model and this call routes to it). On a non-reasoning model
+   * the override is ignored (sending reasoning_effort to mistral-large-latest
+   * would be rejected). When omitted, the env-driven effort is used (unchanged). */
+  reasoningEffort?: string
   signal?: AbortSignal
   onContent?: (chunk: string) => void
   onReasoning?: (chunk: string) => void
@@ -275,7 +281,12 @@ async function callMistral(opts: CallOptions, stream: boolean): Promise<Accumula
   // the alias we requested.
   let reasoningEffortSent: string | null = null
   if (!ollama) {
-    const effort = reasoningEffortForModel(model)
+    // baseEffort is the env-driven effort for this model (undefined unless the
+    // model is the pinned reasoning model or the narrow-substrate override). The
+    // per-call override takes precedence but ONLY on a reasoning-capable model;
+    // on a non-reasoning model baseEffort is undefined and we send nothing.
+    const baseEffort = reasoningEffortForModel(model)
+    const effort = baseEffort ? (opts.reasoningEffort ?? baseEffort) : undefined
     if (effort) {
       body.reasoning_effort = effort
       reasoningEffortSent = effort
