@@ -8,8 +8,11 @@ import TagList from "@/components/TagList"
 import { categoryPath } from "@/lib/categories"
 import { getPublishedPostBySlug } from "@/lib/db/posts"
 
-export const revalidate = 3600
-
+// NOTE: no time-based revalidate. /blog/[slug] has no generateStaticParams
+// so it is fully dynamic (rendered per request). A revalidate value on a
+// dynamic route only confused the cache and could contribute to unnecessary
+// writes; admin blog actions call revalidatePath(`/blog/${slug}`) for
+// on-demand invalidation instead.
 type PostPageProps = {
   params: Promise<{ slug: string }>
 }

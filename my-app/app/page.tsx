@@ -9,8 +9,11 @@ const frames = JSON.parse(
   readFileSync(join(process.cwd(), "public", "runner.b64.txt"), "utf8")
 ) as string[];
 
-export const revalidate = 3600;
-
+// NOTE: no time-based revalidate. / is a plain static page. It regenerates
+// on-demand via revalidatePath("/") in admin actions (blog save/delete in
+// app/admin/blog/actions.ts, bench warm/preview in app/admin/bench/actions.ts).
+// A 1h revalidate burned ~4790 ISR writes/day because every request after the
+// stale window triggered a background segment-cache regeneration.
 export default async function Home() {
   const rawShelf = await loadShelf();
   const [posts, shelf, vault] = await Promise.all([
