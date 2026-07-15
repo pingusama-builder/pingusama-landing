@@ -23,6 +23,8 @@ import {
   type ExtractedPage,
 } from "@/lib/chat/tavily-search"
 import { rewriteSearchQueries } from "@/lib/chat/query-rewrite"
+import { decideWebEnabled } from "@/lib/chat/web-trigger"
+import { snapshotWebResearch } from "@/lib/chat/tools"
 import {
   classifyDifficultyHybrid,
   bandToTier,
@@ -70,7 +72,8 @@ export async function POST(request: Request) {
     threadId?: string
     message?: string
     modelPreference?: ModelPreference
-    webEnabled?: boolean
+    webMode?: "auto" | "on" | "off"
+    webEnabled?: boolean // legacy boolean alias → on/off
   }
   try {
     body = (await request.json()) as typeof body
@@ -86,15 +89,16 @@ export async function POST(request: Request) {
   }
 
   // ── Web-search trigger ──────────────────────────────────────────────────
-  // Explicit per-message toggle (`webEnabled`) or `/web` prefix. Strip the
-  // prefix before storing or passing the question onward. Disabled by default.
-  let webEnabled = !!body.webEnabled
-  const message = rawMessage.replace(/^\/web\s*/i, () => {
-    webEnabled = true
-    return ""
-  }).trim()
+  // Tri-state: auto (a pre-turn classifier decides), on (force), off (force).
+  // /web and /noweb prefixes force on/off; the legacy webEnabled boolean is
+  // aliased to on/off for backward compatibility. Default is auto. The
+  // classifier runs later (after history is fetched so it can read prior rows).
+  let webMode: "auto" | "on" | "off" = body.webMode ?? (body.webEnabled ? "on" : "auto")
+  let message = rawMessage
+  message = message.replace(/^\/web\s*/i, () => { webMode = "on"; return "" }).trim()
+  message = message.replace(/^\/noweb\s*/i, () => { webMode = "off"; return "" }).trim()
   if (!message) {
-    return Response.json({ error: "Missing message after /web prefix" }, { status: 400 })
+    return Response.json({ error: "Missing message after prefix" }, { status: 400 })
   }
 
   // ── Thread ──────────────────────────────────────────────────────────────
@@ -139,12 +143,8 @@ export async function POST(request: Request) {
     tier = bandToTier(band)
     reason = `auto → ${tier} (${band})`
   }
-  const tavilyKeyMissing = webEnabled && !process.env.TAVILY_API_KEY
-  const webTurn = webEnabled && !tavilyKeyMissing
-  if (webTurn) {
-    tier = "large" // force best synthesis for web-research turns
-  }
-  const modelId = MODEL_TIERS[tier] ?? MODEL_TIERS[DEFAULT_TIER]
+  // webTurn + final modelId are resolved after history is fetched (the auto
+  // path needs prior rows for the needs-web? classifier).
 
   await appendMessage({ threadId, role: "user", content: message })
 
@@ -159,6 +159,27 @@ export async function POST(request: Request) {
   ])
   const baseSystemPrompt = buildSystemPrompt({ siteContext, memories })
   const history = historyRows.map(rowToMistral).filter((m): m is MistralMessage => m !== null)
+
+  // ── Resolve the web turn + final model (needs history for the classifier) ──
+  // on → force search (unless the key is missing). auto → run decideWebEnabled
+  // with prior rows; search iff it says so. off → never. webRequested tracks
+  // "did the user want web" so we can surface unavailable when the key is missing.
+  const tavilyKeyMissing = !process.env.TAVILY_API_KEY
+  let webTurn = false
+  let webRequested = false
+  if (webMode === "on") {
+    webRequested = true
+    webTurn = !tavilyKeyMissing
+  } else if (webMode === "auto" && !tavilyKeyMissing) {
+    const priorRows = historyRows.slice(0, -1) // exclude the just-appended current message
+    const decision = await decideWebEnabled(message, priorRows)
+    webRequested = decision.webEnabled
+    webTurn = decision.webEnabled
+  }
+  if (webTurn) {
+    tier = "large" // force best synthesis for web-research turns
+  }
+  const modelId = MODEL_TIERS[tier] ?? MODEL_TIERS[DEFAULT_TIER]
 
   // 55s soft-deadline AbortController (cleared on stream close).
   const deadlineController = new AbortController()
@@ -250,9 +271,9 @@ export async function POST(request: Request) {
         send({ type: "model", tier, modelId, reason: modelReason })
 
         // ── Web sources / status (after the model event) ──────────────────
-        if (tavilyKeyMissing) {
+        if (webRequested && tavilyKeyMissing) {
           send({ type: "web_status", status: "unavailable", reason: "Tavily API key not configured" })
-        } else if (webEnabled) {
+        } else if (webTurn) {
           const readFullUrls = new Set(pages.map((p) => p.url))
           const sourcesWithFlag: (WebSource & { readFull: boolean })[] = merged.sources.map(
             (s) => ({ ...s, readFull: readFullUrls.has(s.url) })
@@ -293,6 +314,15 @@ export async function POST(request: Request) {
           sourceThreadId: threadId,
           memoryWrites: 0,
           maxMemoryWrites: MAX_MEMORY_WRITES,
+          webTouched: false,
+          webSearchCalls: 0,
+          webResearch: null,
+        }
+        // Seed the web→memory gate snapshot from the first search (best-of;
+        // a later web_search follow-up merges into it).
+        if (webTurn) {
+          toolCtx.webTouched = true
+          toolCtx.webResearch = snapshotWebResearch(merged, webSubject, pages)
         }
 
         let turns = 0

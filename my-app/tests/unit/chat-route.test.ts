@@ -48,6 +48,9 @@ const tavilyMock = vi.hoisted(() => ({
 const rewriteMock = vi.hoisted(() => ({
   rewriteSearchQueries: vi.fn(),
 }))
+const webTriggerMock = vi.hoisted(() => ({
+  decideWebEnabled: vi.fn(),
+}))
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: authMock.getCurrentUser,
@@ -87,6 +90,9 @@ vi.mock("@/lib/chat/tavily-search", () => ({
 }))
 vi.mock("@/lib/chat/query-rewrite", () => ({
   rewriteSearchQueries: rewriteMock.rewriteSearchQueries,
+}))
+vi.mock("@/lib/chat/web-trigger", () => ({
+  decideWebEnabled: webTriggerMock.decideWebEnabled,
 }))
 
 import { POST } from "@/app/api/chat/route"
@@ -180,6 +186,10 @@ function setupOk() {
   // Default passthrough: rewrite returns [raw message], no subject. Existing
   // tests assert searchWeb receives the raw message; this preserves that.
   rewriteMock.rewriteSearchQueries.mockImplementation(async (msg: string) => ({ queries: [msg], subject: null }))
+  // Default: the needs-web? classifier says no-search (auto path). Tests that
+  // want web on the auto path override this; tests using webMode:"on" or the
+  // /web prefix bypass the classifier entirely.
+  webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: false, decision: "no-search", via: "heuristic" })
 }
 
 describe("POST /api/chat — admin gate", () => {
@@ -919,5 +929,99 @@ describe("POST /api/chat — web synthesis tier + effort + budget", () => {
     expect(
       assistantCalls.some((c: any[]) => c[0]?.content === "partial answer that should survive a mid-stream abort")
     ).toBe(true)
+  })
+})
+describe("POST /api/chat — auto web-trigger", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    delete process.env.TAVILY_API_KEY
+  })
+
+  it("runs the classifier on auto (webMode omitted) and searches when it says search", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: true, decision: "search", via: "heuristic" })
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["Dan Koe AI"], subject: "Dan Koe" })
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "Dan Koe AI",
+      searchedAt: "x",
+      sources: [{ title: "T", url: "https://e.com", domain: "e.com", snippet: "Dan Koe AI", score: 0.9 }],
+    })
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[EVIDENCE]")
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("answer")
+      return { role: "assistant", content: "answer", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "what has Dan Koe said about AI in 2025?" }))
+    const events = await drainSSE(res)
+    expect(webTriggerMock.decideWebEnabled).toHaveBeenCalledTimes(1)
+    expect(tavilyMock.searchWeb).toHaveBeenCalled()
+    expect(events.some((e) => e.type === "done")).toBe(true)
+  })
+
+  it("does not search when the classifier says no-search", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: false, decision: "no-search", via: "heuristic" })
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("hi!")
+      return { role: "assistant", content: "hi!", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "hi" }))
+    await drainSSE(res)
+    expect(webTriggerMock.decideWebEnabled).toHaveBeenCalledTimes(1)
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+  })
+
+  it("/noweb forces off even on a fresh-factual message", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: true, decision: "search", via: "heuristic" })
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "/noweb what has Dan Koe said about AI in 2025?" }))
+    await drainSSE(res)
+    // /noweb forces off → classifier must not run, no search.
+    expect(webTriggerMock.decideWebEnabled).not.toHaveBeenCalled()
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+    // Stored user message has the /noweb prefix stripped.
+    const userAppend = chatMock.appendMessage.mock.calls.find((c) => c[0].role === "user")
+    expect(userAppend?.[0].content).toBe("what has Dan Koe said about AI in 2025?")
+  })
+
+  it("webMode:on forces search without the classifier", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: true, decision: "search", via: "heuristic" })
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["q"], subject: null })
+    tavilyMock.searchWeb.mockResolvedValue({ provider: "tavily", query: "q", searchedAt: "x", sources: [] })
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("a")
+      return { role: "assistant", content: "a", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "q", webMode: "on" }))
+    await drainSSE(res)
+    expect(webTriggerMock.decideWebEnabled).not.toHaveBeenCalled()
+    expect(tavilyMock.searchWeb).toHaveBeenCalled()
+  })
+
+  it("webMode:off skips search even when the classifier would say search", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: true, decision: "search", via: "heuristic" })
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("a")
+      return { role: "assistant", content: "a", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "what has Dan Koe said about AI in 2025?", webMode: "off" }))
+    await drainSSE(res)
+    expect(webTriggerMock.decideWebEnabled).not.toHaveBeenCalled()
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
   })
 })
