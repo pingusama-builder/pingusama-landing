@@ -48,4 +48,14 @@ describe("ChatUI — web research UI", () => {
     expect(src).toContain("chat-web-readfull");
     expect(src).not.toContain("dangerouslySetInnerHTML");
   });
+
+  it("wires a three-state webMode toggle (auto/on/off) and sends webMode instead of webEnabled", () => {
+    const src = readFileSync(fileURLToPath(new URL("../../components/ChatUI.tsx", import.meta.url)), "utf8");
+    expect(src).toMatch(/webMode/);
+    expect(src).toMatch(/"auto"|"on"|"off"/);
+    // The POST body must send webMode, not the legacy webEnabled boolean.
+    expect(src).not.toMatch(/body: JSON\.stringify\(\{[^}]*webEnabled[^}]*\}\)/);
+    // Default state is auto (no forced search).
+    expect(src).toMatch(/useState<"auto" \| "on" \| "off">\("auto"\)/);
+  });
 });

@@ -35,7 +35,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
   const [liveModel, setLiveModel] = useState<string | null>(null); // tier shown while streaming
   const [inferPending, startInferTransition] = useTransition();
   const [inferStatus, setInferStatus] = useState<string | null>(null);
-  const [webEnabled, setWebEnabled] = useState(false);
+  const [webMode, setWebMode] = useState<"auto" | "on" | "off">("auto");
   const [webSources, setWebSources] = useState<WebSource[]>([]);
   const [webQuery, setWebQuery] = useState<string | null>(null);
   const [webStatus, setWebStatus] = useState<{
@@ -90,7 +90,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     setError(null);
     setModelPref("auto");
     setLiveModel(null);
-    setWebEnabled(false);
+    setWebMode("auto");
     setWebSources([]);
     setWebQuery(null);
     setWebStatus(null);
@@ -146,7 +146,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: activeId, message: text, webEnabled }),
+        body: JSON.stringify({ threadId: activeId, message: text, webMode }),
       });
       if (!res.ok || !res.body) {
         const errText = await res.text().catch(() => res.statusText);
@@ -408,7 +408,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
 
         {error && <div className="chat-error">{error}</div>}
 
-        {(webSources.length > 0 || webStatus || (webEnabled && webPhase && webPhase !== "done")) && (
+        {(webSources.length > 0 || webStatus || (webMode !== "off" && webPhase && webPhase !== "done")) && (
           <div className="chat-web-panel" data-web-status={webStatus?.status ?? "ok"}>
             {webPhase && webPhase !== "done" && (
               <div className="chat-web-phase" aria-live="polite">
@@ -474,13 +474,14 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
           />
           <button
             type="button"
-            className={`chat-web-toggle${webEnabled ? " active" : ""}`}
-            onClick={() => setWebEnabled((w) => !w)}
+            className={`chat-web-toggle${webMode !== "auto" ? " active" : ""}`}
+            onClick={() => setWebMode((m) => (m === "auto" ? "on" : m === "on" ? "off" : "auto"))}
             disabled={streaming}
-            aria-pressed={webEnabled}
-            title="Search public web sources before answering"
+            aria-pressed={webMode === "on"}
+            aria-label={`Web search: ${webMode}`}
+            title={`Web search: ${webMode} (auto / on / off)`}
           >
-            查公開資料
+            查公開資料：{webMode}
           </button>
           <button className="chat-send" onClick={send} disabled={streaming || !input.trim()}>
             {streaming ? "…" : "Send"}
