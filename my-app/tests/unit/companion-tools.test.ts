@@ -37,7 +37,14 @@ const draft: DraftSnapshot = {
 }
 
 function ctx(): ToolContext {
-  return { sourceThreadId: "c1", memoryWrites: 0, maxMemoryWrites: 3 }
+  return {
+    sourceThreadId: "c1",
+    memoryWrites: 0,
+    maxMemoryWrites: 3,
+    webTouched: false,
+    webSearchCalls: 0,
+    webResearch: null,
+  }
 }
 
 describe("COMPANION_TOOLS / COMPANION_ALLOWED", () => {

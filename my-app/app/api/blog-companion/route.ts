@@ -376,6 +376,11 @@ export async function POST(request: Request) {
           sourceThreadId: threadId,
           memoryWrites: 0,
           maxMemoryWrites: MAX_MEMORY_WRITES,
+          // The companion path never runs web search, so the web→memory gate
+          // stays inert (webTouched=false → a save is stamped source: "chat").
+          webTouched: false,
+          webSearchCalls: 0,
+          webResearch: null,
         }
         let proposalsThisTurn = 0
         const emittedProposalKeys = new Set<string>()

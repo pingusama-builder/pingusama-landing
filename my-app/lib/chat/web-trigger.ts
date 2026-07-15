@@ -110,10 +110,11 @@ export async function decideWebEnabled(
   historyRows: ChatMessageRow[] = []
 ): Promise<WebTriggerResult> {
   const h = classifyWebNeed(message)
-  if (h.band !== "borderline") {
+  const band = h.band
+  if (band !== "borderline") {
     return {
-      webEnabled: h.band === "search",
-      decision: h.band === "search" ? "search" : "no-search",
+      webEnabled: band === "search",
+      decision: band === "search" ? "search" : "no-search",
       via: "heuristic",
     }
   }
@@ -137,14 +138,15 @@ export async function decideWebEnabled(
       maxTokens: 8,
     })
     const label = parseWebDecision(acc.content)
-    const decision: WebDecision =
-      label ?? (h.band === "search" ? "search" : "no-search")
+    // In the borderline branch the heuristic band is "borderline" → a missing
+    // model label defaults to no-search (do not search on uncertainty).
+    const decision: WebDecision = label ?? "no-search"
     return { webEnabled: decision === "search", decision, via: "mistral-small" }
   } catch {
-    // Never block the turn — fall back to heuristic band.
+    // Never block the turn — fall back to no-search (borderline heuristic).
     return {
-      webEnabled: h.band === "search",
-      decision: h.band === "search" ? "search" : "no-search",
+      webEnabled: false,
+      decision: "no-search",
       via: "mistral-small",
     }
   }
