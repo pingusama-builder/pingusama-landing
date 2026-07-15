@@ -34,7 +34,20 @@ vi.mock("@/lib/chat/awareness", () => ({
   SiteCategory: undefined,
 }))
 
-import { executeToolCall, type ToolContext } from "@/lib/chat/tools"
+const tavilyMock = vi.hoisted(() => ({
+  searchWeb: vi.fn(),
+  rankSources: vi.fn(),
+  formatWebEvidenceGuarded: vi.fn(),
+  subjectInSources: vi.fn(),
+}))
+vi.mock("@/lib/chat/tavily-search", () => ({
+  searchWeb: tavilyMock.searchWeb,
+  rankSources: tavilyMock.rankSources,
+  formatWebEvidenceGuarded: tavilyMock.formatWebEvidenceGuarded,
+  subjectInSources: tavilyMock.subjectInSources,
+}))
+
+import { executeToolCall, CHAT_TOOLS, type ToolContext } from "@/lib/chat/tools"
 import type { MemoryRow } from "@/lib/db/chat"
 
 const baseRow = (over: Partial<MemoryRow> = {}): MemoryRow => ({
@@ -56,7 +69,14 @@ const baseRow = (over: Partial<MemoryRow> = {}): MemoryRow => ({
 })
 
 function ctx(): ToolContext {
-  return { sourceThreadId: "t1", memoryWrites: 0, maxMemoryWrites: 3 }
+  return {
+    sourceThreadId: "t1",
+    memoryWrites: 0,
+    maxMemoryWrites: 3,
+    webTouched: false,
+    webSearchCalls: 0,
+    webResearch: null,
+  }
 }
 
 describe("executeToolCall — save_memory", () => {
@@ -338,5 +358,82 @@ describe("executeToolCall — shared mutation cap (bug fix)", () => {
     expect(res.memoryWrite).toBe(false)
     expect(res.content).toMatch(/cap/)
     expect(chatMock.updateMemory).not.toHaveBeenCalled()
+  })
+})
+describe("executeToolCall — web_search", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("is registered in the tool surface", () => {
+    expect(CHAT_TOOLS.some((t) => t.function.name === "web_search")).toBe(true)
+  })
+
+  it("runs a snippet-only search and returns guarded evidence (1st call)", async () => {
+    const sources = [
+      { title: "T", url: "https://e.com/dan-koe", domain: "e.com", snippet: "Dan Koe AI" },
+    ]
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "Dan Koe AI",
+      searchedAt: "x",
+      sources,
+    })
+    tavilyMock.rankSources.mockImplementation((s: unknown[]) => s)
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[EVIDENCE] Dan Koe …")
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    const c: ToolContext = {
+      sourceThreadId: "t1",
+      memoryWrites: 0,
+      maxMemoryWrites: 3,
+      webTouched: true,
+      webSearchCalls: 0,
+      webResearch: null,
+    }
+    const res = await executeToolCall(
+      "web_search",
+      JSON.stringify({ query: "Dan Koe AI", subject: "Dan Koe" }),
+      c
+    )
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toContain("[EVIDENCE]")
+    expect(tavilyMock.searchWeb).toHaveBeenCalledWith("Dan Koe AI", {
+      maxResults: 8,
+    })
+    expect(c.webSearchCalls).toBe(1)
+    expect(c.webTouched).toBe(true)
+    expect(c.webResearch).not.toBeNull()
+    expect(c.webResearch!.topSourceUrl).toBe("https://e.com/dan-koe")
+  })
+
+  it("refuses a 2nd follow-up with a nudge (cap = 1)", async () => {
+    const c: ToolContext = {
+      sourceThreadId: "t1",
+      memoryWrites: 0,
+      maxMemoryWrites: 3,
+      webTouched: true,
+      webSearchCalls: 1,
+      webResearch: null,
+    }
+    const res = await executeToolCall(
+      "web_search",
+      JSON.stringify({ query: "again" }),
+      c
+    )
+    expect(res.content).toMatch(/cap reached/i)
+    expect(c.webSearchCalls).toBe(1)
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+  })
+
+  it("rejects an empty query", async () => {
+    const c: ToolContext = {
+      sourceThreadId: "t1",
+      memoryWrites: 0,
+      maxMemoryWrites: 3,
+      webTouched: false,
+      webSearchCalls: 0,
+      webResearch: null,
+    }
+    const res = await executeToolCall("web_search", JSON.stringify({ query: "  " }), c)
+    expect(res.content).toMatch(/non-empty query/i)
+    expect(c.webSearchCalls).toBe(0)
   })
 })
