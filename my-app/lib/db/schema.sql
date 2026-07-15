@@ -56,6 +56,11 @@ CREATE OR REPLACE FUNCTION public.search_posts(query_text text)
 RETURNS SETOF public.posts
 LANGUAGE sql
 STABLE
+-- Pin the search_path so an attacker can't shadow an unqualified name via a
+-- mutable role search_path (Supabase linter: function_search_path_mutable).
+-- public.posts is schema-qualified below; builtins resolve via pg_catalog
+-- (always implicitly first). `extensions` is included per Supabase convention.
+SET search_path = public, extensions
 AS $$
   SELECT *
   FROM public.posts
@@ -72,19 +77,13 @@ ON CONFLICT (id) DO NOTHING;
 -- 6. Storage policies (idempotent)
 DO $$
 BEGIN
-  -- Public read for anon
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'storage'
-      AND tablename  = 'objects'
-      AND policyname = 'Public read access for blog-assets'
-  ) THEN
-    CREATE POLICY "Public read access for blog-assets"
-      ON storage.objects
-      FOR SELECT
-      TO anon, authenticated
-      USING (bucket_id = 'blog-assets');
-  END IF;
+  -- NOTE: no FOR SELECT policy. The bucket is `public = true`, so object reads
+  -- via the public URL (https://.../storage/v1/object/public/blog-assets/…)
+  -- are authorized by the bucket's public flag — they do NOT need an RLS SELECT
+  -- policy. A broad SELECT policy would only enable the Storage `list` API,
+  -- letting anyone enumerate every object key in the bucket (Supabase linter:
+  -- public_bucket_allows_listing). The app reads images via <img src> on public
+  -- URLs and never calls `.list()`, so no SELECT policy is needed.
 
   -- Authenticated upload
   IF NOT EXISTS (
@@ -168,18 +167,11 @@ ON CONFLICT (id) DO NOTHING;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'storage'
-      AND tablename  = 'objects'
-      AND policyname = 'Public read access for covers'
-  ) THEN
-    CREATE POLICY "Public read access for covers"
-      ON storage.objects
-      FOR SELECT
-      TO anon, authenticated
-      USING (bucket_id = 'covers');
-  END IF;
+  -- NOTE: no FOR SELECT policy — same rationale as blog-assets above. The
+  -- bucket is `public = true`, so public <img> reads work without an RLS
+  -- SELECT policy; a SELECT policy would only enable object enumeration via
+  -- the Storage `list` API (Supabase linter: public_bucket_allows_listing).
+  -- Admin warming uploads via the service-role client bypass RLS anyway.
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies
