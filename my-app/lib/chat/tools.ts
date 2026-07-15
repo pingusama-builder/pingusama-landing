@@ -17,7 +17,12 @@ import {
   subjectInSources,
   type WebResearch,
 } from "@/lib/chat/tavily-search"
-import type { MistralTool } from "@/lib/chat/mistral"
+import {
+  mistralTurn,
+  getReasoningModel,
+  reasoningEffortForModel,
+  type MistralTool,
+} from "@/lib/chat/mistral"
 
 // ── The bot's entire tool surface ────────────────────────────────────────
 // Only memory ops + read-only site awareness. There is NO tool that writes
@@ -90,6 +95,97 @@ export function snapshotWebResearch(
 }
 
 const SITE_CATEGORIES: SiteCategory[] = ["blog", "shelf", "vault", "tools", "code"]
+
+// ── Web→memory gate ───────────────────────────────────────────────────────
+// Applies ONLY when save_memory is called in a turn where ctx.webTouched is
+// true. Layer 1 is a mechanical input-side precheck (subjectMatch + corroboration)
+// that holds on a non-reasoning substrate; Layer 2 is a reasoning-model confidence
+// pass (mistral-medium-3-5) on a substrate that CAN reason. Commits with
+// source:'web' + the top source URL folded into the content as provenance.
+//
+// Per the non-reasoning-model-output-guards doctrine, the "high confidence
+// accurate" requirement cannot be enforced by an output-side prompt clause on a
+// non-reasoning model — hence the mechanical precheck + the reasoning gate.
+
+function parseGateJson(raw: string): { save?: unknown; reason?: unknown } | null {
+  const start = raw.indexOf("{")
+  if (start < 0) return null
+  let depth = 0
+  let end = -1
+  for (let i = start; i < raw.length; i++) {
+    if (raw[i] === "{") depth += 1
+    else if (raw[i] === "}") {
+      depth -= 1
+      if (depth === 0) {
+        end = i
+        break
+      }
+    }
+  }
+  if (end < 0) return null
+  try {
+    return JSON.parse(raw.slice(start, end + 1)) as { save?: unknown; reason?: unknown }
+  } catch {
+    return null
+  }
+}
+
+const WEB_SAVE_REASONING_MAX_TOKENS = 1500
+const WEB_SAVE_SYSTEM = `You are a confidence gate. Decide whether a web-derived fact should be saved to durable memory. Reply with ONE JSON object and nothing else: {"save": true|false, "reason": "<short>"}.
+Save=true ONLY when BOTH hold:
+1. The fact is directly about the user's question (on-topic).
+2. You are highly confident the fact is accurate from the supplied web evidence.
+Otherwise save=false and say why in one short clause.`
+
+/** Web→memory gate. Returns { ok: true, provenanceUrl? } to commit, or
+ * { ok: false, reason } to refuse. Only called when ctx.webTouched is true. */
+async function gateWebSave(
+  proposedName: string,
+  proposedContent: string,
+  ctx: ToolContext
+): Promise<{ ok: boolean; reason?: string; provenanceUrl?: string | null }> {
+  const r = ctx.webResearch
+  if (!r) return { ok: false, reason: "no web research this turn" }
+  // Layer 1a — on-topic (the fact is directly related to the user's enquiry).
+  if (!r.subjectMatch) {
+    return { ok: false, reason: "web evidence didn't mention the subject; not saving a web-derived fact." }
+  }
+  // Layer 1b — corroboration (mechanical proxy for "high confidence accurate").
+  const corroborated = r.hadReadInFull || r.subjectMentioningSources >= 2
+  if (!corroborated) {
+    return { ok: false, reason: "insufficient corroboration to save a web-derived fact." }
+  }
+  // Layer 2 — reasoning-model confidence pass on a substrate that can reason.
+  try {
+    const acc = await mistralTurn({
+      model: getReasoningModel(),
+      messages: [
+        { role: "system", content: WEB_SAVE_SYSTEM },
+        {
+          role: "user",
+          content: `Proposed memory — name: ${proposedName}\ncontent: ${proposedContent}\n\nDecide. Return the JSON.`,
+        },
+      ],
+      maxTokens: WEB_SAVE_REASONING_MAX_TOKENS,
+      reasoningEffort: reasoningEffortForModel(getReasoningModel()) ?? undefined,
+    })
+    const parsed = parseGateJson(acc.content)
+    const save = parsed?.save === true
+    if (!save) {
+      return {
+        ok: false,
+        reason:
+          typeof parsed?.reason === "string" && parsed.reason.trim()
+            ? parsed.reason
+            : "reasoning gate declined the web save.",
+      }
+    }
+    return { ok: true, provenanceUrl: r.topSourceUrl }
+  } catch {
+    // A reasoning-gate failure is a refuse (safe), never a hard turn failure.
+    return { ok: false, reason: "reasoning gate unavailable; not saving a web-derived fact." }
+  }
+}
 
 export const CHAT_TOOLS: MistralTool[] = [
   {
@@ -294,13 +390,33 @@ export async function executeToolCall(
         // site:* namespace at the tool boundary so the guard holds even if the
         // underlying saveMemory implementation is later swapped.
         assertPersonalName(input.name)
+        // Web→memory gate: applies only on a web-influenced turn. A non-web
+        // save (a preference Robin said in chat) is untouched.
+        let saveSource: "chat" | "web" = "chat"
+        let saveContent = input.content
+        if (ctx.webTouched) {
+          const gate = await gateWebSave(input.name, input.content, ctx)
+          if (!gate.ok) {
+            return {
+              content: `Web→memory save refused: ${gate.reason ?? "unconfirmed"}`,
+              memoryWrite: false,
+            }
+          }
+          saveSource = "web"
+          if (gate.provenanceUrl) saveContent = `${input.content}\n\nSource: ${gate.provenanceUrl}`
+        }
         const row = await saveMemory({
           ...(input as { type: MemoryType; name: string; description: string; content: string }),
+          content: saveContent,
           links: input.links,
           sourceThreadId: ctx.sourceThreadId,
+          source: saveSource,
         })
         ctx.memoryWrites += 1
-        return { content: `Saved memory "${row.name}" (${row.type}).`, memoryWrite: true }
+        return {
+          content: `Saved memory "${row.name}" (${row.type}${saveSource === "web" ? ", web" : ""}).`,
+          memoryWrite: true,
+        }
       }
 
       case "update_memory": {

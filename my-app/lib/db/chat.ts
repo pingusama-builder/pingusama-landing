@@ -201,7 +201,7 @@ export interface SaveMemoryInput {
   content: string
   links?: string[]
   sourceThreadId?: string
-  source?: "chat" | "inference"
+  source?: "chat" | "inference" | "web"
 }
 
 export async function saveMemory(input: SaveMemoryInput): Promise<MemoryRow> {

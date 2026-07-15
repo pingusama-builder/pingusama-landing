@@ -47,6 +47,21 @@ vi.mock("@/lib/chat/tavily-search", () => ({
   subjectInSources: tavilyMock.subjectInSources,
 }))
 
+const mistralMock = vi.hoisted(() => ({
+  mistralTurn: vi.fn(),
+  getReasoningModel: vi.fn(),
+  reasoningEffortForModel: vi.fn(),
+}))
+vi.mock("@/lib/chat/mistral", async () => {
+  const actual = await vi.importActual<any>("@/lib/chat/mistral")
+  return {
+    ...actual,
+    mistralTurn: mistralMock.mistralTurn,
+    getReasoningModel: mistralMock.getReasoningModel,
+    reasoningEffortForModel: mistralMock.reasoningEffortForModel,
+  }
+})
+
 import { executeToolCall, CHAT_TOOLS, type ToolContext } from "@/lib/chat/tools"
 import type { MemoryRow } from "@/lib/db/chat"
 
@@ -435,5 +450,114 @@ describe("executeToolCall — web_search", () => {
     const res = await executeToolCall("web_search", JSON.stringify({ query: "  " }), c)
     expect(res.content).toMatch(/non-empty query/i)
     expect(c.webSearchCalls).toBe(0)
+  })
+})
+
+describe("executeToolCall — web→memory gate", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  function webCtx(
+    over: Partial<import("@/lib/chat/tools").WebResearchSnapshot> = {}
+  ): ToolContext {
+    return {
+      sourceThreadId: "t1",
+      memoryWrites: 0,
+      maxMemoryWrites: 3,
+      webTouched: true,
+      webSearchCalls: 1,
+      webResearch: {
+        subjectMatch: true,
+        subjectMentioningSources: 2,
+        hadReadInFull: true,
+        topSourceUrl: "https://e.com/dan-koe",
+        ...over,
+      },
+    }
+  }
+
+  it("refuses a web save when subjectMatch is false", async () => {
+    const c = webCtx({ subjectMatch: false })
+    const res = await executeToolCall(
+      "save_memory",
+      JSON.stringify({ type: "user", name: "dan-koe-ai", description: "d", content: "Dan Koe said X" }),
+      c
+    )
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toMatch(/subject/i)
+    expect(chatMock.saveMemory).not.toHaveBeenCalled()
+    expect(mistralMock.mistralTurn).not.toHaveBeenCalled()
+  })
+
+  it("refuses a web save when corroboration is thin (<2 sources, no read-in-full)", async () => {
+    const c = webCtx({ subjectMatch: true, subjectMentioningSources: 1, hadReadInFull: false })
+    const res = await executeToolCall(
+      "save_memory",
+      JSON.stringify({ type: "user", name: "x", description: "d", content: "c" }),
+      c
+    )
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toMatch(/corroboration/i)
+    expect(chatMock.saveMemory).not.toHaveBeenCalled()
+    expect(mistralMock.mistralTurn).not.toHaveBeenCalled()
+  })
+
+  it("passes the reasoning gate (save=true) → commits with source='web' + provenance URL in content", async () => {
+    mistralMock.getReasoningModel.mockReturnValue("mistral-medium-3-5")
+    mistralMock.reasoningEffortForModel.mockReturnValue("high")
+    mistralMock.mistralTurn.mockResolvedValue({
+      content: '{"save":true,"reason":"corroborated"}',
+      tool_calls: [],
+    })
+    chatMock.saveMemory.mockResolvedValue(baseRow({ name: "dan-koe-ai", type: "user" }))
+    const c = webCtx()
+    const res = await executeToolCall(
+      "save_memory",
+      JSON.stringify({ type: "user", name: "dan-koe-ai", description: "d", content: "Dan Koe said AI matters." }),
+      c
+    )
+    expect(res.memoryWrite).toBe(true)
+    expect(chatMock.saveMemory).toHaveBeenCalledWith(expect.objectContaining({ source: "web" }))
+    const savedArg = chatMock.saveMemory.mock.calls[0][0] as { content: string }
+    expect(savedArg.content).toContain("https://e.com/dan-koe")
+    expect(mistralMock.mistralTurn).toHaveBeenCalledTimes(1)
+  })
+
+  it("refuses when the reasoning gate returns save=false", async () => {
+    mistralMock.getReasoningModel.mockReturnValue("mistral-medium-3-5")
+    mistralMock.reasoningEffortForModel.mockReturnValue("high")
+    mistralMock.mistralTurn.mockResolvedValue({
+      content: '{"save":false,"reason":"single unverified source"}',
+      tool_calls: [],
+    })
+    const c = webCtx()
+    const res = await executeToolCall(
+      "save_memory",
+      JSON.stringify({ type: "user", name: "x", description: "d", content: "c" }),
+      c
+    )
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toMatch(/single unverified source|reason/i)
+    expect(chatMock.saveMemory).not.toHaveBeenCalled()
+  })
+
+  it("a NON-web save is untouched by the gate", async () => {
+    chatMock.saveMemory.mockResolvedValue(baseRow({ name: "prefers-walnut", type: "user" }))
+    const c: ToolContext = {
+      sourceThreadId: "t1",
+      memoryWrites: 0,
+      maxMemoryWrites: 3,
+      webTouched: false,
+      webSearchCalls: 0,
+      webResearch: null,
+    }
+    const res = await executeToolCall(
+      "save_memory",
+      JSON.stringify({ type: "user", name: "prefers-walnut", description: "d", content: "Prefers walnut." }),
+      c
+    )
+    expect(res.memoryWrite).toBe(true)
+    expect(mistralMock.mistralTurn).not.toHaveBeenCalled()
+    const savedArg = chatMock.saveMemory.mock.calls[0][0] as { source?: string }
+    expect(savedArg.source).toBe("chat") // non-web save defaults to 'chat', never 'web'
   })
 })
