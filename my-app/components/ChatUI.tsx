@@ -6,12 +6,14 @@ import {
   getThreadAction,
   setThreadModelPreferenceAction,
   inferFromThreadAction,
+  getThreadDebugLogAction,
   type ThreadSummary,
 } from "@/app/admin/chat/actions";
 import type { ModelPreference } from "@/lib/chat/models";
 import { appendAssistantDelta } from "@/lib/chat/stream-updater";
 import { MarkdownText } from "@/components/MarkdownText";
 import type { WebSource } from "@/lib/chat/tavily-search";
+import { debugLogToMarkdown } from "@/lib/chat/debug-log";
 
 interface UIMessage {
   id: string;
@@ -20,6 +22,12 @@ interface UIMessage {
   toolName?: string;
   streaming?: boolean;
   model?: string | null;
+}
+
+function filenameStamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
 export default function ChatUI({ initialThreads }: { initialThreads: ThreadSummary[] }) {
@@ -35,6 +43,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
   const [liveModel, setLiveModel] = useState<string | null>(null); // tier shown while streaming
   const [inferPending, startInferTransition] = useTransition();
   const [inferStatus, setInferStatus] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [webMode, setWebMode] = useState<"auto" | "on" | "off">("auto");
   const [webSources, setWebSources] = useState<WebSource[]>([]);
   const [webQuery, setWebQuery] = useState<string | null>(null);
@@ -123,6 +132,35 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
         }`
       );
     });
+  };
+
+  const downloadDebugLog = async (format: "json" | "md") => {
+    if (!activeId || downloading) return;
+    setDownloading(true);
+    try {
+      const res = await getThreadDebugLogAction(activeId);
+      if (!res.success) {
+        setError(res.error);
+        return;
+      }
+      const stamp = filenameStamp();
+      const blob =
+        format === "json"
+          ? new Blob([JSON.stringify(res.log, null, 2)], { type: "application/json" })
+          : new Blob([debugLogToMarkdown(res.log)], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `chat-${res.log.thread.id}-${stamp}.${format === "json" ? "json" : "md"}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const send = async () => {
@@ -354,6 +392,24 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
             title="Read this conversation and save durable memories to the bank"
           >
             {inferPending ? "Inferring…" : "Save memories now"}
+          </button>
+          <button
+            type="button"
+            className="chat-debug-btn"
+            onClick={() => downloadDebugLog("json")}
+            disabled={streaming || !activeId || downloading}
+            title="Download this thread's full transcript + the model's reasoning (JSON)"
+          >
+            {downloading ? "…" : "⬇ JSON"}
+          </button>
+          <button
+            type="button"
+            className="chat-debug-btn"
+            onClick={() => downloadDebugLog("md")}
+            disabled={streaming || !activeId || downloading}
+            title="Download this thread's full transcript + the model's reasoning (Markdown)"
+          >
+            {downloading ? "…" : "⬇ MD"}
           </button>
         </div>
 

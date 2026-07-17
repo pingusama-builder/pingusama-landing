@@ -12,6 +12,7 @@ vi.mock("@/app/admin/chat/actions", () => ({
   getThreadAction: vi.fn(async () => ({ thread: null, messages: [] })),
   setThreadModelPreferenceAction: vi.fn(async () => ({ success: true })),
   inferFromThreadAction: vi.fn(async () => ({ success: true, summary: { saved: [], dropped: 0, skipped: 0, scanned: 0 } })),
+  getThreadDebugLogAction: vi.fn(async () => ({ success: true, log: { thread: { id: "t1", title: "x", created_at: "x", updated_at: "x", model_preference: "auto" }, exportedAt: "x", messages: [] } })),
 }));
 
 const threads = [
@@ -58,4 +59,17 @@ describe("ChatUI — web research UI", () => {
     // Default state is auto (no forced search).
     expect(src).toMatch(/useState<"auto" \| "on" \| "off">\("auto"\)/);
   });
+
+  it("wires a Save debug log download (JSON + MD) from getThreadDebugLogAction via Blob, no dangerouslySetInnerHTML", () => {
+    const src = readFileSync(fileURLToPath(new URL("../../components/ChatUI.tsx", import.meta.url)), "utf8")
+    expect(src).toMatch(/getThreadDebugLogAction/)
+    expect(src).toMatch(/URL\.createObjectURL/)
+    expect(src).toMatch(/new Blob\(/)
+    expect(src).toMatch(/debugLogToMarkdown/)
+    expect(src).toMatch(/chat-debug-btn/)
+    // Two format targets.
+    expect(src).toMatch(/"json"/)
+    expect(src).toMatch(/"md"/)
+    expect(src).not.toContain("dangerouslySetInnerHTML")
+  })
 });
