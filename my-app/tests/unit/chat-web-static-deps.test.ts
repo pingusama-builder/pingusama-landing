@@ -123,3 +123,21 @@ describe("web_search + web-trigger — the new auto-search-decision surface", ()
     expect(code).toMatch(/Web→memory save refused/)
   })
 })
+
+describe("debug-log capture — reasoning never reaches the author SSE", () => {
+  it("route wires onReasoning only to a local turnReasoning accumulator", () => {
+    const code = stripComments(src("route"))
+    expect(code).toMatch(/onReasoning:\s*\(chunk\)\s*=>\s*\{[^}]*turnReasoning\s*\+=\s*chunk/)
+  })
+
+  it("no SSE send() object carries a reasoning field", () => {
+    const code = stripComments(src("route"))
+    expect(code).not.toMatch(/send\(\{[^}]*reasoning/i)
+  })
+
+  it("reasoning + telemetry flow only into appendMessage, never saveMemory/infer", () => {
+    const code = stripComments(src("route"))
+    expect(code).not.toMatch(/\bsaveMemory\s*\(/)
+    expect(code).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
+  })
+})
