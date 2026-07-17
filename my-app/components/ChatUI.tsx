@@ -155,7 +155,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Download failed");
     } finally {

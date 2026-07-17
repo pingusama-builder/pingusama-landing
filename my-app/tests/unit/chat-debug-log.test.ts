@@ -54,4 +54,23 @@ describe("debugLogToMarkdown", () => {
     expect(userSection).not.toContain("### Reasoning")
     expect(userSection).not.toContain("**Telemetry:**")
   })
+
+  it("omits the Reasoning block and Telemetry line for an assistant turn with null fields", () => {
+    const logWithNullAssistant: CompanionDebugLog = {
+      thread: log.thread,
+      exportedAt: log.exportedAt,
+      messages: [
+        ...log.messages,
+        {
+          id: "m9", role: "assistant", content: "ok", created_at: "2026-07-17T00:00:09Z",
+          model: "mistral-medium-latest", tool_calls: null, reasoning: null, telemetry: null,
+        },
+      ],
+    }
+    const md = debugLogToMarkdown(logWithNullAssistant)
+    const assistantSection = md.split("## [assistant] · 2026-07-17T00:00:09Z")[1]?.split("---")[0] ?? ""
+    expect(assistantSection).toContain("ok")
+    expect(assistantSection).not.toContain("### Reasoning")
+    expect(assistantSection).not.toContain("**Telemetry:**")
+  })
 })

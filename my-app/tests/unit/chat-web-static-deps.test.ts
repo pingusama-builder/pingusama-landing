@@ -8,6 +8,7 @@ const files: Record<string, string> = {
   rewrite: fileURLToPath(new URL("../../lib/chat/query-rewrite.ts", import.meta.url)),
   tools: fileURLToPath(new URL("../../lib/chat/tools.ts", import.meta.url)),
   webTrigger: fileURLToPath(new URL("../../lib/chat/web-trigger.ts", import.meta.url)),
+  actions: fileURLToPath(new URL("../../app/admin/chat/actions.ts", import.meta.url)),
 }
 
 function src(name: keyof typeof files): string {
@@ -139,5 +140,25 @@ describe("debug-log capture — reasoning never reaches the author SSE", () => {
     const code = stripComments(src("route"))
     expect(code).not.toMatch(/\bsaveMemory\s*\(/)
     expect(code).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
+  })
+})
+
+describe("debug-log export action — reads via getChatThread/getMessages, never persists", () => {
+  it("getThreadDebugLogAction body calls neither saveMemory nor inferMemoriesFromThread", () => {
+    const code = stripComments(src("actions"))
+    expect(code).toMatch(/getThreadDebugLogAction/)
+    expect(code).toMatch(/getChatThread/)
+    expect(code).toMatch(/getMessages/)
+    // The actions module DOES import inferMemoriesFromThread for other actions
+    // (inferFromThreadAction, inferIdleThreadsAction), so a file-level negative
+    // would falsely fail. Scope the negative to the getThreadDebugLogAction body:
+    // from its declaration to the next `export ` or end of file.
+    const startIdx = code.indexOf("getThreadDebugLogAction")
+    expect(startIdx, "getThreadDebugLogAction must be declared").toBeGreaterThan(-1)
+    const rest = code.slice(startIdx)
+    const nextExport = rest.indexOf("export ", 1)
+    const body = nextExport === -1 ? rest : rest.slice(0, nextExport)
+    expect(body).not.toMatch(/\bsaveMemory\s*\(/)
+    expect(body).not.toMatch(/\binferMemoriesFromThread\s*\(/)
   })
 })
