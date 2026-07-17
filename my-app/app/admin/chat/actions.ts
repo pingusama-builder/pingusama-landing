@@ -14,6 +14,7 @@ import {
   type ChatThread,
   type ChatMessageRow,
   type MemoryRow,
+  type CompanionDebugLog,
 } from "@/lib/db/chat";
 import { refreshAwareness, type SiteCategory } from "@/lib/chat/awareness";
 import { MODEL_PREFERENCES, type ModelPreference } from "@/lib/chat/models";
@@ -146,5 +147,44 @@ export async function inferIdleThreadsAction(): Promise<
     return { success: true, summaries };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Inference failed" };
+  }
+}
+
+export async function getThreadDebugLogAction(
+  threadId: string
+): Promise<{ success: true; log: CompanionDebugLog } | { success: false; error: string }> {
+  try {
+    await requireAdmin();
+    // Chat UI only — getChatThread returns null for companion-purpose or unknown threads.
+    const thread = await getChatThread(threadId);
+    if (!thread) {
+      return { success: false, error: "Thread not found or not a chat thread" };
+    }
+    const messages = await getMessages(threadId);
+    return {
+      success: true,
+      log: {
+        thread: {
+          id: thread.id,
+          title: thread.title,
+          created_at: thread.created_at,
+          updated_at: thread.updated_at,
+          model_preference: thread.model_preference,
+        },
+        exportedAt: new Date().toISOString(),
+        messages: messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          created_at: m.created_at,
+          model: m.model,
+          tool_calls: m.tool_calls,
+          reasoning: m.reasoning,
+          telemetry: m.telemetry,
+        })),
+      },
+    };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed" };
   }
 }
