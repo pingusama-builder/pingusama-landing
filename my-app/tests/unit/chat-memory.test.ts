@@ -108,6 +108,8 @@ import {
   createThread,
   appendMessage,
   type ChatThread,
+  type ChatMessageRow,
+  type DebugTelemetry,
 } from "@/lib/db/chat"
 
 const baseRow = (over: Partial<MemoryRow> = {}): MemoryRow => ({
@@ -563,5 +565,79 @@ describe("listIdleUnprocessedThreads", () => {
     holder.current!.push([])
     const out = await listIdleUnprocessedThreads({ idleMinutes: 15, limit: 5 })
     expect(out).toEqual([])
+  })
+})
+
+describe("appendMessage — reasoning + telemetry persistence", () => {
+  beforeEach(() => {
+    holder.current = new FakeClient()
+  })
+
+  it("persists reasoning + telemetry on the insert payload for an assistant turn", async () => {
+    const fake = holder.current!
+    const telemetry: DebugTelemetry = {
+      response_model: "mistral-medium-3-5",
+      reasoning_effort_sent: "high",
+      content_chunk_types: ["thinking", "text"],
+      reasoning_chars: 9,
+      text_chars: 2,
+      finish_reason: "stop",
+    }
+    // First result: the insert(...).select("*").single() returns the row.
+    fake.push(
+      {
+        id: "m1",
+        thread_id: "t1",
+        role: "assistant",
+        content: "hi",
+        tool_calls: null,
+        model: "mistral-medium-3-5",
+        reasoning: "thinking…",
+        telemetry,
+        created_at: "2026-07-17",
+      } as ChatMessageRow,
+      null
+    )
+    // Second result: touchThread's update(...).eq(...) resolves via the `then` trap.
+    fake.push(null, null)
+    const row = await appendMessage({
+      threadId: "t1",
+      role: "assistant",
+      content: "hi",
+      model: "mistral-medium-3-5",
+      reasoning: "thinking…",
+      telemetry,
+    })
+    expect(row.id).toBe("m1")
+    const insertCall = fake.calls.find((c) => c.table === "chat_messages")
+    expect(insertCall?.payload).toMatchObject({
+      thread_id: "t1",
+      role: "assistant",
+      model: "mistral-medium-3-5",
+      reasoning: "thinking…",
+      telemetry: { response_model: "mistral-medium-3-5", reasoning_effort_sent: "high" },
+    })
+  })
+
+  it("defaults reasoning + telemetry to null when not supplied (user/tool rows)", async () => {
+    const fake = holder.current!
+    fake.push(
+      {
+        id: "m2",
+        thread_id: "t1",
+        role: "user",
+        content: "hi",
+        tool_calls: null,
+        model: null,
+        reasoning: null,
+        telemetry: null,
+        created_at: "2026-07-17",
+      } as ChatMessageRow,
+      null
+    )
+    fake.push(null, null)
+    await appendMessage({ threadId: "t1", role: "user", content: "hi" })
+    const insertCall = fake.calls.find((c) => c.table === "chat_messages")
+    expect(insertCall?.payload).toMatchObject({ reasoning: null, telemetry: null })
   })
 })

@@ -251,6 +251,8 @@ ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS model_preference text;
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS one_turn_override text;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS model text;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS reasoning text;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS telemetry jsonb;
 
 -- Auto memory inference (companion feature 1/3) — additive.
 ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS last_inferred_at timestamptz NULL;

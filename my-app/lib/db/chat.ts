@@ -55,6 +55,36 @@ export interface ChatThread {
   subject_key: string | null
 }
 
+export interface DebugTelemetry {
+  response_model?: string | null
+  reasoning_effort_sent?: string | null
+  content_chunk_types?: string[] | null
+  reasoning_chars?: number | null
+  text_chars?: number | null
+  finish_reason?: string | null
+}
+
+export interface CompanionDebugLog {
+  thread: {
+    id: string
+    title: string
+    created_at: string
+    updated_at: string
+    model_preference: ModelPreference | null
+  }
+  exportedAt: string
+  messages: Array<{
+    id: string
+    role: MessageRole
+    content: string | null
+    created_at: string
+    model: string | null
+    tool_calls: unknown | null
+    reasoning: string | null
+    telemetry: DebugTelemetry | null
+  }>
+}
+
 export interface ChatMessageRow {
   id: string
   thread_id: string
@@ -62,6 +92,8 @@ export interface ChatMessageRow {
   content: string | null
   tool_calls: unknown | null
   model: string | null
+  reasoning: string | null
+  telemetry: DebugTelemetry | null
   created_at: string
 }
 
@@ -475,6 +507,8 @@ export async function appendMessage(input: {
   content?: string | null
   toolCalls?: unknown
   model?: string | null
+  reasoning?: string | null
+  telemetry?: unknown
 }): Promise<ChatMessageRow> {
   const c = client()
   const { data, error } = await c
@@ -485,6 +519,8 @@ export async function appendMessage(input: {
       content: input.content ?? null,
       tool_calls: input.toolCalls ?? null,
       model: input.model ?? null,
+      reasoning: input.reasoning ?? null,
+      telemetry: input.telemetry ?? null,
     })
     .select("*")
     .single()
