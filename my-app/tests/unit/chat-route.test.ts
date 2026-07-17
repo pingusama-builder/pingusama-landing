@@ -1025,3 +1025,74 @@ describe("POST /api/chat — auto web-trigger", () => {
     expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
   })
 })
+
+describe("POST /api/chat — debug-log capture (reasoning + telemetry)", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("captures the reasoning trace + telemetry into the assistant appendMessage and never streams reasoning", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("Answer.")
+      opts.onReasoning?.("Let me think. ")
+      opts.onReasoning?.("Therefore…")
+      return {
+        role: "assistant",
+        content: "Answer.",
+        tool_calls: [],
+        finish_reason: "stop",
+        response_model: "mistral-medium-3-5",
+        reasoning_effort_sent: "high",
+        content_chunk_types: ["thinking", "text"],
+        reasoning_chars: 22,
+        text_chars: 7,
+      }
+    })
+    const res = await POST(makeRequest({ message: "hi" }))
+    const events = await drainSSE(res)
+
+    // Reasoning never appears in any SSE event.
+    expect(events.some((e) => "reasoning" in e)).toBe(false)
+    const contentDeltas = events
+      .filter((e) => e.type === "content")
+      .map((e) => e.delta)
+      .join("")
+    expect(contentDeltas).toBe("Answer.")
+    expect(contentDeltas).not.toContain("Let me think")
+
+    // The assistant appendMessage carries the accumulated reasoning + telemetry.
+    const assistantAppend = chatMock.appendMessage.mock.calls.find(
+      (c) => c[0].role === "assistant"
+    )
+    expect(assistantAppend?.[0].reasoning).toBe("Let me think. Therefore…")
+    expect(assistantAppend?.[0].telemetry).toMatchObject({
+      response_model: "mistral-medium-3-5",
+      reasoning_effort_sent: "high",
+      reasoning_chars: 22,
+      finish_reason: "stop",
+    })
+  })
+
+  it("persists null reasoning on non-reasoning turns (no onReasoning fired)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return {
+        role: "assistant",
+        content: "ok",
+        tool_calls: [],
+        finish_reason: "stop",
+        response_model: "mistral-medium-latest",
+      }
+    })
+    const res = await POST(makeRequest({ message: "hi" }))
+    await drainSSE(res)
+    const assistantAppend = chatMock.appendMessage.mock.calls.find(
+      (c) => c[0].role === "assistant"
+    )
+    expect(assistantAppend?.[0].reasoning).toBeNull()
+    expect(assistantAppend?.[0].telemetry).toMatchObject({
+      response_model: "mistral-medium-latest",
+      finish_reason: "stop",
+    })
+  })
+})

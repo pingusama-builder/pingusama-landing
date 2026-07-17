@@ -6,6 +6,7 @@ import {
   getMessages,
   consumeOneTurnOverride,
   type MessageRole,
+  type DebugTelemetry,
 } from "@/lib/db/chat"
 import { recallMemories } from "@/lib/db/chat"
 import { buildSiteContext } from "@/lib/chat/awareness"
@@ -330,6 +331,11 @@ export async function POST(request: Request) {
           turns += 1
           const isFinalGuess = turns === MAX_TURNS
 
+          // Per-turn reasoning accumulator. onReasoning is a SEPARATE channel
+          // from onContent — the trace is captured here for the debug log only
+          // and NEVER streamed to the author SSE (extractTextContent already
+          // strips thinking from acc.content; onContent carries text only).
+          let turnReasoning = ""
           // Stream this turn's content to the client as it arrives.
           const acc = await mistralStream({
             messages: mistralMessages,
@@ -342,15 +348,31 @@ export async function POST(request: Request) {
               lastContent += delta
               send({ type: "content", delta })
             },
+            onReasoning: (chunk) => {
+              turnReasoning += chunk
+            },
           })
 
-          // Persist this assistant turn (content + any tool_calls).
+          // Turn-level telemetry for the debug log (fields already on
+          // AccumulatedMessage; previously dropped).
+          const telemetry: DebugTelemetry = {
+            response_model: acc.response_model ?? null,
+            reasoning_effort_sent: acc.reasoning_effort_sent ?? null,
+            content_chunk_types: acc.content_chunk_types ?? null,
+            reasoning_chars: acc.reasoning_chars ?? null,
+            text_chars: acc.text_chars ?? null,
+            finish_reason: acc.finish_reason ?? null,
+          }
+
+          // Persist this assistant turn (content + tool_calls + reasoning + telemetry).
           await appendMessage({
             threadId,
             role: "assistant" as MessageRole,
             content: acc.content,
             toolCalls: acc.tool_calls.length > 0 ? acc.tool_calls : undefined,
             model: modelId,
+            reasoning: turnReasoning || null,
+            telemetry,
           })
 
           // No tool calls → conversation turn complete.
