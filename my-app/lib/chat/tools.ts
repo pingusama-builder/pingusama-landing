@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/chat"
 import type { ModelPreference, ModelTier } from "@/lib/chat/models"
 import { refreshAwareness, readCode, type SiteCategory } from "@/lib/chat/awareness"
+import { readPostForTool } from "@/lib/chat/post-read"
 import {
   searchWeb,
   rankSources,
@@ -408,6 +409,23 @@ export const CHAT_TOOLS: MistralTool[] = [
   {
     type: "function",
     function: {
+      name: "read_post",
+      description: `Read the FULL TEXT of a published blog post. The site context only carries the post INDEX (title, excerpt, date) — NOT the body. ALWAYS call this before summarizing, quoting, critiquing, or answering questions about a specific post; never describe or quote a post you haven't read. Pass slug to read a specific post from the blog index; omit slug to read the most recently published post. Returns the post's markdown body (capped). This is read-only — it cannot edit the post.`,
+      parameters: {
+        type: "object",
+        properties: {
+          slug: {
+            type: "string",
+            description:
+              "A specific post slug from the blog index (e.g. 'matt-haig', 'introducing-the-gaming-experience-index-gei'). Omit to read the newest published post.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "set_model",
       description: `Switch which Mistral model answers this thread. Use it when the user asks to change model in natural language ('use the biggest model for this', 'switch to small', 'use a cheaper model'). tier: small (cheapest, quick factual), medium (balanced default), large (strongest, hard multi-step/code), or auto (route by difficulty). scope: 'persistent' (from now on, this thread) when the user says 'from now on / always / switch to'; 'turn' (just the next response) when the user says 'for this one / just this turn / this time'. This only changes the answering model — it cannot edit site content.`,
       parameters: {
@@ -583,6 +601,12 @@ export async function executeToolCall(
         const feature = args.feature != null ? asString(args.feature) : undefined
         const path = args.path != null ? asString(args.path) : undefined
         const out = readCode({ feature: feature || undefined, path: path || undefined })
+        return { content: out, memoryWrite: false }
+      }
+
+      case "read_post": {
+        const slug = args.slug != null ? asString(args.slug) : undefined
+        const out = await readPostForTool({ slug: slug || undefined })
         return { content: out, memoryWrite: false }
       }
 

@@ -14,6 +14,9 @@ const awarenessMock = vi.hoisted(() => ({
   refreshAwareness: vi.fn(),
   readCode: vi.fn(),
 }))
+const postReadMock = vi.hoisted(() => ({
+  readPostForTool: vi.fn(),
+}))
 
 vi.mock("@/lib/db/chat", async () => {
   const actual = await vi.importActual<typeof import("@/lib/db/chat")>("@/lib/db/chat")
@@ -32,6 +35,10 @@ vi.mock("@/lib/chat/awareness", () => ({
   readCode: awarenessMock.readCode,
   // type re-exports the tool surface imports
   SiteCategory: undefined,
+}))
+
+vi.mock("@/lib/chat/post-read", () => ({
+  readPostForTool: postReadMock.readPostForTool,
 }))
 
 const tavilyMock = vi.hoisted(() => ({
@@ -559,5 +566,42 @@ describe("executeToolCall — web→memory gate", () => {
     expect(mistralMock.mistralTurn).not.toHaveBeenCalled()
     const savedArg = chatMock.saveMemory.mock.calls[0][0] as { source?: string }
     expect(savedArg.source).toBe("chat") // non-web save defaults to 'chat', never 'web'
+  })
+})
+
+describe("executeToolCall — read_post", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("is registered in the tool surface", () => {
+    expect(CHAT_TOOLS.some((t) => t.function.name === "read_post")).toBe(true)
+  })
+
+  it("reads the newest post when no slug is given", async () => {
+    postReadMock.readPostForTool.mockResolvedValue("**GEI**\nSlug: gei\n\nBody.")
+    const res = await executeToolCall("read_post", "{}", ctx())
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toContain("GEI")
+    expect(postReadMock.readPostForTool).toHaveBeenCalledWith({ slug: undefined })
+  })
+
+  it("reads a specific post by slug", async () => {
+    postReadMock.readPostForTool.mockResolvedValue("**Dear Matt Haig**\nSlug: matt-haig")
+    const res = await executeToolCall(
+      "read_post",
+      JSON.stringify({ slug: "matt-haig" }),
+      ctx()
+    )
+    expect(res.memoryWrite).toBe(false)
+    expect(postReadMock.readPostForTool).toHaveBeenCalledWith({ slug: "matt-haig" })
+  })
+
+  it("is not counted against the memory-write cap (read-only)", async () => {
+    postReadMock.readPostForTool.mockResolvedValue("body")
+    const c = ctx()
+    c.memoryWrites = c.maxMemoryWrites
+    const res = await executeToolCall("read_post", "{}", c)
+    expect(res.memoryWrite).toBe(false)
+    expect(c.memoryWrites).toBe(c.maxMemoryWrites) // unchanged
+    expect(postReadMock.readPostForTool).toHaveBeenCalled()
   })
 })
