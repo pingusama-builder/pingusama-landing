@@ -366,6 +366,46 @@ describe("POST /api/chat — model resolution", () => {
     expect(modelsMock.classifyDifficultyHybrid).not.toHaveBeenCalled()
   })
 
+  it("pinned 'large' selects the large tier + mistral-large-latest (Q2 case 6: routing code path is correct)", async () => {
+    // The two live debug logs showed thread.model_preference:"large" but turn 1
+    // response_model mistral-small-latest. Investigation: those threads were
+    // created fresh (turn 1 = the title message), so turn 1 ran on auto (new
+    // threads have model_preference null -> "auto") and the auto-router picked
+    // small for a short factual question; the user pinned "large" on a LATER
+    // turn. The debug-log export reads the CURRENT model_preference via
+    // getThread, not the per-turn value — so the header shows "large" while
+    // turn 1's per-row model correctly shows small. That is a read-time
+    // artifact, NOT a routing bug. This test confirms the pinned-large routing
+    // path itself selects the expected tier (so the mismatch is not a routing
+    // defect).
+    setupOk()
+    chatMock.getThread.mockResolvedValue({
+      id: "t-new",
+      title: "Hi",
+      created_at: "2026-07-11",
+      updated_at: "2026-07-11",
+      model_preference: "large",
+      one_turn_override: null,
+      purpose: "chat",
+      subject_type: null,
+      subject_key: null,
+    })
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ threadId: "t-new", message: "hi" }))
+    const events = await drainSSE(res)
+    const modelEvt = events.find((e) => e.type === "model") as any
+    expect(modelEvt.tier).toBe("large")
+    expect(modelEvt.modelId).toBe("mistral-large-latest")
+    expect(modelsMock.classifyDifficultyHybrid).not.toHaveBeenCalled()
+    const assistantAppend = chatMock.appendMessage.mock.calls.find(
+      (c) => c[0].role === "assistant"
+    )
+    expect(assistantAppend?.[0].model).toBe("mistral-large-latest")
+  })
+
   it("consumes a one_turn_override (uses it, then clears it)", async () => {
     setupOk()
     chatMock.getThread.mockResolvedValue({
@@ -1094,5 +1134,116 @@ describe("POST /api/chat — debug-log capture (reasoning + telemetry)", () => {
       response_model: "mistral-medium-latest",
       finish_reason: "stop",
     })
+  })
+})
+
+describe("POST /api/chat — web-research audit capture (Q1)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    delete process.env.TAVILY_API_KEY
+  })
+
+  it("captures a pipeline run on the assistant row of a web turn; user rows get none", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["Dan Koe AI 2025"], subject: "Dan Koe" })
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily", query: "Dan Koe AI 2025", searchedAt: "x",
+      sources: [{ title: "Dan Koe on AI", url: "https://dankoe.com/ai", domain: "dankoe.com", snippet: "Dan Koe on AI", score: 0.9 }],
+    })
+    tavilyMock.mergeWebResearch.mockImplementation((s: any[]) => s[0])
+    tavilyMock.rankSources.mockImplementation((s: any[]) => s)
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    tavilyMock.extractPages.mockResolvedValue({ pages: [], failed: [] })
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[EVIDENCE]")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("answer")
+      return { role: "assistant", content: "answer", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "what has Dan Koe said about AI in 2025?", webEnabled: true }))
+    await drainSSE(res)
+
+    const assistantAppend = chatMock.appendMessage.mock.calls.find((c: any[]) => c[0]?.role === "assistant")
+    const audit = assistantAppend?.[0].webResearch
+    expect(audit).not.toBeNull()
+    expect(audit.schemaVersion).toBe(1)
+    expect(audit.availableToAssistantMessage).toBe(true)
+    expect(audit.runs).toHaveLength(1)
+    expect(audit.runs[0].via).toBe("pipeline")
+    expect(audit.runs[0].mode).toBe("on") // webEnabled:true → webMode "on"
+    expect(audit.runs[0].queries).toEqual(["Dan Koe AI 2025"])
+    expect(audit.runs[0].subject).toBe("Dan Koe")
+    expect(audit.runs[0].subjectMatch).toBe(true)
+    expect(audit.runs[0].guard).toBe("none")
+    expect(audit.runs[0].sources[0].url).toBe("https://dankoe.com/ai")
+    expect(audit.runs[0].sources[0].readFull).toBe(false) // no pages extracted
+    expect(audit.runs[0].evidenceInjected).toBe("[EVIDENCE]")
+    // The user-row appendMessage carries no webResearch.
+    const userAppend = chatMock.appendMessage.mock.calls.find((c: any[]) => c[0]?.role === "user")
+    expect(userAppend?.[0].webResearch).toBeUndefined()
+  })
+
+  it("captures no audit on a non-web assistant row (null webResearch)", async () => {
+    setupOk()
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "hi" }))
+    await drainSSE(res)
+    const assistantAppend = chatMock.appendMessage.mock.calls.find((c: any[]) => c[0]?.role === "assistant")
+    expect(assistantAppend?.[0].webResearch).toBeNull()
+  })
+
+  it("captures a tool run on the assistant row AFTER a web_search follow-up (capture-by-model-call-visibility)", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["Kimi K3 benchmark"], subject: "Kimi K3" })
+    tavilyMock.searchWeb.mockImplementation(async (q: string) => ({
+      provider: "tavily", query: q, searchedAt: "x",
+      sources: [{ title: "Kimi K3", url: "https://kimi.com", domain: "kimi.com", snippet: "Kimi K3 benchmark", score: 0.9 }],
+    }))
+    tavilyMock.mergeWebResearch.mockImplementation((s: any[]) => s[0])
+    tavilyMock.rankSources.mockImplementation((s: any[]) => s)
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    tavilyMock.extractPages.mockResolvedValue({ pages: [], failed: [] })
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[EVIDENCE]")
+    let call = 0
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      call += 1
+      if (call === 1) {
+        return {
+          role: "assistant", content: "",
+          tool_calls: [{ id: "c1", type: "function", function: { name: "web_search", arguments: JSON.stringify({ query: "Kimi K3 LMSYS", subject: "Kimi K3" }) } }],
+          finish_reason: "tool_calls",
+        }
+      }
+      opts.onContent?.("final answer")
+      return { role: "assistant", content: "final answer", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ message: "how good is Kimi K3?", webEnabled: true }))
+    await drainSSE(res)
+
+    // Two assistant appendMessage calls: the tool-call stub (call 1) and the final answer (call 2).
+    const assistantCalls = chatMock.appendMessage.mock.calls.filter((c: any[]) => c[0]?.role === "assistant")
+    expect(assistantCalls).toHaveLength(2)
+    // First assistant row (tool-call stub) has only the pipeline run — the tool
+    // hasn't run yet at that snapshot (capture-by-model-call-visibility).
+    const firstAudit = assistantCalls[0][0].webResearch
+    expect(firstAudit.runs).toHaveLength(1)
+    expect(firstAudit.runs[0].via).toBe("pipeline")
+    // Second assistant row (final answer, AFTER the web_search tool result) has pipeline + tool.
+    const secondAudit = assistantCalls[1][0].webResearch
+    expect(secondAudit.runs).toHaveLength(2)
+    expect(secondAudit.runs[0].via).toBe("pipeline")
+    expect(secondAudit.runs[1].via).toBe("tool")
+    expect(secondAudit.runs[1].mode).toBe("tool")
+    expect(secondAudit.runs[1].queries).toEqual(["Kimi K3 LMSYS"])
+    expect(secondAudit.runs[1].pages).toEqual([])
+    // The tool-row appendMessage carries no webResearch (it's evidence, not a model call).
+    const toolRow = chatMock.appendMessage.mock.calls.find((c: any[]) => c[0]?.role === "tool")
+    expect(toolRow?.[0].webResearch).toBeUndefined()
   })
 })

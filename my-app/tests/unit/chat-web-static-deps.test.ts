@@ -9,6 +9,7 @@ const files: Record<string, string> = {
   tools: fileURLToPath(new URL("../../lib/chat/tools.ts", import.meta.url)),
   webTrigger: fileURLToPath(new URL("../../lib/chat/web-trigger.ts", import.meta.url)),
   actions: fileURLToPath(new URL("../../app/admin/chat/actions.ts", import.meta.url)),
+  messages: fileURLToPath(new URL("../../lib/chat/messages.ts", import.meta.url)),
 }
 
 function src(name: keyof typeof files): string {
@@ -160,5 +161,46 @@ describe("debug-log export action — reads via getChatThread/getMessages, never
     const body = nextExport === -1 ? rest : rest.slice(0, nextExport)
     expect(body).not.toMatch(/\bsaveMemory\s*\(/)
     expect(body).not.toMatch(/\binferMemoriesFromThread\s*\(/)
+  })
+})
+
+describe("web_research audit capture — history-feedback + no-sentinel boundary (Q1)", () => {
+  it("rowToMistral does not map web_research (no stale-evidence history feedback)", () => {
+    const code = stripComments(src("messages"))
+    // rowToMistral rebuilds Mistral history from chat_messages rows each turn.
+    // It must map only role/content/tool_calls — never the web_research audit
+    // column, or stale web evidence would re-enter the next turn's history.
+    expect(code).not.toMatch(/web_research/i)
+    expect(code).not.toMatch(/webResearch/i)
+  })
+
+  it("route never touches the snake_case web_research column directly (only via appendMessage webResearch param)", () => {
+    const code = stripComments(src("route"))
+    // The route must not read/write the DB column directly; it flows the audit
+    // through appendMessage's webResearch param (lib/db/chat maps it to the
+    // jsonb column) and the snapshot/build helpers. No snake_case references.
+    expect(code).not.toMatch(/web_research/)
+  })
+
+  it("route never inserts a synthetic/sentinel tool row for web capture", () => {
+    const code = stripComments(src("route"))
+    // The only tool-row appendMessage is inside the real tool-call loop. The
+    // advisor verdict ruled out a sentinel tool row (it would be fed back to
+    // Mistral via rowToMistral, re-injecting stale evidence). Assert no
+    // sentinel-name tool insert is introduced.
+    expect(code).not.toMatch(/sentinel/i)
+    expect(code).not.toMatch(/["']web_research["']/)
+  })
+
+  it("web_research audit never reaches saveMemory or infer", () => {
+    const code = stripComments(src("route"))
+    expect(code).not.toMatch(/\bsaveMemory\s*\(/)
+    expect(code).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
+  })
+
+  it("tools.ts web_search path pushes the tool run only onto ctx.webAuditRuns (debug), never into saveMemory", () => {
+    const code = stripComments(src("tools"))
+    expect(code).toMatch(/webAuditRuns\.push/)
+    expect(code).not.toMatch(/saveMemory[\s\S]{0,160}webAuditRuns/)
   })
 })

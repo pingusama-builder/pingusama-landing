@@ -7,6 +7,8 @@ import {
   consumeOneTurnOverride,
   type MessageRole,
   type DebugTelemetry,
+  type WebResearchAudit,
+  type WebResearchRun,
 } from "@/lib/db/chat"
 import { recallMemories } from "@/lib/db/chat"
 import { buildSiteContext } from "@/lib/chat/awareness"
@@ -24,8 +26,8 @@ import {
   type ExtractedPage,
 } from "@/lib/chat/tavily-search"
 import { rewriteSearchQueries } from "@/lib/chat/query-rewrite"
-import { decideWebEnabled } from "@/lib/chat/web-trigger"
-import { snapshotWebResearch } from "@/lib/chat/tools"
+import { decideWebEnabled, type WebDecision } from "@/lib/chat/web-trigger"
+import { snapshotWebResearch, buildPipelineAuditRun } from "@/lib/chat/tools"
 import {
   classifyDifficultyHybrid,
   bandToTier,
@@ -61,6 +63,25 @@ const WEB_BUDGET_PAGES = 8000
 // Soft deadline guarding Vercel Hobby's 60s maxDuration. The signal propagates
 // to mistralStream; on abort the partial answer is persisted (graceful degrade).
 const SOFT_DEADLINE_MS = 55_000
+
+// Snapshot the per-turn web-research audit for persistence on an assistant row
+// (capture-by-model-call-visibility: each assistant call sees the runs
+// accumulated so far). Deep-copies the runs so a later tool run pushed onto the
+// shared array can't mutate an already-persisted record. Returns null when no
+// web research ran this turn (non-web assistant rows get a null column).
+function snapshotWebResearchAudit(runs: WebResearchRun[]): WebResearchAudit | null {
+  if (runs.length === 0) return null
+  return {
+    schemaVersion: 1,
+    availableToAssistantMessage: true,
+    runs: runs.map((r) => ({
+      ...r,
+      queries: [...r.queries],
+      sources: r.sources.map((s) => ({ ...s })),
+      pages: r.pages.map((p) => ({ ...p })),
+    })),
+  }
+}
 
 export async function POST(request: Request) {
   // ── Admin gate (the API route is NOT under /admin/, so middleware doesn't cover it) ──
@@ -168,6 +189,8 @@ export async function POST(request: Request) {
   const tavilyKeyMissing = !process.env.TAVILY_API_KEY
   let webTurn = false
   let webRequested = false
+  let webDecision: WebDecision | undefined
+  let webDecisionVia: "heuristic" | "mistral-small" | undefined
   if (webMode === "on") {
     webRequested = true
     webTurn = !tavilyKeyMissing
@@ -176,6 +199,10 @@ export async function POST(request: Request) {
     const decision = await decideWebEnabled(message, priorRows)
     webRequested = decision.webEnabled
     webTurn = decision.webEnabled
+    if (decision.webEnabled) {
+      webDecision = decision.decision
+      webDecisionVia = decision.via
+    }
   }
   if (webTurn) {
     tier = "large" // force best synthesis for web-research turns
@@ -194,6 +221,14 @@ export async function POST(request: Request) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`))
 
       let lastContent = ""
+      // Per-turn web-research audit (advisor round 2 Q1). The route owns this
+      // array; the pre-turn pipeline pushes a pipeline run, the web_search tool
+      // branch pushes a tool run (via ToolContext). Each assistant appendMessage
+      // snapshots the runs accumulated so far → capture-by-model-call-visibility.
+      // Read-only debug material — never reaches save_memory, never fed back to
+      // Mistral (rowToMistral maps only role/content/tool_calls; the web_research
+      // jsonb column is invisible to it).
+      const webAuditRuns: WebResearchRun[] = []
       try {
         send({ type: "thread", threadId })
 
@@ -269,6 +304,27 @@ export async function POST(request: Request) {
             ? `web → large (reasoning, effort: ${effort})`
             : "web → large (non-reasoning)"
         }
+        // Push the pipeline run onto the per-turn audit AFTER effort/budget are
+        // known so the run records the co-adaptive synthesis tier. The run is a
+        // capped, normalized snapshot of what the pipeline supplied this turn.
+        if (webTurn) {
+          webAuditRuns.push(
+            buildPipelineAuditRun({
+              mode: webMode === "on" ? "on" : "auto",
+              decision: webDecision,
+              decisionVia: webDecisionVia,
+              queries: webQueries,
+              subject: webSubject,
+              subjectMatch,
+              sources: merged.sources,
+              pages,
+              evidenceInjected: webEvidence,
+              effort,
+              maxTokens: webMaxTokens,
+              searchedAt: merged.searchedAt,
+            })
+          )
+        }
         send({ type: "model", tier, modelId, reason: modelReason })
 
         // ── Web sources / status (after the model event) ──────────────────
@@ -318,6 +374,7 @@ export async function POST(request: Request) {
           webTouched: false,
           webSearchCalls: 0,
           webResearch: null,
+          webAuditRuns,
         }
         // Seed the web→memory gate snapshot from the first search (best-of;
         // a later web_search follow-up merges into it).
@@ -373,6 +430,7 @@ export async function POST(request: Request) {
             model: modelId,
             reasoning: turnReasoning || null,
             telemetry,
+            webResearch: snapshotWebResearchAudit(webAuditRuns),
           })
 
           // No tool calls → conversation turn complete.
@@ -427,6 +485,7 @@ export async function POST(request: Request) {
               role: "assistant" as MessageRole,
               content: lastContent,
               model: modelId,
+              webResearch: snapshotWebResearchAudit(webAuditRuns),
             })
           } catch {
             /* ignore — best-effort partial persistence */

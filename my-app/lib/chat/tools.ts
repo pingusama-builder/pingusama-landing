@@ -7,6 +7,7 @@ import {
   assertMemoryInput,
   assertPersonalName,
   type MemoryType,
+  type WebResearchRun,
 } from "@/lib/db/chat"
 import type { ModelPreference, ModelTier } from "@/lib/chat/models"
 import { refreshAwareness, readCode, type SiteCategory } from "@/lib/chat/awareness"
@@ -16,6 +17,8 @@ import {
   formatWebEvidenceGuarded,
   subjectInSources,
   type WebResearch,
+  type WebSource,
+  type ExtractedPage,
 } from "@/lib/chat/tavily-search"
 import {
   mistralTurn,
@@ -43,6 +46,12 @@ export interface ToolContext {
   webTouched: boolean
   webSearchCalls: number
   webResearch: WebResearchSnapshot | null
+  // ── Web-research audit (advisor round 2 Q1) ───────────────────────────────
+  // A shared array the route owns; the web_search tool branch pushes a tool
+  // run here so the next assistant appendMessage captures it (capture-by-
+  // model-call-visibility). The route seeds it with the pipeline run. Read-only
+  // debug material — never reaches save_memory, never fed back to Mistral.
+  webAuditRuns?: WebResearchRun[]
 }
 
 /** Best-of snapshot of the web research this turn, consumed by the web→memory
@@ -91,6 +100,112 @@ export function snapshotWebResearch(
     subjectMentioningSources,
     hadReadInFull: pages.length > 0,
     topSourceUrl: research.sources[0]?.url ?? null,
+  }
+}
+
+// ── Web-research audit builders (advisor round 2 Q1) ────────────────────────
+// Pure, env-free. Build a normalized WebResearchRun for the debug-log audit
+// column, with hard mechanical caps before persistence (doctrine: bound the
+// untrusted external text stored in a read-only jsonb column). The capture is
+// NOT chat content, NOT memory, NOT input to save_memory or history rebuild.
+const AUDIT_SNIPPET_MAX = 300
+const AUDIT_EXTRACTED_TEXT_MAX = 2500
+const AUDIT_MAX_PAGES = 2
+const AUDIT_MAX_SOURCES = 8
+const AUDIT_EVIDENCE_MAX = 4000
+
+function cap(s: string, max: number): { text: string; truncated: boolean; charsOriginal: number } {
+  const charsOriginal = s.length
+  if (charsOriginal <= max) return { text: s, truncated: false, charsOriginal }
+  return { text: s.slice(0, max) + "…[truncated]", truncated: true, charsOriginal }
+}
+
+function guardOf(subject: string | null, subjectMatch: boolean, sourceCount: number):
+  "none" | "empty" | "subject_absent" {
+  if (sourceCount === 0) return "empty"
+  if (subject != null && !subjectMatch) return "subject_absent"
+  return "none"
+}
+
+function cappedSources(sources: WebSource[], readFullUrls: Set<string>) {
+  return sources.slice(0, AUDIT_MAX_SOURCES).map((s) => ({
+    url: s.url,
+    title: s.title,
+    snippet: cap(s.snippet ?? "", AUDIT_SNIPPET_MAX).text,
+    readFull: readFullUrls.has(s.url),
+  }))
+}
+
+/** Build the pipeline run (pre-turn research). mode is the webMode that drove
+ *  the pipeline ("auto"|"on"); decision/decisionVia are the gate's verdict
+ *  (undefined when forced via /web or webMode:"on"). effort/maxTokens are the
+ *  co-adaptive synthesis budget. */
+export function buildPipelineAuditRun(input: {
+  mode: "auto" | "on"
+  decision?: "search" | "no-search" | "site-only"
+  decisionVia?: "heuristic" | "mistral-small"
+  queries: string[]
+  subject: string | null
+  subjectMatch: boolean
+  sources: WebSource[]
+  pages: ExtractedPage[]
+  evidenceInjected: string
+  effort: string | undefined
+  maxTokens: number
+  searchedAt: string
+}): WebResearchRun {
+  const readFullUrls = new Set(input.pages.map((p) => p.url))
+  const ev = cap(input.evidenceInjected, AUDIT_EVIDENCE_MAX)
+  return {
+    via: "pipeline",
+    mode: input.mode,
+    decision: input.decision,
+    decisionVia: input.decisionVia,
+    queries: input.queries.slice(0, 8),
+    subject: input.subject,
+    subjectMatch: input.subjectMatch,
+    guard: guardOf(input.subject, input.subjectMatch, input.sources.length),
+    sources: cappedSources(input.sources, readFullUrls),
+    pages: input.pages.slice(0, AUDIT_MAX_PAGES).map((p) => {
+      const t = cap(p.content ?? "", AUDIT_EXTRACTED_TEXT_MAX)
+      return { url: p.url, extractedText: t.text, charsOriginal: t.charsOriginal, truncated: t.truncated }
+    }),
+    evidenceInjected: ev.text,
+    evidenceChars: ev.charsOriginal,
+    effort: (input.effort as "low" | "medium" | "high") ?? null,
+    maxTokens: input.maxTokens,
+    searchedAt: input.searchedAt,
+  }
+}
+
+/** Build the tool run (a web_search follow-up). Snippet-only (no /extract),
+ *  no effort/budget (the tool doesn't select them). */
+export function buildToolAuditRun(input: {
+  queries: string[]
+  subject: string | null
+  sources: WebSource[]
+  evidenceInjected: string
+  searchedAt: string
+}): WebResearchRun {
+  const subjectMatch = subjectInSources(
+    { provider: "tavily", query: input.queries[0] ?? "", searchedAt: input.searchedAt, sources: input.sources },
+    input.subject
+  )
+  const ev = cap(input.evidenceInjected, AUDIT_EVIDENCE_MAX)
+  return {
+    via: "tool",
+    mode: "tool",
+    queries: input.queries.slice(0, 8),
+    subject: input.subject,
+    subjectMatch,
+    guard: guardOf(input.subject, subjectMatch, input.sources.length),
+    sources: cappedSources(input.sources, new Set()),
+    pages: [],
+    evidenceInjected: ev.text,
+    evidenceChars: ev.charsOriginal,
+    effort: null,
+    maxTokens: null,
+    searchedAt: input.searchedAt,
   }
 }
 
@@ -523,6 +638,20 @@ export async function executeToolCall(
         // Merge best-of so this snippet-only follow-up can't erase a read-in-full
         // page the first search earned.
         ctx.webResearch = mergeWebResearch(ctx.webResearch, snapshotWebResearch(merged, subject, []))
+        // Push a tool run onto the per-turn audit so the next assistant
+        // appendMessage captures what this follow-up supplied (capture-by-
+        // model-call-visibility). Read-only debug — never reaches save_memory.
+        if (ctx.webAuditRuns) {
+          ctx.webAuditRuns.push(
+            buildToolAuditRun({
+              queries: [query],
+              subject,
+              sources: merged.sources,
+              evidenceInjected: evidence,
+              searchedAt: merged.searchedAt,
+            })
+          )
+        }
         return { content: evidence || "No web results found for that query.", memoryWrite: false }
       }
 
