@@ -7,6 +7,7 @@ import {
   setThreadModelPreferenceAction,
   inferFromThreadAction,
   getThreadDebugLogAction,
+  deleteThreadAction,
   type ThreadSummary,
 } from "@/app/admin/chat/actions";
 import type { ModelPreference } from "@/lib/chat/models";
@@ -28,6 +29,59 @@ function filenameStamp(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+function useLockBodyScroll(lock: boolean) {
+  useEffect(() => {
+    if (!lock) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [lock]);
+}
+
+function useEscapeKey(onClose: () => void, isOpen: boolean) {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [isOpen, onClose]);
+}
+
+function useFocusTrap(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  isOpen: boolean
+) {
+  useEffect(() => {
+    if (!isOpen || !containerRef.current) return;
+    const container = containerRef.current;
+    const focusable = Array.from(
+      container.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+    ) as HTMLElement[];
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    first.focus();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [isOpen, containerRef]);
 }
 
 export default function ChatUI({ initialThreads }: { initialThreads: ThreadSummary[] }) {
@@ -58,6 +112,42 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
   const scrollRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
   const nextId = () => `m${++idCounter.current}`;
+
+  const [deleteTarget, setDeleteTarget] = useState<ThreadSummary | null>(null);
+  const [alsoDeleteMemories, setAlsoDeleteMemories] = useState(false);
+  const [deletePending, startDeleteTransition] = useTransition();
+  const deleteModalRef = useRef<HTMLDivElement>(null);
+
+  const cancelDelete = () => {
+    setDeleteTarget(null);
+    setAlsoDeleteMemories(false);
+    setError(null);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteTarget || deletePending) return;
+    startDeleteTransition(async () => {
+      const targetId = deleteTarget.id;
+      const wasActive = targetId === activeId;
+      const res = await deleteThreadAction(targetId, { alsoDeleteMemories });
+      if (!res.success) {
+        setError(res.error); // keep the modal open so the user can retry/cancel
+        return;
+      }
+      setDeleteTarget(null);
+      setAlsoDeleteMemories(false);
+      setError(null);
+      setThreads(await listThreadsAction());
+      if (wasActive) {
+        setActiveId(null);
+        setMessages([]);
+      }
+    });
+  };
+
+  useLockBodyScroll(deleteTarget !== null);
+  useEscapeKey(cancelDelete, deleteTarget !== null);
+  useFocusTrap(deleteModalRef, deleteTarget !== null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -326,7 +416,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
             <li className="chat-threads-empty">No conversations yet.</li>
           )}
           {threads.map((t) => (
-            <li key={t.id}>
+            <li key={t.id} className="chat-thread-row">
               <button
                 className={`chat-thread-btn${t.id === activeId ? " active" : ""}`}
                 onClick={() => openThread(t.id)}
@@ -334,6 +424,19 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
               >
                 <span className="chat-thread-title">{t.title}</span>
                 <span className="chat-thread-meta">{t.messageCount} msgs</span>
+              </button>
+              <button
+                type="button"
+                className="chat-thread-delete"
+                aria-label={`Delete conversation: ${t.title}`}
+                title="Delete this conversation"
+                disabled={streaming}
+                onClick={() => {
+                  setDeleteTarget(t);
+                  setAlsoDeleteMemories(false);
+                }}
+              >
+                🗑
               </button>
             </li>
           ))}
@@ -544,6 +647,59 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
           </button>
         </div>
       </section>
+
+      {deleteTarget && (
+        <div
+          ref={deleteModalRef}
+          className="chat-delete-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="chat-delete-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) cancelDelete();
+          }}
+        >
+          <div className="chat-delete-card">
+            <h2 id="chat-delete-title" className="chat-delete-heading">
+              Delete conversation?
+            </h2>
+            <p className="chat-delete-thread-title">{deleteTarget.title}</p>
+            <p className="chat-delete-count">
+              {deleteTarget.messageCount} messages will be deleted.
+            </p>
+            {deleteTarget.sourcedMemoryCount > 0 && (
+              <label className="chat-delete-mem-choice">
+                <input
+                  type="checkbox"
+                  checked={alsoDeleteMemories}
+                  onChange={(e) => setAlsoDeleteMemories(e.target.checked)}
+                />
+                Also delete {deleteTarget.sourcedMemoryCount}{" "}
+                {deleteTarget.sourcedMemoryCount === 1 ? "memory" : "memories"}{" "}
+                sourced from this conversation
+              </label>
+            )}
+            <div className="chat-delete-actions">
+              <button
+                type="button"
+                className="chat-delete-cancel"
+                onClick={cancelDelete}
+                disabled={deletePending}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="chat-delete-confirm"
+                onClick={confirmDelete}
+                disabled={deletePending}
+              >
+                {deletePending ? "Deleting…" : "Delete thread"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

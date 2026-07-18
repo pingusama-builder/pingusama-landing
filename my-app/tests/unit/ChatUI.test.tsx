@@ -73,3 +73,26 @@ describe("ChatUI — web research UI", () => {
     expect(src).not.toContain("dangerouslySetInnerHTML")
   })
 });
+
+describe("ChatUI — delete-thread", () => {
+  it("wires deleteThreadAction + trash button + a11y confirm modal, no dangerouslySetInnerHTML", () => {
+    const src = readFileSync(fileURLToPath(new URL("../../components/ChatUI.tsx", import.meta.url)), "utf8")
+    expect(src).toMatch(/deleteThreadAction/)
+    expect(src).toContain("chat-thread-delete")
+    expect(src).toContain("chat-delete-overlay")
+    expect(src).toContain('role="dialog"')
+    expect(src).toContain('aria-modal="true"')
+    expect(src).toContain("alsoDeleteMemories")
+    // checkbox shown only when sourcedMemoryCount > 0
+    expect(src).toMatch(/sourcedMemoryCount\s*>\s*0/)
+    // destructive confirm button
+    expect(src).toContain("chat-delete-confirm")
+    expect(src).toContain("Delete thread")
+    expect(src).not.toContain("dangerouslySetInnerHTML")
+  })
+
+  it("renders a trash button per thread row", () => {
+    const html = renderToStaticMarkup(<ChatUI initialThreads={threads} />)
+    expect(html).toContain("chat-thread-delete")
+  })
+});
