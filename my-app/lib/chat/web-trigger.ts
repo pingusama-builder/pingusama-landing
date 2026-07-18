@@ -84,6 +84,59 @@ const FACTUAL_FRAMES = [
   "how do ",
 ]
 
+// External-information request frames (advisor round 3). Prerequisite /
+// sequence / starting / expanding / recommendation requests about a named
+// external entity — "which are the pre-requisites for X", "what should i
+// watch before X", "where do i start with X", "recommend X for Y" — share the
+// same score-0 no-search trap the round-2 factual frames fixed, but the
+// round-2 list ("what is / how good is / tell me about") doesn't cover them
+// (the Spider-Man thread false-negatived twice on exactly this class). A
+// matching frame lifts a suppressed no-search to `borderline` so the existing
+// mistral-small classifier gets to judge it — NEVER auto-`search`, because
+// the same phrasings cover site-internal requests ("recommend a chair for
+// my desk" — site-suppressed via NO_TERMS) and ordinary advice ("recommend a
+// book" — the classifier returns no-search).
+//
+// Intent-family, NOT bare "where do i " / "what should i ": those are too
+// broad and would send every planning / site-navigation question to the
+// classifier. Two second-person counterparts ("where do you go from ",
+// "where do you expand from ") are included because the live smoke phrased
+// the expansion request as "where do you expand from there" (addressing the
+// companion); the verdict's list used first-person.
+//
+// Site markers ("this post", "this article", …) are deliberately NOT added
+// to NO_TERMS: doing so would break the shipped "tell me about this post" →
+// classifier → site-only test (the verdict mandates existing site-only
+// tests stay unchanged). "this post" stays handled by the classifier, not
+// by heuristic suppression — consistent with the existing path.
+const EXTERNAL_INFO_FRAMES = [
+  // Prerequisite / sequence
+  "what should i watch before ",
+  "what should i read before ",
+  "what should i play before ",
+  "what should i install before ",
+  "what do i need to watch before ",
+  "what do i need to know before ",
+  "what do i need before ",
+  "which should i watch before ",
+  "which are the ",
+  "what are the essential ",
+  "what are the minimum ",
+  // Starting / expanding / recommendation
+  "recommend ",
+  "where should i start with ",
+  "where do i start with ",
+  "where do i go from ",
+  "where do you go from ",
+  "where do you expand from ",
+  "what should i watch next",
+  "what should i read next",
+  "what should i play next",
+  "what else should i watch",
+  "what else should i read",
+  "what else should i play",
+]
+
 export function classifyWebNeed(message: string): {
   score: number
   band: "search" | "no-search" | "borderline"
@@ -106,21 +159,27 @@ export function classifyWebNeed(message: string): {
   else if (score <= 0) band = "no-search"
   else band = "borderline"
 
-  // Factual-frame lift: only a suppressed no-search → borderline, and only when
-  // the frame has substantive remaining content and no site-internal NO_TERM
-  // fired. Does not touch search (temporal cues still win straight to search)
-  // or an already-borderline band.
-  if (band === "no-search" && noHits === 0 && hasFactualFrame(t)) {
+  // Frame lift: only a suppressed no-search → borderline, and only when the
+  // frame has substantive remaining content (≥3 chars after it) and no
+  // site-internal NO_TERM fired. Does not touch search (temporal cues still
+  // win straight to search) or an already-borderline band. A factual frame
+  // (round 2) OR an external-info frame (round 3) triggers the lift — both go
+  // through the same classifier, never direct to search.
+  if (
+    band === "no-search" &&
+    noHits === 0 &&
+    (hasFrame(t, FACTUAL_FRAMES) || hasFrame(t, EXTERNAL_INFO_FRAMES))
+  ) {
     band = "borderline"
   }
 
   return { score, band }
 }
 
-/** A factual-question frame with substantive remaining content (≥3 chars after
- *  the frame). Caller has already checked no NO_TERM fired. */
-function hasFactualFrame(t: string): boolean {
-  for (const f of FACTUAL_FRAMES) {
+/** A request frame with substantive remaining content (≥3 chars after the
+ *  frame). Caller has already checked no NO_TERM fired. */
+function hasFrame(t: string, frames: string[]): boolean {
+  for (const f of frames) {
     const idx = t.indexOf(f)
     if (idx >= 0 && t.slice(idx + f.length).trim().length >= 3) return true
   }

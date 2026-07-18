@@ -81,6 +81,102 @@ describe("classifyWebNeed — factual-frame lift (round 2)", () => {
   })
 })
 
+describe("classifyWebNeed — external-info frame lift (round 3)", () => {
+  // The Spider-Man thread false-negative: factual external-entity questions
+  // phrased as prerequisite / recommendation / expansion requests matched no
+  // round-2 factual frame and hit no temporal cue → score 0 → no-search → the
+  // classifier never ran → wrong latent-knowledge first answers. The new
+  // EXTERNAL_INFO_FRAMES family lifts these to `borderline` so the existing
+  // mistral-small classifier judges them — never direct to `search`.
+
+  it("lifts the Spider-Man prerequisite turn to borderline", () => {
+    expect(
+      classifyWebNeed(
+        "which are the absolute minimum must-watch pre-requisites for a non-Marvel fan who wants to watch and understand/follow at least 90% of Spiderman Brand New Day?"
+      ).band
+    ).toBe("borderline")
+  })
+
+  it("lifts the 'where do you expand from there' expansion turn to borderline", () => {
+    expect(
+      classifyWebNeed(
+        "and where do you expand from there into other movies with Spiderman's meaningful involvement?"
+      ).band
+    ).toBe("borderline")
+  })
+
+  it("lifts 'Where should I start with One Piece?' to borderline", () => {
+    expect(classifyWebNeed("Where should I start with One Piece?").band).toBe("borderline")
+  })
+
+  it("lifts 'Recommend a chair for my desk' to borderline (classifier may still no-search)", () => {
+    // "my desk" is NOT a NO_TERM (only my bench/shelf/vault/blog are), so the
+    // recommend frame lifts it; the classifier decides whether to search.
+    expect(classifyWebNeed("Recommend a chair for my desk").band).toBe("borderline")
+  })
+
+  it("does NOT lift when a site-internal NO_TERM fires ('What should I watch before my shelf update?')", () => {
+    // "my shelf" is a NO_TERM → noHits>0 → no-search; the lift requires noHits===0.
+    expect(classifyWebNeed("What should I watch before my shelf update?").band).toBe("no-search")
+  })
+
+  it("does NOT lift 'Recommend books from my shelf' (NO_TERM my shelf suppresses)", () => {
+    expect(classifyWebNeed("Recommend books from my shelf").band).toBe("no-search")
+  })
+
+  it("does NOT lift a bare 'where do i' with no expansion object (intent-family only)", () => {
+    // "where do i go now" has no "from " / "start with " / "expand" object →
+    // matches no EXTERNAL_INFO_FRAME → stays no-search. Guards against
+    // accidentally widening to bare "where do i ".
+    expect(classifyWebNeed("where do i go now").band).toBe("no-search")
+  })
+
+  it("does NOT lift an external-info frame with no substantive remainder", () => {
+    // "recommend " with nothing after → remainder empty → no lift → no-search.
+    expect(classifyWebNeed("recommend ").band).toBe("no-search")
+  })
+
+  it("does NOT downgrade a search-band external-info question (temporal cues still win)", () => {
+    // "recommend" + "2026" (temporal +3) → score 3 → borderline, NOT search.
+    // Use two temporal cues to reach search: "recommend " has no score, but
+    // "what should i watch before the 2026 release" → "2026" +3, "release" +3 = +6 → search.
+    expect(classifyWebNeed("what should i watch before the 2026 release").band).toBe("search")
+  })
+})
+
+describe("decideWebEnabled — external-info frame routing (round 3)", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("routes 'Where do I start with this post?' to the classifier which returns site-only", async () => {
+    // "where do i start with " lifts to borderline; the classifier recognizes
+    // "this post" as site-internal and returns site-only. Site markers are NOT
+    // in NO_TERMS (adding them would break the shipped "tell me about this
+    // post" → site-only test), so site-suppression for "this post" happens at
+    // the classifier, not the heuristic — same path the existing test uses.
+    mistralMock.mistralTurn.mockResolvedValue({ content: "site-only", tool_calls: [] })
+    const r = await decideWebEnabled("Where do I start with this post?", [])
+    expect(r.via).toBe("mistral-small")
+    expect(r.decision).toBe("site-only")
+    expect(r.webEnabled).toBe(false)
+  })
+
+  it("falls back to conservative no-search when the classifier fails on an external-info question", async () => {
+    mistralMock.mistralTurn.mockRejectedValue(new Error("boom"))
+    const r = await decideWebEnabled("which are the essential prerequisites for Kubernetes?", [])
+    expect(r.via).toBe("mistral-small")
+    expect(r.webEnabled).toBe(false)
+    expect(r.decision).toBe("no-search")
+  })
+
+  it("does NOT auto-search an external-info question — the classifier decides", async () => {
+    // An unparsable classifier answer must default to no-search, never search.
+    mistralMock.mistralTurn.mockResolvedValue({ content: "huh?", tool_calls: [] })
+    const r = await decideWebEnabled("recommend a mechanical keyboard for coding", [])
+    expect(r.via).toBe("mistral-small")
+    expect(r.webEnabled).toBe(false)
+  })
+})
+
 describe("parseWebDecision", () => {
   it("parses the three labels", () => {
     expect(parseWebDecision("search")).toBe("search")

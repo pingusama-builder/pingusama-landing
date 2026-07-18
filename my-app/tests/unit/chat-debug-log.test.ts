@@ -149,3 +149,118 @@ describe("debugLogToMarkdown", () => {
     expect(section).not.toContain("### Web research")
   })
 })
+
+describe("debugLogToMarkdown — source snippet rendering (round 3)", () => {
+  // The MD `### Web research` block now emits a normalized, ≤300-char snippet
+  // line (`> …`) under each source so the artifact shows what each source
+  // claimed before a page was read in full — the inline text that matters for
+  // the misattribution class. Page text + injected evidence stay JSON-only.
+
+  it("renders a normalized one-line snippet under each source", () => {
+    const logWithSnippet: CompanionDebugLog = {
+      thread: log.thread,
+      exportedAt: log.exportedAt,
+      messages: [
+        ...log.messages,
+        {
+          id: "m20", role: "assistant", content: "ok", created_at: "2026-07-17T00:00:20Z",
+          model: "mistral-medium-3-5", tool_calls: null, reasoning: null, telemetry: null,
+          web_research: {
+            schemaVersion: 1,
+            availableToAssistantMessage: true,
+            runs: [
+              {
+                via: "pipeline", mode: "auto", decision: "search", decisionVia: "mistral-small",
+                queries: ["Fan Zhendong 2026"], subject: "Fan Zhendong", subjectMatch: true, guard: "none",
+                sources: [
+                  { url: "https://chinadaily.com/x", title: "China Daily", snippet: "Fan Zhendong\n  will   miss the next\nrounds.", readFull: false },
+                ],
+                pages: [], evidenceInjected: "", evidenceChars: 0,
+                effort: null, maxTokens: null, searchedAt: "2026-07-18T06:15:30Z",
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const md = debugLogToMarkdown(logWithSnippet)
+    const section = md.split("## [assistant] · 2026-07-17T00:00:20Z")[1]?.split("---")[0] ?? ""
+    // Newlines/tabs/extra spaces collapsed to single spaces, rendered as a quote.
+    expect(section).toContain("      > Fan Zhendong will miss the next rounds.")
+    // The source line is still present above the snippet.
+    expect(section).toContain("https://chinadaily.com/x — China Daily [snippet]")
+  })
+
+  it("omits the `>` line when the snippet is empty or whitespace-only", () => {
+    const logEmptySnippet: CompanionDebugLog = {
+      thread: log.thread,
+      exportedAt: log.exportedAt,
+      messages: [
+        ...log.messages,
+        {
+          id: "m21", role: "assistant", content: "ok", created_at: "2026-07-17T00:00:21Z",
+          model: "mistral-medium-3-5", tool_calls: null, reasoning: null, telemetry: null,
+          web_research: {
+            schemaVersion: 1,
+            availableToAssistantMessage: true,
+            runs: [
+              {
+                via: "pipeline", mode: "auto", decision: "search", decisionVia: "mistral-small",
+                queries: ["x"], subject: "x", subjectMatch: true, guard: "none",
+                sources: [
+                  { url: "https://example.com/a", title: "A", snippet: "   \n\t  ", readFull: false },
+                  { url: "https://example.com/b", title: "B", snippet: "", readFull: true },
+                ],
+                pages: [], evidenceInjected: "", evidenceChars: 0,
+                effort: null, maxTokens: null, searchedAt: "2026-07-18T06:15:30Z",
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const md = debugLogToMarkdown(logEmptySnippet)
+    const section = md.split("## [assistant] · 2026-07-17T00:00:21Z")[1]?.split("---")[0] ?? ""
+    // Both source lines render; neither has a `>` snippet line under it.
+    expect(section).toContain("https://example.com/a — A [snippet]")
+    expect(section).toContain("https://example.com/b — B [read in full]")
+    expect(section).not.toMatch(/^      > /m)
+  })
+
+  it("truncates a long snippet to 300 chars with an ellipsis", () => {
+    const long = "x".repeat(400)
+    const logLongSnippet: CompanionDebugLog = {
+      thread: log.thread,
+      exportedAt: log.exportedAt,
+      messages: [
+        ...log.messages,
+        {
+          id: "m22", role: "assistant", content: "ok", created_at: "2026-07-17T00:00:22Z",
+          model: "mistral-medium-3-5", tool_calls: null, reasoning: null, telemetry: null,
+          web_research: {
+            schemaVersion: 1,
+            availableToAssistantMessage: true,
+            runs: [
+              {
+                via: "pipeline", mode: "auto", decision: "search", decisionVia: "mistral-small",
+                queries: ["x"], subject: "x", subjectMatch: true, guard: "none",
+                sources: [{ url: "https://example.com/long", title: "Long", snippet: long, readFull: false }],
+                pages: [], evidenceInjected: "", evidenceChars: 0,
+                effort: null, maxTokens: null, searchedAt: "2026-07-18T06:15:30Z",
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const md = debugLogToMarkdown(logLongSnippet)
+    const section = md.split("## [assistant] · 2026-07-17T00:00:22Z")[1]?.split("---")[0] ?? ""
+    // 299 'x' + ellipsis = 300 chars on the snippet line.
+    const snippetLine = section.split("\n").find((l) => l.startsWith("      > "))
+    expect(snippetLine).toBeDefined()
+    expect(snippetLine!.length).toBe("      > ".length + 300)
+    expect(snippetLine!.endsWith("…")).toBe(true)
+    // And not the full 400 chars.
+    expect(snippetLine).not.toContain("x".repeat(400))
+  })
+})

@@ -60,6 +60,13 @@ function webResearchBlock(a: WebResearchAudit | null): string[] {
       out.push(`  - sources: ${r.sources.length}${readFull ? ` (${readFull} read in full)` : ""}`)
       for (const s of r.sources) {
         out.push(`    - ${s.url} — ${s.title || "(untitled)"}${s.readFull ? " [read in full]" : " [snippet]"}`)
+        // Source snippet (advisor round 3): one normalized, capped line under
+        // each source so the MD artifact shows what the source actually claimed
+        // before a page was read in full — the inline text that matters for the
+        // misattribution class. Empty/whitespace-only snippet → no `>` line.
+        // Page text + injected evidence stay JSON-only (would bloat the MD).
+        const snippet = debugSnippet(s.snippet || "")
+        if (snippet) out.push(`      > ${snippet}`)
       }
     } else {
       out.push(`  - sources: none`)
@@ -77,6 +84,17 @@ function webResearchBlock(a: WebResearchAudit | null): string[] {
     out.push(`  - ${meta.join(", ")}`)
   }
   return out
+}
+
+/** Whitespace-normalize a source snippet and cap it to `max` chars with an
+ *  ellipsis. Empty/whitespace-only input → "" (caller emits no `>` line).
+ *  Plain text only — no HTML, no DOM. The snippet is read-only debug material
+ *  drawn from the already-captured `WebResearchSourceAudit.snippet` field; it
+ *  is not persisted to memory and never rendered as raw HTML. */
+function debugSnippet(raw: string, max = 300): string {
+  const line = raw.replace(/\s+/g, " ").trim()
+  if (line.length > max) return `${line.slice(0, max - 1)}…`
+  return line
 }
 
 function telemetryLine(t: DebugTelemetry | null): string {

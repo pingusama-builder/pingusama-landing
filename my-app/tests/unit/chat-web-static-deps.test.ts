@@ -10,6 +10,7 @@ const files: Record<string, string> = {
   webTrigger: fileURLToPath(new URL("../../lib/chat/web-trigger.ts", import.meta.url)),
   actions: fileURLToPath(new URL("../../app/admin/chat/actions.ts", import.meta.url)),
   messages: fileURLToPath(new URL("../../lib/chat/messages.ts", import.meta.url)),
+  debugLog: fileURLToPath(new URL("../../lib/chat/debug-log.ts", import.meta.url)),
   postRead: fileURLToPath(new URL("../../lib/chat/post-read.ts", import.meta.url)),
 }
 
@@ -269,5 +270,34 @@ describe("read_post path — read-only posts, no site-write / memory-persist", (
     }
     expect(body).not.toMatch(/\bsaveMemory\s*\(/)
     expect(body).not.toMatch(/\binferMemoriesFromThread\s*\(/)
+  })
+})
+
+describe("debug-log MD renderer — pure, no persistence, no raw HTML (round 3)", () => {
+  // The MD renderer (incl. the round-3 source-snippet rendering) is pure: it
+  // draws only from the already-captured WebResearchSourceAudit.snippet field,
+  // imports no web/search/persistence module, and emits plain text — never
+  // dangerouslySetInnerHTML (it is server-side Markdown string assembly, not
+  // JSX). Snippets are read-only debug material; they never reach saveMemory or
+  // infer and are not fed back into history (rowToMistral does not map
+  // web_research).
+  it("debug-log imports no tavily / mistral / site-write / infer module", () => {
+    const raw = src("debugLog")
+    expect(raw).not.toMatch(/from\s+["']@\/lib\/chat\/tavily-search["']/)
+    expect(raw).not.toMatch(/from\s+["']@\/lib\/chat\/mistral["']/)
+    expect(raw).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
+    for (const re of FORBIDDEN_IMPORTS) {
+      expect(raw, `debug-log must not match ${re}`).not.toMatch(re)
+    }
+    for (const id of FORBIDDEN_IDENTIFIERS) {
+      expect(stripComments(raw), `debug-log must not reference "${id}"`).not.toContain(id)
+    }
+  })
+
+  it("debug-log never references saveMemory / inferMemoriesFromThread / dangerouslySetInnerHTML", () => {
+    const code = stripComments(src("debugLog"))
+    expect(code).not.toMatch(/\bsaveMemory\s*\(/)
+    expect(code).not.toMatch(/\binferMemoriesFromThread\s*\(/)
+    expect(code).not.toMatch(/dangerouslySetInnerHTML/)
   })
 })
