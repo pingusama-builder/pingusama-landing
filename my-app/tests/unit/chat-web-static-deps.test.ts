@@ -10,6 +10,7 @@ const files: Record<string, string> = {
   webTrigger: fileURLToPath(new URL("../../lib/chat/web-trigger.ts", import.meta.url)),
   actions: fileURLToPath(new URL("../../app/admin/chat/actions.ts", import.meta.url)),
   messages: fileURLToPath(new URL("../../lib/chat/messages.ts", import.meta.url)),
+  postRead: fileURLToPath(new URL("../../lib/chat/post-read.ts", import.meta.url)),
 }
 
 function src(name: keyof typeof files): string {
@@ -227,5 +228,46 @@ describe("web_research audit capture — history-feedback + no-sentinel boundary
     const code = stripComments(src("tools"))
     expect(code).toMatch(/webAuditRuns\.push/)
     expect(code).not.toMatch(/saveMemory[\s\S]{0,160}webAuditRuns/)
+  })
+})
+
+describe("read_post path — read-only posts, no site-write / memory-persist", () => {
+  it("post-read.ts imports only read post functions (no createPost/updatePost/deletePost)", () => {
+    const raw = src("postRead")
+    const code = stripComments(raw)
+    // Imports the chat-path-allowable read layer @/lib/db/posts.
+    expect(raw).toMatch(/from\s+["']@\/lib\/db\/posts["']/)
+    // The write functions must never be referenced in real code. Check the
+    // comment-stripped source so the header comment that names them to say
+    // they are NOT imported doesn't false-positive.
+    for (const id of FORBIDDEN_IDENTIFIERS) {
+      expect(code, `post-read must not reference "${id}"`).not.toContain(id)
+    }
+    // Never persists memories or infers; never imports the service client
+    // directly (it goes through @/lib/db/posts, the read layer).
+    expect(code).not.toMatch(/\bsaveMemory\s*\(/)
+    expect(code).not.toMatch(/\binferMemoriesFromThread\s*\(/)
+    expect(code).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
+    expect(raw).not.toMatch(/from\s+["']@\/lib\/supabase\/server["']/)
+    expect(raw).not.toMatch(/from\s+["']@\/lib\/supabase\/storage["']/)
+  })
+
+  it("read_post tool path in tools.ts delegates to readPostForTool (no site-write)", () => {
+    const code = stripComments(src("tools"))
+    // The read_post case must delegate to readPostForTool.
+    expect(code).toMatch(/case "read_post"/)
+    expect(code).toMatch(/readPostForTool/)
+    // Scope the negatives to the read_post case body (from its case label to
+    // the next `case `).
+    const startIdx = code.indexOf('case "read_post"')
+    expect(startIdx).toBeGreaterThan(-1)
+    const rest = code.slice(startIdx)
+    const nextCase = rest.indexOf("case ", 1)
+    const body = nextCase === -1 ? rest : rest.slice(0, nextCase)
+    for (const id of FORBIDDEN_IDENTIFIERS) {
+      expect(body, `read_post body must not reference "${id}"`).not.toContain(id)
+    }
+    expect(body).not.toMatch(/\bsaveMemory\s*\(/)
+    expect(body).not.toMatch(/\binferMemoriesFromThread\s*\(/)
   })
 })
