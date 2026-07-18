@@ -51,6 +51,10 @@ const rewriteMock = vi.hoisted(() => ({
 const webTriggerMock = vi.hoisted(() => ({
   decideWebEnabled: vi.fn(),
 }))
+const postReadMock = vi.hoisted(() => ({
+  detectPostReviewIntent: vi.fn(),
+  loadNewestPostForPrompt: vi.fn(),
+}))
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: authMock.getCurrentUser,
@@ -93,6 +97,10 @@ vi.mock("@/lib/chat/query-rewrite", () => ({
 }))
 vi.mock("@/lib/chat/web-trigger", () => ({
   decideWebEnabled: webTriggerMock.decideWebEnabled,
+}))
+vi.mock("@/lib/chat/post-read", () => ({
+  detectPostReviewIntent: postReadMock.detectPostReviewIntent,
+  loadNewestPostForPrompt: postReadMock.loadNewestPostForPrompt,
 }))
 
 import { POST } from "@/app/api/chat/route"
@@ -190,6 +198,8 @@ function setupOk() {
   // want web on the auto path override this; tests using webMode:"on" or the
   // /web prefix bypass the classifier entirely.
   webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: false, decision: "no-search", via: "heuristic" })
+  postReadMock.detectPostReviewIntent.mockReturnValue(false)
+  postReadMock.loadNewestPostForPrompt.mockResolvedValue(null)
 }
 
 describe("POST /api/chat — admin gate", () => {
@@ -1245,5 +1255,86 @@ describe("POST /api/chat — web-research audit capture (Q1)", () => {
     // The tool-row appendMessage carries no webResearch (it's evidence, not a model call).
     const toolRow = chatMock.appendMessage.mock.calls.find((c: any[]) => c[0]?.role === "tool")
     expect(toolRow?.[0].webResearch).toBeUndefined()
+  })
+})
+
+describe("POST /api/chat — newest-post auto-inject on 'new post' intent", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("injects the newest post body into the system prompt on a new-post intent (non-web turn)", async () => {
+    setupOk()
+    postReadMock.detectPostReviewIntent.mockReturnValue(true)
+    postReadMock.loadNewestPostForPrompt.mockResolvedValue("**GEI**\nSlug: gei\n\nThe body text.")
+    let capturedSystem = ""
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      capturedSystem = opts.messages[0].content
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    await POST(makeRequest({ message: "what do you like about my new blog post" }))
+    expect(postReadMock.detectPostReviewIntent).toHaveBeenCalled()
+    expect(postReadMock.loadNewestPostForPrompt).toHaveBeenCalled()
+    expect(capturedSystem).toContain("Post under discussion")
+    expect(capturedSystem).toContain("The body text.")
+  })
+
+  it("does NOT inject on a non-post message", async () => {
+    setupOk()
+    postReadMock.detectPostReviewIntent.mockReturnValue(false)
+    let capturedSystem = ""
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      capturedSystem = opts.messages[0].content
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    await POST(makeRequest({ message: "what's the capital of France" }))
+    expect(postReadMock.loadNewestPostForPrompt).not.toHaveBeenCalled()
+    expect(capturedSystem).not.toContain("Post under discussion")
+  })
+
+  it("does NOT inject on a web turn (even if intent matches)", async () => {
+    setupOk()
+    postReadMock.detectPostReviewIntent.mockReturnValue(true)
+    postReadMock.loadNewestPostForPrompt.mockResolvedValue("body")
+    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: true, decision: "search", via: "heuristic" })
+    let capturedSystem = ""
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      capturedSystem = opts.messages[0].content
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    await POST(makeRequest({ message: "review my new blog post" }))
+    expect(postReadMock.loadNewestPostForPrompt).not.toHaveBeenCalled()
+    expect(capturedSystem).not.toContain("Post under discussion")
+  })
+
+  it("does NOT inject when /nopost opt-out is used", async () => {
+    setupOk()
+    postReadMock.detectPostReviewIntent.mockReturnValue(true)
+    postReadMock.loadNewestPostForPrompt.mockResolvedValue("body")
+    let capturedSystem = ""
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      capturedSystem = opts.messages[0].content
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    await POST(makeRequest({ message: "/nopost review my new blog post" }))
+    expect(postReadMock.loadNewestPostForPrompt).not.toHaveBeenCalled()
+    expect(capturedSystem).not.toContain("Post under discussion")
+  })
+
+  it("strips the /nopost prefix before the message is stored/answered", async () => {
+    setupOk()
+    postReadMock.detectPostReviewIntent.mockReturnValue(true)
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("ok")
+      return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
+    })
+    await POST(makeRequest({ message: "/nopost hello there" }))
+    // The user row persisted to chat_messages is the stripped message.
+    const userRow = chatMock.appendMessage.mock.calls.find(
+      (c: any[]) => c[0]?.role === "user"
+    )
+    expect(userRow?.[0]?.content).toBe("hello there")
   })
 })

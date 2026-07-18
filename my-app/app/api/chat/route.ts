@@ -27,6 +27,7 @@ import {
 } from "@/lib/chat/tavily-search"
 import { rewriteSearchQueries } from "@/lib/chat/query-rewrite"
 import { decideWebEnabled, type WebDecision } from "@/lib/chat/web-trigger"
+import { detectPostReviewIntent, loadNewestPostForPrompt } from "@/lib/chat/post-read"
 import { snapshotWebResearch, buildPipelineAuditRun } from "@/lib/chat/tools"
 import {
   classifyDifficultyHybrid,
@@ -117,8 +118,10 @@ export async function POST(request: Request) {
   // classifier runs later (after history is fetched so it can read prior rows).
   let webMode: "auto" | "on" | "off" = body.webMode ?? (body.webEnabled ? "on" : "auto")
   let message = rawMessage
+  let nopost = false
   message = message.replace(/^\/web\s*/i, () => { webMode = "on"; return "" }).trim()
   message = message.replace(/^\/noweb\s*/i, () => { webMode = "off"; return "" }).trim()
+  message = message.replace(/^\/nopost\s*/i, () => { nopost = true; return "" }).trim()
   if (!message) {
     return Response.json({ error: "Missing message after prefix" }, { status: 400 })
   }
@@ -179,7 +182,6 @@ export async function POST(request: Request) {
     recallMemories({ limit: 40 }),
     getMessages(threadId),
   ])
-  const baseSystemPrompt = buildSystemPrompt({ siteContext, memories })
   const history = historyRows.map(rowToMistral).filter((m): m is MistralMessage => m !== null)
 
   // ── Resolve the web turn + final model (needs history for the classifier) ──
@@ -208,6 +210,19 @@ export async function POST(request: Request) {
     tier = "large" // force best synthesis for web-research turns
   }
   const modelId = MODEL_TIERS[tier] ?? MODEL_TIERS[DEFAULT_TIER]
+
+  // ── System prompt (built after webTurn so the newest-post auto-inject loads
+  // only on ordinary non-web chat). The post body is injected ONLY on a "new
+  // post" review intent, never on a web turn, never when /nopost opted out,
+  // never when there are no published posts. It is read-only admin-authored
+  // site text — never from web/chat, never into save_memory/infer, never
+  // rendered as raw HTML. The read_post tool remains the fallback for any
+  // specific/older post. See lib/chat/post-read.ts.
+  let postUnderDiscussion: string | null = null
+  if (!webTurn && !nopost && detectPostReviewIntent(message)) {
+    postUnderDiscussion = await loadNewestPostForPrompt()
+  }
+  const baseSystemPrompt = buildSystemPrompt({ siteContext, memories, postUnderDiscussion })
 
   // 55s soft-deadline AbortController (cleared on stream close).
   const deadlineController = new AbortController()
