@@ -164,6 +164,31 @@ describe("debug-log export action — reads via getChatThread/getMessages, never
   })
 })
 
+describe("delete-thread action — chat-only DB, no site writes / memory persist", () => {
+  it("deleteThreadAction body references only chat DB functions and no site-write / memory-persist identifier", () => {
+    const code = stripComments(src("actions"))
+    expect(code).toMatch(/deleteThreadAction/)
+    // The body must go through the chat-only guard + the chat DB deleters.
+    expect(code).toMatch(/getChatThread/)
+    expect(code).toMatch(/deleteMemoriesSourcedFromThread/)
+    expect(code).toMatch(/\bdeleteThread\b/)
+    // Scope the negatives to the deleteThreadAction body: from its declaration
+    // to the next top-level `export ` (it is the last action, so to EOF).
+    const startIdx = code.indexOf("deleteThreadAction")
+    expect(startIdx, "deleteThreadAction must be declared").toBeGreaterThan(-1)
+    const rest = code.slice(startIdx)
+    const nextExport = rest.indexOf("export ", 1)
+    const body = nextExport === -1 ? rest : rest.slice(0, nextExport)
+    for (const id of FORBIDDEN_IDENTIFIERS) {
+      expect(body, `deleteThreadAction must not reference "${id}"`).not.toContain(id)
+    }
+    // Never persists memories or infers — delete only.
+    expect(body).not.toMatch(/\bsaveMemory\s*\(/)
+    expect(body).not.toMatch(/\binferMemoriesFromThread\s*\(/)
+    expect(body).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
+  })
+})
+
 describe("web_research audit capture — history-feedback + no-sentinel boundary (Q1)", () => {
   it("rowToMistral does not map web_research (no stale-evidence history feedback)", () => {
     const code = stripComments(src("messages"))
