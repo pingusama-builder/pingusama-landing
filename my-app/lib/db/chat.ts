@@ -64,6 +64,50 @@ export interface DebugTelemetry {
   finish_reason?: string | null
 }
 
+// ── Web-research audit (advisor round 2 Q1) ───────────────────────────────
+// Per-assistant-call record of the public-web evidence available to the model
+// when it produced an assistant message. One WebResearchAudit per assistant
+// row, with an ordered runs[] array covering every web path that fed that call
+// (pre-turn pipeline, web_search tool follow-up, or both). Read-only debug
+// material: NOT chat content, NOT durable memory, NOT input to save_memory or
+// history reconstruction. Invisible to rowToMistral (maps only role/content/
+// tool_calls), so it cannot feed stale web evidence back into next turn's
+// history. Assistant rows only; user/tool rows carry null.
+export interface WebResearchSourceAudit {
+  url: string
+  title: string
+  snippet: string
+  readFull: boolean
+}
+export interface WebResearchPageAudit {
+  url: string
+  extractedText: string
+  charsOriginal: number
+  truncated: boolean
+}
+export interface WebResearchRun {
+  via: "pipeline" | "tool"
+  mode: "auto" | "on" | "tool"
+  decision?: "search" | "no-search" | "site-only"
+  decisionVia?: "heuristic" | "mistral-small"
+  queries: string[]
+  subject: string | null
+  subjectMatch: boolean
+  guard: "none" | "empty" | "subject_absent"
+  sources: WebResearchSourceAudit[]
+  pages: WebResearchPageAudit[]
+  evidenceInjected: string
+  evidenceChars: number
+  effort: "low" | "medium" | "high" | null
+  maxTokens: number | null
+  searchedAt: string
+}
+export interface WebResearchAudit {
+  schemaVersion: 1
+  availableToAssistantMessage: true
+  runs: WebResearchRun[]
+}
+
 export interface CompanionDebugLog {
   thread: {
     id: string
@@ -82,6 +126,7 @@ export interface CompanionDebugLog {
     tool_calls: unknown | null
     reasoning: string | null
     telemetry: DebugTelemetry | null
+    web_research: WebResearchAudit | null
   }>
 }
 
@@ -94,6 +139,7 @@ export interface ChatMessageRow {
   model: string | null
   reasoning: string | null
   telemetry: DebugTelemetry | null
+  web_research: WebResearchAudit | null
   created_at: string
 }
 
@@ -509,6 +555,7 @@ export async function appendMessage(input: {
   model?: string | null
   reasoning?: string | null
   telemetry?: unknown
+  webResearch?: unknown
 }): Promise<ChatMessageRow> {
   const c = client()
   const { data, error } = await c
@@ -521,6 +568,7 @@ export async function appendMessage(input: {
       model: input.model ?? null,
       reasoning: input.reasoning ?? null,
       telemetry: input.telemetry ?? null,
+      web_research: input.webResearch ?? null,
     })
     .select("*")
     .single()

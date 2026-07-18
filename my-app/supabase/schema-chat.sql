@@ -53,6 +53,13 @@ ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS one_turn_override text;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS model text;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS reasoning text;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS telemetry jsonb;
+-- web_research: per-assistant-call audit of the public-web evidence available
+-- to the model when it produced this assistant message (advisor round 2 Q1).
+-- Additive/nullable. Read-only debug material — NOT chat content, NOT durable
+-- memory, NOT input to save_memory or history reconstruction. Invisible to
+-- rowToMistral (maps only role/content/tool_calls), so it cannot feed stale
+-- web evidence back into next turn's history. Assistant rows only.
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS web_research jsonb;
 
 -- Auto memory inference (companion feature 1/3) — additive.
 -- last_inferred_at: when inference last processed this thread (null = never).

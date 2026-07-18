@@ -181,6 +181,7 @@ export async function getThreadDebugLogAction(
           tool_calls: m.tool_calls,
           reasoning: m.reasoning,
           telemetry: m.telemetry,
+          web_research: m.web_research,
         })),
       },
     };
