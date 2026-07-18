@@ -6,6 +6,10 @@ const chatMock = vi.hoisted(() => ({
   listIdleUnprocessedThreads: vi.fn(),
   getChatThread: vi.fn(),
   getMessages: vi.fn(),
+  listThreads: vi.fn(),
+  countMemoriesSourcedFromThread: vi.fn(),
+  deleteMemoriesSourcedFromThread: vi.fn(),
+  deleteThread: vi.fn(),
 }))
 const inferMock = vi.hoisted(() => ({ inferMemoriesFromThread: vi.fn() }))
 const modelsMock = vi.hoisted(() => ({ MODEL_PREFERENCES: ["auto", "small", "medium", "large"] }))
@@ -23,13 +27,17 @@ vi.mock("@/lib/db/chat", async () => {
     listIdleUnprocessedThreads: chatMock.listIdleUnprocessedThreads,
     getChatThread: chatMock.getChatThread,
     getMessages: chatMock.getMessages,
+    listThreads: chatMock.listThreads,
+    countMemoriesSourcedFromThread: chatMock.countMemoriesSourcedFromThread,
+    deleteMemoriesSourcedFromThread: chatMock.deleteMemoriesSourcedFromThread,
+    deleteThread: chatMock.deleteThread,
   }
 })
 vi.mock("@/lib/chat/infer", () => ({ inferMemoriesFromThread: inferMock.inferMemoriesFromThread }))
 vi.mock("@/lib/chat/awareness", () => ({ refreshAwareness: vi.fn(), SiteCategory: undefined }))
 vi.mock("@/lib/chat/models", () => ({ MODEL_PREFERENCES: modelsMock.MODEL_PREFERENCES }))
 
-import { setThreadModelPreferenceAction, inferFromThreadAction, inferIdleThreadsAction, getThreadDebugLogAction } from "@/app/admin/chat/actions"
+import { setThreadModelPreferenceAction, inferFromThreadAction, inferIdleThreadsAction, getThreadDebugLogAction, listThreadsAction, deleteThreadAction } from "@/app/admin/chat/actions"
 
 describe("setThreadModelPreferenceAction", () => {
   beforeEach(() => vi.clearAllMocks())
@@ -199,5 +207,86 @@ describe("getThreadDebugLogAction", () => {
     const res = await getThreadDebugLogAction("t1")
     expect(res.success).toBe(false)
     expect(chatMock.getChatThread).not.toHaveBeenCalled()
+  })
+})
+
+describe("listThreadsAction", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("populates messageCount + sourcedMemoryCount per thread", async () => {
+    authMock.requireAdmin.mockResolvedValue({ id: "admin-1" })
+    chatMock.listThreads.mockResolvedValue([
+      { id: "t1", title: "a", updated_at: "x", purpose: "chat" },
+      { id: "t2", title: "b", updated_at: "y", purpose: "chat" },
+    ])
+    chatMock.getMessages
+      .mockResolvedValueOnce([{ id: "m1" }, { id: "m2" }])
+      .mockResolvedValueOnce([{ id: "m3" }])
+    chatMock.countMemoriesSourcedFromThread
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(0)
+    const out = await listThreadsAction()
+    expect(out).toEqual([
+      { id: "t1", title: "a", updated_at: "x", messageCount: 2, sourcedMemoryCount: 3 },
+      { id: "t2", title: "b", updated_at: "y", messageCount: 1, sourcedMemoryCount: 0 },
+    ])
+  })
+
+  it("returns failure if requireAdmin throws", async () => {
+    authMock.requireAdmin.mockRejectedValue(new Error("not admin"))
+    await expect(listThreadsAction()).rejects.toThrow("not admin")
+  })
+})
+
+describe("deleteThreadAction", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("deletes the thread and returns memoriesDeleted:0 when alsoDeleteMemories is false", async () => {
+    authMock.requireAdmin.mockResolvedValue({ id: "admin-1" })
+    chatMock.getChatThread.mockResolvedValue({ id: "t1", purpose: "chat" })
+    chatMock.deleteThread.mockResolvedValue({ deleted: true })
+    const res = await deleteThreadAction("t1", { alsoDeleteMemories: false })
+    expect(res.success).toBe(true)
+    if (res.success) expect(res.memoriesDeleted).toBe(0)
+    expect(chatMock.deleteMemoriesSourcedFromThread).not.toHaveBeenCalled()
+    expect(chatMock.deleteThread).toHaveBeenCalledWith("t1")
+  })
+
+  it("deletes sourced memories first, then the thread, and returns the count", async () => {
+    authMock.requireAdmin.mockResolvedValue({ id: "admin-1" })
+    chatMock.getChatThread.mockResolvedValue({ id: "t1", purpose: "chat" })
+    chatMock.deleteMemoriesSourcedFromThread.mockResolvedValue(4)
+    chatMock.deleteThread.mockResolvedValue({ deleted: true })
+    const res = await deleteThreadAction("t1", { alsoDeleteMemories: true })
+    expect(res.success).toBe(true)
+    if (res.success) expect(res.memoriesDeleted).toBe(4)
+    // Ordering invariant: memories deleted BEFORE the thread.
+    expect(chatMock.deleteMemoriesSourcedFromThread).toHaveBeenCalledBefore(chatMock.deleteThread)
+    expect(chatMock.deleteMemoriesSourcedFromThread).toHaveBeenCalledWith("t1")
+    expect(chatMock.deleteThread).toHaveBeenCalledWith("t1")
+  })
+
+  it("refuses a non-chat / unknown thread with success:false and deletes nothing", async () => {
+    authMock.requireAdmin.mockResolvedValue({ id: "admin-1" })
+    chatMock.getChatThread.mockResolvedValue(null)
+    const res = await deleteThreadAction("c1", { alsoDeleteMemories: false })
+    expect(res.success).toBe(false)
+    expect(chatMock.deleteMemoriesSourcedFromThread).not.toHaveBeenCalled()
+    expect(chatMock.deleteThread).not.toHaveBeenCalled()
+  })
+
+  it("returns failure if requireAdmin throws", async () => {
+    authMock.requireAdmin.mockRejectedValue(new Error("not admin"))
+    const res = await deleteThreadAction("t1", { alsoDeleteMemories: false })
+    expect(res.success).toBe(false)
+    expect(chatMock.getChatThread).not.toHaveBeenCalled()
+  })
+
+  it("returns failure if deleteThread throws", async () => {
+    authMock.requireAdmin.mockResolvedValue({ id: "admin-1" })
+    chatMock.getChatThread.mockResolvedValue({ id: "t1", purpose: "chat" })
+    chatMock.deleteThread.mockRejectedValue(new Error("rls denied"))
+    const res = await deleteThreadAction("t1", { alsoDeleteMemories: false })
+    expect(res.success).toBe(false)
   })
 })

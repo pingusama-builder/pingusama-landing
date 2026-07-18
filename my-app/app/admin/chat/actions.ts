@@ -10,6 +10,9 @@ import {
   updateMemoryContent,
   setThreadModelPreference,
   listIdleUnprocessedThreads,
+  deleteThread,
+  deleteMemoriesSourcedFromThread,
+  countMemoriesSourcedFromThread,
   type MemoryType,
   type ChatThread,
   type ChatMessageRow,
@@ -25,20 +28,26 @@ export interface ThreadSummary {
   title: string;
   updated_at: string;
   messageCount: number;
+  sourcedMemoryCount: number;
 }
 
 export async function listThreadsAction(): Promise<ThreadSummary[]> {
   await requireAdmin();
   const threads = await listThreads(50);
-  // Cheap counts: one query per thread is fine for a personal admin tool.
+  // Cheap counts: one message + one memory query per thread is fine for a
+  // personal admin tool. Run them in parallel per thread.
   const out: ThreadSummary[] = [];
   for (const t of threads) {
-    const msgs = await getMessages(t.id);
+    const [msgs, memCount] = await Promise.all([
+      getMessages(t.id),
+      countMemoriesSourcedFromThread(t.id),
+    ]);
     out.push({
       id: t.id,
       title: t.title,
       updated_at: t.updated_at,
       messageCount: msgs.length,
+      sourcedMemoryCount: memCount,
     });
   }
   return out;
@@ -185,6 +194,35 @@ export async function getThreadDebugLogAction(
         })),
       },
     };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Failed" };
+  }
+}
+
+export async function deleteThreadAction(
+  threadId: string,
+  opts: { alsoDeleteMemories: boolean }
+): Promise<
+  | { success: true; memoriesDeleted: number }
+  | { success: false; error: string }
+> {
+  try {
+    await requireAdmin();
+    // Chat UI only — getChatThread returns null for companion-purpose or
+    // unknown threads, so a companion thread can never be deleted by id.
+    const thread = await getChatThread(threadId);
+    if (!thread) {
+      return { success: false, error: "Thread not found or not a chat thread" };
+    }
+    // Ordering invariant: delete sourced memories BEFORE the thread. The
+    // thread's deletion SET-NULLs chat_memories.source_thread_id, so after the
+    // thread is gone the memories can no longer be found by source_thread_id.
+    let memoriesDeleted = 0;
+    if (opts.alsoDeleteMemories) {
+      memoriesDeleted = await deleteMemoriesSourcedFromThread(threadId);
+    }
+    await deleteThread(threadId);
+    return { success: true, memoriesDeleted };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Failed" };
   }

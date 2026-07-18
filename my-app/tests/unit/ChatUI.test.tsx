@@ -16,7 +16,7 @@ vi.mock("@/app/admin/chat/actions", () => ({
 }));
 
 const threads = [
-  { id: "t1", title: "First chat", messageCount: 2, updated_at: "2026-07-14T10:00:00Z" },
+  { id: "t1", title: "First chat", messageCount: 2, sourcedMemoryCount: 0, updated_at: "2026-07-14T10:00:00Z" },
 ];
 
 describe("ChatUI — web research UI", () => {
