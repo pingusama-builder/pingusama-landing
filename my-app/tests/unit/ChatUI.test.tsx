@@ -88,6 +88,8 @@ describe("ChatUI — delete-thread", () => {
     // destructive confirm button
     expect(src).toContain("chat-delete-confirm")
     expect(src).toContain("Delete thread")
+    expect(src).toContain("chat-delete-error")
+    expect(src).toContain('role="alert"')
     expect(src).not.toContain("dangerouslySetInnerHTML")
   })
 

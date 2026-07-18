@@ -121,7 +121,6 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
   const cancelDelete = () => {
     setDeleteTarget(null);
     setAlsoDeleteMemories(false);
-    setError(null);
   };
 
   const confirmDelete = () => {
@@ -434,6 +433,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
                 onClick={() => {
                   setDeleteTarget(t);
                   setAlsoDeleteMemories(false);
+                  setError(null);
                 }}
               >
                 🗑
@@ -678,6 +678,11 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
                 {deleteTarget.sourcedMemoryCount === 1 ? "memory" : "memories"}{" "}
                 sourced from this conversation
               </label>
+            )}
+            {error && (
+              <p className="chat-delete-error" role="alert">
+                {error}
+              </p>
             )}
             <div className="chat-delete-actions">
               <button
