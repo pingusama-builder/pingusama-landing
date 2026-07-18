@@ -47,6 +47,40 @@ describe("classifyWebNeed (pure heuristic)", () => {
   })
 })
 
+describe("classifyWebNeed — factual-frame lift (round 2)", () => {
+  // The Kimi K3 false-negative: a bare factual question about a named external
+  // entity with no temporal/version cue scored 0 → no-search → the mistral-small
+  // tie-break never ran. A factual frame now lifts a suppressed no-search to
+  // borderline so the classifier gets to judge it — never to auto-search.
+  it("lifts a bare factual question with no temporal cue to borderline", () => {
+    expect(classifyWebNeed("how good is the Kimi K3 model?").band).toBe("borderline")
+    expect(classifyWebNeed("what is a mixture of experts?").band).toBe("borderline")
+    expect(classifyWebNeed("tell me about Mistral Medium 3").band).toBe("borderline")
+    expect(classifyWebNeed("summarize the Kimi K3 paper").band).toBe("borderline")
+  })
+
+  it("does NOT lift when a site-internal NO_TERM fires (explicit suppression)", () => {
+    expect(classifyWebNeed("what is my shelf?").band).toBe("no-search")
+    expect(classifyWebNeed("tell me about my bench").band).toBe("no-search")
+    expect(classifyWebNeed("how good is the draft on my blog?").band).toBe("no-search")
+  })
+
+  it("does NOT lift a factual frame with no substantive remainder", () => {
+    // remainder "up" < 3 chars → not lifted → stays no-search
+    expect(classifyWebNeed("what is up").band).toBe("no-search")
+  })
+
+  it("does NOT downgrade a search-band question (temporal cues still win straight to search)", () => {
+    // "latest" + "version" → +6 → search; the factual frame does not pull it back to borderline
+    expect(classifyWebNeed("what is the latest version of Next.js").band).toBe("search")
+  })
+
+  it("lowercase model/product input reaches borderline (no capitalisation signal)", () => {
+    expect(classifyWebNeed("how good is kimi k3?").band).toBe("borderline")
+    expect(classifyWebNeed("what is kimi k3").band).toBe("borderline")
+  })
+})
+
 describe("parseWebDecision", () => {
   it("parses the three labels", () => {
     expect(parseWebDecision("search")).toBe("search")
@@ -95,5 +129,36 @@ describe("decideWebEnabled", () => {
     const r = await decideWebEnabled("who is the author of that essay", [])
     expect(r.via).toBe("mistral-small")
     expect(typeof r.webEnabled).toBe("boolean")
+  })
+})
+
+describe("decideWebEnabled — factual-frame borderline routing (round 2)", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("invokes the classifier on a factual-frame question and respects a site-only verdict", async () => {
+    // "tell me about this post" → factual frame → borderline → classifier says site-only.
+    mistralMock.mistralTurn.mockResolvedValue({ content: "site-only", tool_calls: [] })
+    const r = await decideWebEnabled("tell me about this post", [])
+    expect(r.via).toBe("mistral-small")
+    expect(mistralMock.mistralTurn).toHaveBeenCalledTimes(1)
+    expect(r.decision).toBe("site-only")
+    expect(r.webEnabled).toBe(false)
+  })
+
+  it("falls back to conservative no-search when the classifier fails on a factual-frame question", async () => {
+    mistralMock.mistralTurn.mockRejectedValue(new Error("boom"))
+    const r = await decideWebEnabled("how good is Kimi K3?", [])
+    expect(r.via).toBe("mistral-small")
+    expect(r.webEnabled).toBe(false)
+    expect(r.decision).toBe("no-search")
+  })
+
+  it("does NOT auto-search a factual-frame question — the classifier decides", async () => {
+    // Factual frame lifts to borderline; an unparsable classifier answer must
+    // default to no-search, never to search.
+    mistralMock.mistralTurn.mockResolvedValue({ content: "huh?", tool_calls: [] })
+    const r = await decideWebEnabled("what is a mixture of experts?", [])
+    expect(r.via).toBe("mistral-small")
+    expect(r.webEnabled).toBe(false)
   })
 })

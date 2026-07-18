@@ -62,6 +62,28 @@ const YES_TEMPORAL = [
 ]
 const YES_DOMAINS = ["versus", " vs ", "compare", "alternative to", "better than"]
 
+// Factual-question frames (round 2). A bare "how good is X / what is X / tell
+// me about X" about a named external entity with NO temporal/version cue scored
+// 0 → no-search → the mistral-small tie-break never ran (the Kimi K3 false-
+// negative). A matching frame lifts a suppressed no-search to `borderline` so
+// the classifier gets to judge it — NEVER to auto-`search`, because site-
+// internal lookups ("what is my shelf?") share the frame and must stay
+// contained. No capitalisation signal: users type product names in lowercase,
+// CJK/abbreviations don't capitalise, and the site has its own proper nouns
+// (book titles, authors) — a cap-token detector would be too noisy. The
+// classifier (with a history digest + the site-only label) resolves it.
+const FACTUAL_FRAMES = [
+  "what is ",
+  "what's ",
+  "how good is ",
+  "tell me about ",
+  "give me a summary of ",
+  "summarize ",
+  "what's new with ",
+  "how does ",
+  "how do ",
+]
+
 export function classifyWebNeed(message: string): {
   score: number
   band: "search" | "no-search" | "borderline"
@@ -83,7 +105,26 @@ export function classifyWebNeed(message: string): {
   if (score >= 5) band = "search"
   else if (score <= 0) band = "no-search"
   else band = "borderline"
+
+  // Factual-frame lift: only a suppressed no-search → borderline, and only when
+  // the frame has substantive remaining content and no site-internal NO_TERM
+  // fired. Does not touch search (temporal cues still win straight to search)
+  // or an already-borderline band.
+  if (band === "no-search" && noHits === 0 && hasFactualFrame(t)) {
+    band = "borderline"
+  }
+
   return { score, band }
+}
+
+/** A factual-question frame with substantive remaining content (≥3 chars after
+ *  the frame). Caller has already checked no NO_TERM fired. */
+function hasFactualFrame(t: string): boolean {
+  for (const f of FACTUAL_FRAMES) {
+    const idx = t.indexOf(f)
+    if (idx >= 0 && t.slice(idx + f.length).trim().length >= 3) return true
+  }
+  return false
 }
 
 export function parseWebDecision(raw: string): WebDecision | null {
