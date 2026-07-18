@@ -588,6 +588,48 @@ export async function getMessages(threadId: string): Promise<ChatMessageRow[]> {
   return (data ?? []) as ChatMessageRow[]
 }
 
+// ── Thread + sourced-memory deletion (admin delete-thread) ───────────────
+// Chat-only guarded. A blog-companion thread (purpose = 'blog-companion') is
+// never deleted by id — getChatThread returns null for it, so deleteThread
+// returns { deleted: false } and issues no DELETE. Cascade removes messages;
+// chat_memories.source_thread_id is SET NULL by the existing constraint, so
+// memories are kept by default. deleteMemoriesSourcedFromThread hard-deletes
+// the memories sourced from a thread and MUST run before deleteThread (once
+// the thread row is gone, source_thread_id is NULL and they can't be found).
+export async function deleteThread(id: string): Promise<{ deleted: boolean }> {
+  const thread = await getChatThread(id)
+  if (!thread) return { deleted: false }
+  const c = client()
+  const { error } = await c.from("chat_threads").delete().eq("id", id)
+  handle(error)
+  return { deleted: true }
+}
+
+export async function deleteMemoriesSourcedFromThread(
+  threadId: string
+): Promise<number> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_memories")
+    .delete()
+    .eq("source_thread_id", threadId)
+    .select("id")
+  handle(error)
+  return (data ?? []).length
+}
+
+export async function countMemoriesSourcedFromThread(
+  threadId: string
+): Promise<number> {
+  const c = client()
+  const { data, error } = await c
+    .from("chat_memories")
+    .select("id")
+    .eq("source_thread_id", threadId)
+  handle(error)
+  return (data ?? []).length
+}
+
 // ── Management UI helpers ────────────────────────────────────────────────
 export async function listAllMemories(opts: {
   type?: MemoryType
