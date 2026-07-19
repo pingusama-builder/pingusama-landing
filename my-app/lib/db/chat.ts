@@ -588,6 +588,109 @@ export async function getMessages(threadId: string): Promise<ChatMessageRow[]> {
   return (data ?? []) as ChatMessageRow[]
 }
 
+// ── Pending source-choice store (external-verification suggestion, round-7) ──
+// Turn-scoped, consumed-on-resume. NOT a durable preference, NOT memory, NOT
+// chat content. Lives in its own table so rowToMistral (which rebuilds Mistral
+// history from chat_messages) never feeds the suggestion back to the model.
+// Service-role only; never read by saveMemory/recallMemories/durable context,
+// never written to chat_memories.
+export type SourceChoice = "search" | "stay"
+
+export interface PendingSourceChoice {
+  id: string
+  thread_id: string
+  user_message_id: string
+  reason: SuggestionReasonInput
+  subject: string | null
+  message_text: string
+  created_at: string
+  resolved_at: string | null
+  choice: SourceChoice | null
+}
+
+// Local mirror of SuggestionReason from web-trigger to avoid an import cycle
+// (db layer must not import the chat trigger layer). Validated at insert.
+export type SuggestionReasonInput =
+  | "external-prerequisites"
+  | "current-public-facts"
+  | "attribution-or-quote"
+  | "recent-subject-follow-up"
+
+const SUGGESTION_REASONS: SuggestionReasonInput[] = [
+  "external-prerequisites",
+  "current-public-facts",
+  "attribution-or-quote",
+  "recent-subject-follow-up",
+]
+
+export async function insertPendingChoice(input: {
+  threadId: string
+  userMessageId: string
+  reason: SuggestionReasonInput
+  subject?: string | null
+  messageText: string
+}): Promise<PendingSourceChoice> {
+  if (!SUGGESTION_REASONS.includes(input.reason)) {
+    throw new Error(`Invalid suggestion reason: ${input.reason}`)
+  }
+  const c = client()
+  const { data, error } = await c
+    .from("pending_source_choices")
+    .insert({
+      thread_id: input.threadId,
+      user_message_id: input.userMessageId,
+      reason: input.reason,
+      subject: input.subject ?? null,
+      message_text: input.messageText,
+    })
+    .select("*")
+    .single()
+  handle(error)
+  return data as PendingSourceChoice
+}
+
+/** Load an unresolved pending choice for a thread. Returns null if none or
+ *  if the id belongs to a different thread. Does NOT resolve. */
+export async function loadPendingChoice(
+  pendingChoiceId: string,
+  threadId: string
+): Promise<PendingSourceChoice | null> {
+  const c = client()
+  const { data, error } = await c
+    .from("pending_source_choices")
+    .select("*")
+    .eq("id", pendingChoiceId)
+    .eq("thread_id", threadId)
+    .maybeSingle()
+  handle(error)
+  return (data as PendingSourceChoice | null) ?? null
+}
+
+/** Mark a pending choice resolved with the user's choice. Idempotent on the
+ *  choice column. Returns the updated row (or null if not found / already
+ *  resolved — the caller treats already-resolved as a 409). */
+export async function resolvePendingChoice(
+  pendingChoiceId: string,
+  choice: SourceChoice
+): Promise<PendingSourceChoice | null> {
+  if (choice !== "search" && choice !== "stay") {
+    throw new Error(`Invalid source choice: ${choice}`)
+  }
+  const c = client()
+  const { data, error } = await c
+    .from("pending_source_choices")
+    .update({
+      resolved_at: new Date().toISOString(),
+      choice,
+    })
+    .eq("id", pendingChoiceId)
+    .is("resolved_at", null)
+    .select("*")
+    .maybeSingle()
+  handle(error)
+  return (data as PendingSourceChoice | null) ?? null
+}
+
 // ── Thread + sourced-memory deletion (admin delete-thread) ───────────────
 // Chat-only guarded. A blog-companion thread (purpose = 'blog-companion') is
 // never deleted by id — getChatThread returns null for it, so deleteThread

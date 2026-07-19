@@ -323,3 +323,40 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_companion_thread_subject
   ON public.chat_threads (subject_type, subject_key)
   WHERE purpose = 'blog-companion' AND subject_key IS NOT NULL;
+
+-- 10c. Pending source-choice store (external-verification suggestion, round-7
+-- pivot) — additive. When the detector PROPOSES external verification on an
+-- auto turn, the turn PAUSES before synthesis and a pending choice row is
+-- written here. The user's approve/decline is a second POST (a resume) that
+-- resolves the row: approve → existing audited web pipeline; decline →
+-- site-first synthesis. Turn-scoped + consumed-on-resume — NOT a durable
+-- preference, NOT memory, NOT chat content.
+--
+-- Why a SEPARATE table (not a chat_messages row): rowToMistral rebuilds
+-- Mistral history from chat_messages; a suggestion stored as an assistant
+-- chat_messages row would be re-fed to the model next turn as a real
+-- assistant answer. Keeping it in its own table structurally guarantees the
+-- suggestion never enters Mistral's context (no fragile rowToMistral skip).
+-- The suggestion is a UI artifact, not a real assistant message.
+--
+-- Service-role only (like chat_messages/chat_memories); NO public RLS
+-- policies. Never read by saveMemory/recallMemories/durable context; never
+-- written to chat_memories. A background sweep can delete resolved rows
+-- (resolved_at IS NOT NULL).
+CREATE TABLE IF NOT EXISTS public.pending_source_choices (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id uuid NOT NULL REFERENCES public.chat_threads(id) ON DELETE CASCADE,
+  user_message_id uuid NOT NULL REFERENCES public.chat_messages(id) ON DELETE CASCADE,
+  reason text NOT NULL,
+  subject text,
+  message_text text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  resolved_at timestamptz,
+  choice text
+);
+
+-- One unresolved pending choice per thread at a time (the active turn).
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_pending_source_choices_unresolved
+  ON public.pending_source_choices (thread_id) WHERE resolved_at IS NULL;
+
+ALTER TABLE public.pending_source_choices ENABLE ROW LEVEL SECURITY;
