@@ -13,12 +13,20 @@ vi.mock("@/lib/chat/models", () => ({
     large: "mistral-large-latest",
   },
 }))
+// post-read imports @/lib/db/posts (getPosts/getPublishedPostBySlug); only the
+// pure detectPostReviewIntent is used here, so stub the DB module to keep this a
+// routing-only test (no @/lib/supabase/server or next/headers in the graph).
+vi.mock("@/lib/db/posts", () => ({
+  getPosts: vi.fn(),
+  getPublishedPostBySlug: vi.fn(),
+}))
 
 import {
   classifyWebNeed,
   parseWebDecision,
   decideWebEnabled,
 } from "@/lib/chat/web-trigger"
+import { detectPostReviewIntent } from "@/lib/chat/post-read"
 
 describe("classifyWebNeed (pure heuristic)", () => {
   it("greetings → no-search band", () => {
@@ -175,6 +183,20 @@ describe("decideWebEnabled — external-info frame routing (round 3)", () => {
     expect(r.via).toBe("mistral-small")
     expect(r.webEnabled).toBe(false)
   })
+
+  it("a borderline external-info frame never auto-searches — the classifier decides (advice case)", async () => {
+    // "where do you go from " matches the EXTERNAL_INFO_FRAME → borderline → the
+    // mistral-small classifier. The classifier may legitimately return no-search
+    // for an advice follow-up ("where do you go from a breakup?"); the invariant
+    // under test is that a frame match ALONE never produces search — only the
+    // classifier can. Pins the advisor round-4 Q1 ruling: a frame lifts to
+    // borderline, never directly to search.
+    mistralMock.mistralTurn.mockResolvedValue({ content: "no-search", tool_calls: [] })
+    const r = await decideWebEnabled("where do you go from a breakup?", [])
+    expect(r.via).toBe("mistral-small")
+    expect(r.decision).toBe("no-search")
+    expect(r.webEnabled).toBe(false)
+  })
 })
 
 describe("parseWebDecision", () => {
@@ -256,5 +278,75 @@ describe("decideWebEnabled — factual-frame borderline routing (round 2)", () =
     const r = await decideWebEnabled("what is a mixture of experts?", [])
     expect(r.via).toBe("mistral-small")
     expect(r.webEnabled).toBe(false)
+  })
+})
+
+describe("read-post × web-trigger — web-wins routing (round 4)", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  // Pins the advisor round-4 web-wins policy. The route gate (route.ts:221-224)
+  // is:
+  //   let postUnderDiscussion = null
+  //   if (!webTurn && !nopost && detectPostReviewIntent(message))
+  //     postUnderDiscussion = await loadNewestPostForPrompt()
+  // i.e. the newest-post auto-inject fires ONLY on an ordinary NON-WEB turn.
+  // When the classifier selects search, webTurn=true, so the gate is false and
+  // the auto-inject is SUPPRESSED; read_post remains a model-invoked fallback
+  // (always in CHAT_TOOLS) for any specific/older post. The combined phrasing
+  // "Recommend me a book like my new blog post" matches BOTH systems:
+  //   - "recommend " is an EXTERNAL_INFO_FRAME → borderline → classifier.
+  //   - "my new blog post" matches detectPostReviewIntent.
+  // Note: "my blog" is a NO_TERM, but "my new blog post" does NOT contain
+  // "my blog" (the word "new" sits between them), so site-internal suppression
+  // does NOT fire and the turn reaches the classifier. These tests assert the
+  // three constituent facts the gate composes plus a local mirror of the gate.
+
+  it("web-wins: classifier→search suppresses the newest-post auto-inject; read_post stays a fallback", async () => {
+    const msg = "Recommend me a book like my new blog post"
+    // (a) reaches the classifier — borderline, not site-suppressed.
+    expect(classifyWebNeed(msg).band).toBe("borderline")
+    // (b) ALSO matches the post-review intent (without web-wins it would inject).
+    expect(detectPostReviewIntent(msg)).toBe(true)
+    // (c) the classifier can route it to search → webTurn=true.
+    mistralMock.mistralTurn.mockResolvedValue({ content: "search", tool_calls: [] })
+    const r = await decideWebEnabled(msg, [])
+    expect(r.webEnabled).toBe(true)
+    expect(r.decision).toBe("search")
+    expect(r.via).toBe("mistral-small")
+    // Gate mirror (route.ts:221-224): auto-inject fires only on a non-web turn.
+    const webTurn = r.webEnabled
+    const nopost = false
+    const wouldAutoInject = !webTurn && !nopost && detectPostReviewIntent(msg)
+    expect(wouldAutoInject).toBe(false)
+  })
+
+  it("post-wins: classifier→no-search keeps the auto-inject firing (the read-post path)", async () => {
+    // The complement: when the classifier says no-search, webTurn=false and the
+    // gate is true → the newest-post auto-inject fires. This is the path
+    // read-post shipped for; web-wins only suppresses it when the classifier
+    // actually routes to search.
+    const msg = "Recommend me a book like my new blog post"
+    expect(detectPostReviewIntent(msg)).toBe(true)
+    mistralMock.mistralTurn.mockResolvedValue({ content: "no-search", tool_calls: [] })
+    const r = await decideWebEnabled(msg, [])
+    expect(r.webEnabled).toBe(false)
+    const webTurn = r.webEnabled
+    const nopost = false
+    const wouldAutoInject = !webTurn && !nopost && detectPostReviewIntent(msg)
+    expect(wouldAutoInject).toBe(true)
+  })
+
+  it("/nopost opts the auto-inject out independent of the web decision (the gate also checks !nopost)", async () => {
+    // The third gate term: /nopost suppresses the auto-inject even on a non-web
+    // turn. Pins that the opt-out is independent of the web decision.
+    const msg = "Recommend me a book like my new blog post"
+    expect(detectPostReviewIntent(msg)).toBe(true)
+    mistralMock.mistralTurn.mockResolvedValue({ content: "no-search", tool_calls: [] })
+    const r = await decideWebEnabled(msg, [])
+    expect(r.webEnabled).toBe(false)
+    const webTurn = r.webEnabled
+    const nopost = true // the route strips /nopost and sets this flag
+    const wouldAutoInject = !webTurn && !nopost && detectPostReviewIntent(msg)
+    expect(wouldAutoInject).toBe(false)
   })
 })
