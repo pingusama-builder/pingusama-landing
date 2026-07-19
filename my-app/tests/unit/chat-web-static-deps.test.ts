@@ -14,6 +14,14 @@ const files: Record<string, string> = {
   postRead: fileURLToPath(new URL("../../lib/chat/post-read.ts", import.meta.url)),
 }
 
+// lib/db/chat.ts is NOT in the shared `files` map above — it is the data layer
+// and legitimately imports the service client, so it must not be swept by the
+// "no service-client import" loop. Read it via a dedicated path here.
+const chatDbPath = fileURLToPath(new URL("../../lib/db/chat.ts", import.meta.url))
+function chatDbSrc(): string {
+  return readFileSync(chatDbPath, "utf8")
+}
+
 function src(name: keyof typeof files): string {
   return readFileSync(files[name], "utf8")
 }
@@ -299,5 +307,77 @@ describe("debug-log MD renderer — pure, no persistence, no raw HTML (round 3)"
     expect(code).not.toMatch(/\bsaveMemory\s*\(/)
     expect(code).not.toMatch(/\binferMemoriesFromThread\s*\(/)
     expect(code).not.toMatch(/dangerouslySetInnerHTML/)
+  })
+})
+
+describe("pending source-choice — audit-boundary (round-7 pivot, security)", () => {
+  // The pending choice lives in its OWN table so the suggestion never re-enters
+  // Mistral history (rowToMistral rebuilds from chat_messages only) and never
+  // becomes durable memory. These pin that boundary at the source level.
+
+  // Scope a function body: from its declaration to the next top-level exported
+  // declaration (or EOF). chat.ts functions are all `export async function …`.
+  function bodyOf(code: string, fn: string): string {
+    const startIdx = code.indexOf(`function ${fn}`)
+    expect(startIdx, `${fn} must be declared`).toBeGreaterThan(-1)
+    const rest = code.slice(startIdx)
+    const next = rest.search(/\nexport\s+(async\s+)?function\s/)
+    return next === -1 ? rest : rest.slice(0, next)
+  }
+
+  it("the memory functions never read the pending-choice table", () => {
+    const code = stripComments(chatDbSrc())
+    for (const fn of ["recallMemories", "saveMemory", "upsertSiteAwareness", "getSiteAwareness", "updateMemory", "deleteMemory"]) {
+      const body = bodyOf(code, fn)
+      expect(body, `${fn} must not touch pending_source_choices`).not.toMatch(/pending_source_choices/)
+    }
+  })
+
+  it("the pending-choice functions never touch chat_memories (the suggestion is never durable memory)", () => {
+    const code = stripComments(chatDbSrc())
+    for (const fn of ["insertPendingChoice", "loadPendingChoice", "resolvePendingChoice"]) {
+      const body = bodyOf(code, fn)
+      expect(body, `${fn} must not write to chat_memories`).not.toMatch(/chat_memories/)
+      expect(body, `${fn} must not call saveMemory`).not.toMatch(/\bsaveMemory\s*\(/)
+    }
+  })
+
+  it("rowToMistral never maps the pending choice / suggestion (it is not a chat_messages row)", () => {
+    const code = stripComments(src("messages"))
+    // rowToMistral rebuilds Mistral history from chat_messages. The suggestion
+    // lives in pending_source_choices (a separate table) and must never be
+    // re-fed to the model as an assistant answer.
+    expect(code).not.toMatch(/pending_source_choices/i)
+    expect(code).not.toMatch(/pendingChoice/i)
+    expect(code).not.toMatch(/suggestion/i)
+  })
+
+  it("the route never persists the pending choice to memory and writes it only via insertPendingChoice", () => {
+    const code = stripComments(src("route"))
+    expect(code).not.toMatch(/\bsaveMemory\s*\(/)
+    expect(code).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
+    // The pending choice is written ONLY through the dedicated turn-scoped
+    // table (insertPendingChoice), never into a chat_messages row content.
+    expect(code).toMatch(/insertPendingChoice\s*\(/)
+    expect(code).toMatch(/loadPendingChoice\s*\(/)
+    expect(code).toMatch(/resolvePendingChoice\s*\(/)
+  })
+
+  it("the detector (web-trigger) only PROPOSES — no writes, no service client, no site-write / memory / pending persist", () => {
+    const raw = src("webTrigger")
+    const code = stripComments(raw)
+    // The detector imports only the mistral client + a TYPE from the db layer
+    // (ChatMessageRow — erased at runtime). It must not import the service
+    // client, must not write, must not call the pending/memory persisters.
+    expect(raw).not.toMatch(/from\s+["']@\/lib\/supabase\/server["']/)
+    for (const re of FORBIDDEN_IMPORTS) {
+      expect(raw, `web-trigger must not match ${re}`).not.toMatch(re)
+    }
+    for (const id of FORBIDDEN_IDENTIFIERS) {
+      expect(code, `web-trigger must not reference "${id}"`).not.toContain(id)
+    }
+    expect(code).not.toMatch(/\bsaveMemory\s*\(/)
+    expect(code).not.toMatch(/insertPendingChoice\s*\(/)
+    expect(code).not.toMatch(/appendMessage\s*\(/)
   })
 })
