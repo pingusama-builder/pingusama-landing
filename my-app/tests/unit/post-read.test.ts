@@ -100,7 +100,7 @@ describe("readPostForTool", () => {
   it("returns the newest published post when slug is omitted", async () => {
     postsMock.getPosts.mockResolvedValue([makePost()])
     const out = await readPostForTool({})
-    expect(postsMock.getPosts).toHaveBeenCalledWith({ status: "published", limit: 1 })
+    expect(postsMock.getPosts).toHaveBeenCalledWith({ status: "published", limit: 50 })
     expect(out).toContain("Introducing the Gaming Experience Index (GEI)")
     expect(out).toContain("Body text here.")
   })
@@ -124,8 +124,30 @@ describe("readPostForTool", () => {
   it("trims whitespace slug and treats blank slug as 'newest'", async () => {
     postsMock.getPosts.mockResolvedValue([makePost()])
     const out = await readPostForTool({ slug: "   " })
-    expect(postsMock.getPosts).toHaveBeenCalledWith({ status: "published", limit: 1 })
+    expect(postsMock.getPosts).toHaveBeenCalledWith({ status: "published", limit: 50 })
     expect(out).toContain("Introducing the Gaming Experience Index (GEI)")
+  })
+  it("picks the most recently PUBLISHED post, not the most recently created", async () => {
+    // created_at order ≠ published_at order: an old draft published today vs a
+    // newer draft published last week. "My new post" must mean the one published
+    // today. getPosts returns created_at DESC here (newer-created first), so a
+    // naive "take the first row" would pick the wrong post.
+    const olderCreatedNewerPublished = makePost({
+      slug: "published-today",
+      title: "Published Today",
+      published_at: "2026-07-19T00:00:00Z",
+    })
+    const newerCreatedOlderPublished = makePost({
+      slug: "published-last-week",
+      title: "Published Last Week",
+      published_at: "2026-07-12T00:00:00Z",
+    })
+    // Simulate getPosts' created_at DESC ordering: newer-created first.
+    postsMock.getPosts.mockResolvedValue([newerCreatedOlderPublished, olderCreatedNewerPublished])
+    const out = await readPostForTool({})
+    expect(out).toContain("Published Today")
+    expect(out).toContain("Slug: published-today")
+    expect(out).not.toContain("Published Last Week")
   })
 })
 
@@ -144,5 +166,21 @@ describe("loadNewestPostForPrompt", () => {
   it("returns null (fail-closed) when the fetch throws", async () => {
     postsMock.getPosts.mockRejectedValue(new Error("supabase down"))
     expect(await loadNewestPostForPrompt()).toBeNull()
+  })
+  it("picks the most recently PUBLISHED post for the auto-inject", async () => {
+    const olderCreatedNewerPublished = makePost({
+      slug: "published-today",
+      title: "Published Today",
+      published_at: "2026-07-19T00:00:00Z",
+    })
+    const newerCreatedOlderPublished = makePost({
+      slug: "published-last-week",
+      title: "Published Last Week",
+      published_at: "2026-07-12T00:00:00Z",
+    })
+    postsMock.getPosts.mockResolvedValue([newerCreatedOlderPublished, olderCreatedNewerPublished])
+    const out = await loadNewestPostForPrompt()
+    expect(out).toContain("Published Today")
+    expect(out).not.toContain("Published Last Week")
   })
 })

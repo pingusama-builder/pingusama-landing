@@ -49,6 +49,28 @@ export function formatPostForPrompt(post: Post): string {
   return `**${post.title}**${cat}${date}${tags}\nSlug: ${post.slug}\n\n${capBody(post.content_markdown ?? "")}`
 }
 
+// ── Newest-post selection ──────────────────────────────────────────────────
+// getPosts orders by created_at DESC. "Newest post" to a reader means most
+// recently *published*, and a draft created long ago can be published today
+// while a newer draft is also published — created_at order ≠ published_at
+// order. We fetch a small pool and pick the max published_at client-side so
+// the auto-inject / read_post(no-slug) ground the model in the post the user
+// actually means by "my new post". (published_at is an ISO string; string
+// compare sorts chronologically. Nulls sort last — an unpublished row should
+// never appear here since we filter status:"published", but defend anyway.)
+const NEWEST_POOL = 50
+
+async function newestPublishedPost(): Promise<Post | null> {
+  const posts = await getPosts({ status: "published", limit: NEWEST_POOL })
+  if (!posts.length) return null
+  return posts.reduce<Post | null>((best, p) => {
+    if (!best) return p
+    const bp = best.published_at ?? ""
+    const pp = p.published_at ?? ""
+    return pp > bp ? p : best
+  }, null)
+}
+
 // ── Tool fetch (read-only) ─────────────────────────────────────────────────
 /** Read a post for the read_post tool. slug omitted/blank → newest published. */
 export async function readPostForTool(opts: { slug?: string }): Promise<string> {
@@ -58,7 +80,7 @@ export async function readPostForTool(opts: { slug?: string }): Promise<string> 
     if (!post) return `No published post found for slug "${slug}".`
     return formatPostForPrompt(post)
   }
-  const [newest] = await getPosts({ status: "published", limit: 1 })
+  const newest = await newestPublishedPost()
   if (!newest) return "No published posts yet."
   return formatPostForPrompt(newest)
 }
@@ -69,7 +91,7 @@ export async function readPostForTool(opts: { slug?: string }): Promise<string> 
  *  read_post tool remains the fallback). */
 export async function loadNewestPostForPrompt(): Promise<string | null> {
   try {
-    const [newest] = await getPosts({ status: "published", limit: 1 })
+    const newest = await newestPublishedPost()
     if (!newest) return null
     return formatPostForPrompt(newest)
   } catch {
