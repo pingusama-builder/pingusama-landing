@@ -646,6 +646,26 @@ export async function executeToolCall(
             memoryWrite: false,
           }
         }
+        // Stay/decline + /noweb guard (round-7 pivot step 8). web_search is a
+        // model-invoked follow-up that calls searchWeb directly, INDEPENDENT
+        // of the pre-turn pipeline. webMode="off" (a stay-decline resume OR an
+        // explicit /noweb) gates the PRE-TURN pipeline but does not reach the
+        // tool surface — CHAT_TOOLS always lists web_search and the tool-call
+        // loop runs it unconditionally. The only thing steering the model off
+        // web_search on a stay turn was the [SCOPE] STAY_SCOPE_LABEL prompt
+        // clause, which is PROBABILISTIC on non-reasoning Mistral (doctrine:
+        // non-reasoning-model-output-guards). webTouched is false exactly when
+        // no web is authorized this turn (the pre-turn pipeline did not run),
+        // so it is the deterministic input-side gate: block web_search unless
+        // web already ran this turn. Prevents a real Tavily call AFTER the
+        // user explicitly chose "Stay on this site" (product-contract item 5).
+        if (!ctx.webTouched) {
+          return {
+            content:
+              "Web search is not available this turn — the user kept the answer on this site. Answer from site context and your existing knowledge; say so if the question turns on current public information.",
+            memoryWrite: false,
+          }
+        }
         if (ctx.webSearchCalls >= 1) {
           return {
             content: "Follow-up search cap reached (1/1). Answer from current evidence.",

@@ -458,6 +458,66 @@ describe("executeToolCall — web_search", () => {
     expect(res.content).toMatch(/non-empty query/i)
     expect(c.webSearchCalls).toBe(0)
   })
+
+  // ── Stay/decline + /noweb guard (round-7 pivot step 8) ───────────────────
+  // web_search is a model-invoked follow-up that calls searchWeb directly,
+  // INDEPENDENT of the pre-turn pipeline. The pre-turn pipeline is gated off
+  // by webMode="off" (a stay-decline resume OR an explicit /noweb), but that
+  // gate does not reach the tool surface — CHAT_TOOLS always lists web_search
+  // and the tool-call loop runs it unconditionally. The only thing steering
+  // the model off web_search on a stay turn was the [SCOPE] STAY_SCOPE_LABEL
+  // prompt clause, which is PROBABILISTIC on non-reasoning Mistral (doctrine:
+  // non-reasoning-model-output-guards — output-side prompt clauses do not
+  // hold; only input-side/post-output mechanical guards hold). So a model-
+  // emitted web_search on a stay/noweb turn would fire a real Tavily call
+  // AFTER the user explicitly chose "Stay on this site" — a violation of
+  // product-contract item 5. webTouched is false exactly when no web is
+  // authorized this turn (the pre-turn pipeline did not run), so it is the
+  // deterministic input-side gate: block web_search unless web already ran.
+  it("refuses web_search when web is not authorized this turn (webTouched=false) — no network call", async () => {
+    const c: ToolContext = {
+      sourceThreadId: "t1",
+      memoryWrites: 0,
+      maxMemoryWrites: 3,
+      webTouched: false,
+      webSearchCalls: 0,
+      webResearch: null,
+    }
+    const res = await executeToolCall(
+      "web_search",
+      JSON.stringify({ query: "Spider-Man: Brand New Day prereqs", subject: "Spider-Man: Brand New Day" }),
+      c
+    )
+    expect(res.memoryWrite).toBe(false)
+    expect(res.content).toMatch(/not (enabled|authorized)|stay on this site|not available this turn/i)
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+    expect(c.webSearchCalls).toBe(0)
+    expect(c.webTouched).toBe(false)
+  })
+
+  it("still allows web_search when web is authorized this turn (webTouched=true)", async () => {
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily",
+      query: "q",
+      searchedAt: "x",
+      sources: [{ title: "T", url: "https://e.com/x", domain: "e.com", snippet: "s" }],
+    })
+    tavilyMock.rankSources.mockImplementation((s: unknown[]) => s)
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[EVIDENCE] …")
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    const c: ToolContext = {
+      sourceThreadId: "t1",
+      memoryWrites: 0,
+      maxMemoryWrites: 3,
+      webTouched: true,
+      webSearchCalls: 0,
+      webResearch: null,
+    }
+    const res = await executeToolCall("web_search", JSON.stringify({ query: "q" }), c)
+    expect(res.content).toContain("[EVIDENCE]")
+    expect(tavilyMock.searchWeb).toHaveBeenCalled()
+    expect(c.webSearchCalls).toBe(1)
+  })
 })
 
 describe("executeToolCall — web→memory gate", () => {

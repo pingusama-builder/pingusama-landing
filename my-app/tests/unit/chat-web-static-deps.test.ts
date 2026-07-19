@@ -118,6 +118,34 @@ describe("web_search + web-trigger — the new auto-search-decision surface", ()
     expect(code).not.toMatch(/saveMemory[\s\S]{0,120}formatWebEvidenceGuarded/)
   })
 
+  it("tools web_search is gated on webTouched — no follow-up search on a stay/noweb turn (round-7 pivot step 8)", () => {
+    const code = stripComments(src("tools"))
+    // web_search calls searchWeb directly, independent of the pre-turn
+    // pipeline. webMode="off" (stay-decline resume OR /noweb) gates the
+    // pre-turn pipeline but not the tool surface; the [SCOPE] stay label is
+    // a probabilistic prompt clause, not a mechanical guard. webTouched is
+    // false exactly when no web is authorized this turn, so the web_search
+    // case MUST mechanically refuse before calling searchWeb when
+    // webTouched is false — otherwise a model-emitted follow-up would fire
+    // a real Tavily call after the user explicitly chose "Stay on this
+    // site" (product-contract item 5). Pin: the web_search case references
+    // webTouched and returns BEFORE the searchWeb call.
+    expect(code).toMatch(/case\s+["']web_search["']/)
+    expect(code).toMatch(/if\s*\(\s*!ctx\.webTouched\s*\)/)
+    // The guard must precede the searchWeb call within the web_search case
+    // (no network call on a stay/noweb turn). Slice the web_search case from
+    // its `case "web_search":` up to the next `case "` to bound the check.
+    const caseIdx = code.indexOf('case "web_search"')
+    expect(caseIdx, "web_search case not found").toBeGreaterThan(-1)
+    const nextCaseIdx = code.indexOf('case "', caseIdx + 1)
+    const block = nextCaseIdx > -1 ? code.slice(caseIdx, nextCaseIdx) : code.slice(caseIdx)
+    const guardIdx = block.indexOf("!ctx.webTouched")
+    const searchIdx = block.indexOf("searchWeb(")
+    expect(guardIdx, "webTouched guard missing in web_search case").toBeGreaterThan(-1)
+    expect(searchIdx, "searchWeb call missing in web_search case").toBeGreaterThan(-1)
+    expect(guardIdx, "webTouched guard must come BEFORE searchWeb call").toBeLessThan(searchIdx)
+  })
+
   it("tools commits a web-sourced memory only through the gate (source: \"web\")", () => {
     const code = stripComments(src("tools"))
     // A web→memory save must pass gateWebSave (mechanical precheck + reasoning

@@ -1282,6 +1282,67 @@ describe("POST /api/chat — external-verification resume (approve / decline / r
     const res = await POST(makeRequest({ threadId: "t-resume", sourceChoice: "maybe" as any, pendingChoiceId: "p1" }))
     expect(res.status).toBe(400)
   })
+
+  // ── Stay/decline + /noweb tool-surface guard (round-7 pivot step 8) ───────
+  // webMode="off" (a stay-decline resume) gates the PRE-TURN pipeline but not
+  // the tool surface: CHAT_TOOLS always lists web_search and the tool-call
+  // loop runs it unconditionally. The [SCOPE] stay label is a probabilistic
+  // prompt clause, not a mechanical guard. So if the model emits web_search
+  // on a stay turn, the tool-layer webTouched gate must block it — no real
+  // Tavily call after the user explicitly chose "Stay on this site"
+  // (product-contract item 5).
+  it("decline (stay) + model emits web_search → tool guard blocks it (no Tavily call)", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    chatMock.loadPendingChoice.mockResolvedValueOnce(pendingRow())
+    chatMock.resolvePendingChoice.mockResolvedValueOnce(pendingRow({ resolved_at: "x", choice: "stay" }))
+    chatMock.getThread.mockResolvedValue({
+      id: "t-resume", title: "Kubernetes", created_at: "2026-07-19", updated_at: "2026-07-19",
+      model_preference: "auto", one_turn_override: null, purpose: "chat", subject_type: null, subject_key: null,
+    })
+    chatMock.getMessages.mockResolvedValue([
+      { id: "m-user", thread_id: "t-resume", role: "user", content: "which are the prerequisites for Kubernetes?", tool_calls: null, created_at: "2026-07-19" },
+    ])
+    let call = 0
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      call += 1
+      if (call === 1) {
+        // The model ignores the [SCOPE] stay label and emits a web_search
+        // follow-up anyway (the probabilistic prompt clause failed to hold).
+        return {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              id: "call_ws",
+              type: "function",
+              function: {
+                name: "web_search",
+                arguments: JSON.stringify({ query: "Kubernetes prerequisites", subject: "Kubernetes" }),
+              },
+            },
+          ],
+          finish_reason: "tool_calls",
+        }
+      }
+      opts.onContent?.("site-scoped answer")
+      return { role: "assistant", content: "site-scoped answer", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ threadId: "t-resume", sourceChoice: "stay", pendingChoiceId: "p1" }))
+    const events = await drainSSE(res)
+
+    // The web_search tool was invoked (running + done events) ...
+    const toolEvents = events.filter((e) => e.type === "tool")
+    expect(toolEvents.some((e) => e.name === "web_search" && e.status === "running")).toBe(true)
+    const wsDone = toolEvents.find((e) => e.name === "web_search" && e.status === "done")
+    expect(wsDone, "web_search done event expected").toBeTruthy()
+    // ... but the webTouched guard refused it (no real Tavily call) and the
+    // tool result carries the stay/no-web guard message.
+    expect(String(wsDone!.result)).toMatch(/not available this turn|stay on this site|not (enabled|authorized)/i)
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+    expect(events.some((e) => e.type === "done")).toBe(true)
+  })
 })
 
 describe("POST /api/chat — debug-log capture (reasoning + telemetry)", () => {
