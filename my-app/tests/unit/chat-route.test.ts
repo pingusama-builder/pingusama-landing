@@ -15,6 +15,9 @@ const chatMock = vi.hoisted(() => ({
   recallMemories: vi.fn(),
   saveMemory: vi.fn(),
   consumeOneTurnOverride: vi.fn(),
+  insertPendingChoice: vi.fn(),
+  loadPendingChoice: vi.fn(),
+  resolvePendingChoice: vi.fn(),
 }))
 const modelsMock = vi.hoisted(() => ({
   classifyDifficultyHybrid: vi.fn(),
@@ -49,7 +52,7 @@ const rewriteMock = vi.hoisted(() => ({
   rewriteSearchQueries: vi.fn(),
 }))
 const webTriggerMock = vi.hoisted(() => ({
-  decideWebEnabled: vi.fn(),
+  detectExternalVerificationNeed: vi.fn(),
 }))
 const postReadMock = vi.hoisted(() => ({
   detectPostReviewIntent: vi.fn(),
@@ -71,6 +74,9 @@ vi.mock("@/lib/db/chat", async () => {
     recallMemories: chatMock.recallMemories,
     saveMemory: chatMock.saveMemory,
     consumeOneTurnOverride: chatMock.consumeOneTurnOverride,
+    insertPendingChoice: chatMock.insertPendingChoice,
+    loadPendingChoice: chatMock.loadPendingChoice,
+    resolvePendingChoice: chatMock.resolvePendingChoice,
   }
 })
 vi.mock("@/lib/chat/awareness", () => ({
@@ -96,7 +102,7 @@ vi.mock("@/lib/chat/query-rewrite", () => ({
   rewriteSearchQueries: rewriteMock.rewriteSearchQueries,
 }))
 vi.mock("@/lib/chat/web-trigger", () => ({
-  decideWebEnabled: webTriggerMock.decideWebEnabled,
+  detectExternalVerificationNeed: webTriggerMock.detectExternalVerificationNeed,
 }))
 vi.mock("@/lib/chat/post-read", () => ({
   detectPostReviewIntent: postReadMock.detectPostReviewIntent,
@@ -194,10 +200,26 @@ function setupOk() {
   // Default passthrough: rewrite returns [raw message], no subject. Existing
   // tests assert searchWeb receives the raw message; this preserves that.
   rewriteMock.rewriteSearchQueries.mockImplementation(async (msg: string) => ({ queries: [msg], subject: null }))
-  // Default: the needs-web? classifier says no-search (auto path). Tests that
-  // want web on the auto path override this; tests using webMode:"on" or the
-  // /web prefix bypass the classifier entirely.
-  webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: false, decision: "no-search", via: "heuristic" })
+  // Default: the external-verification detector does NOT propose (auto path
+  // falls through to site-first synthesis). Tests that want the suggestion
+  // short-circuit override this; tests using webMode:"on" / /web / /noweb
+  // bypass detection entirely (it only runs on the auto path with a key).
+  // NOTE: detectExternalVerificationNeed is SYNCHRONOUS in the real module
+  // (returns VerificationSuggestion, not a Promise) — use mockReturnValue.
+  webTriggerMock.detectExternalVerificationNeed.mockReturnValue({ suggested: false })
+  chatMock.insertPendingChoice.mockResolvedValue({
+    id: "p1",
+    thread_id: "t-new",
+    user_message_id: "m1",
+    reason: "external-prerequisites",
+    subject: "Kubernetes",
+    message_text: "x",
+    created_at: "2026-07-19T00:00:00Z",
+    resolved_at: null,
+    choice: null,
+  })
+  chatMock.loadPendingChoice.mockResolvedValue(null)
+  chatMock.resolvePendingChoice.mockResolvedValue(null)
   postReadMock.detectPostReviewIntent.mockReturnValue(false)
   postReadMock.loadNewestPostForPrompt.mockResolvedValue(null)
 }
@@ -981,73 +1003,106 @@ describe("POST /api/chat — web synthesis tier + effort + budget", () => {
     ).toBe(true)
   })
 })
-describe("POST /api/chat — auto web-trigger", () => {
+describe("POST /api/chat — auto web-trigger (round-7 pivot: suggest-or-site-first, never auto-search)", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     delete process.env.TAVILY_API_KEY
   })
 
-  it("runs the classifier on auto (webMode omitted) and searches when it says search", async () => {
+  it("auto + detector PROPOSES → returns {pendingChoice} JSON, NO synthesis, NO search, NO assistant row", async () => {
     setupOk()
     process.env.TAVILY_API_KEY = "tvly-test"
-    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: true, decision: "search", via: "heuristic" })
-    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["Dan Koe AI"], subject: "Dan Koe" })
-    tavilyMock.searchWeb.mockResolvedValue({
-      provider: "tavily",
-      query: "Dan Koe AI",
-      searchedAt: "x",
-      sources: [{ title: "T", url: "https://e.com", domain: "e.com", snippet: "Dan Koe AI", score: 0.9 }],
+    webTriggerMock.detectExternalVerificationNeed.mockReturnValue({
+      suggested: true,
+      reason: "external-prerequisites",
+      subject: "Kubernetes",
     })
-    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[EVIDENCE]")
-    tavilyMock.subjectInSources.mockReturnValue(true)
-    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
-      opts.onContent?.("answer")
-      return { role: "assistant", content: "answer", tool_calls: [], finish_reason: "stop" }
+    chatMock.appendMessage.mockResolvedValueOnce({
+      id: "m-user",
+      thread_id: "t-new",
+      role: "user",
+      content: "which are the prerequisites for Kubernetes?",
+      tool_calls: null,
+      created_at: "2026-07-19",
+    })
+    chatMock.insertPendingChoice.mockResolvedValueOnce({
+      id: "p1",
+      thread_id: "t-new",
+      user_message_id: "m-user",
+      reason: "external-prerequisites",
+      subject: "Kubernetes",
+      message_text: "which are the prerequisites for Kubernetes?",
+      created_at: "2026-07-19T00:00:00Z",
+      resolved_at: null,
+      choice: null,
     })
 
-    const res = await POST(makeRequest({ message: "what has Dan Koe said about AI in 2025?" }))
-    const events = await drainSSE(res)
-    expect(webTriggerMock.decideWebEnabled).toHaveBeenCalledTimes(1)
-    expect(tavilyMock.searchWeb).toHaveBeenCalled()
-    expect(events.some((e) => e.type === "done")).toBe(true)
+    const res = await POST(makeRequest({ message: "which are the prerequisites for Kubernetes?" }))
+
+    // Not an SSE stream — a plain JSON response carrying the pending choice.
+    expect(res.headers.get("Content-Type") ?? "").toContain("application/json")
+    const json = await res.json()
+    expect(json.pendingChoice).toEqual({
+      id: "p1",
+      reason: "external-prerequisites",
+      subject: "Kubernetes",
+    })
+
+    // Pause-before-synthesize: only the user row was appended (+ 1 pending
+    // insert). No assistant row, no model call, no search.
+    expect(chatMock.appendMessage).toHaveBeenCalledTimes(1)
+    expect(chatMock.appendMessage.mock.calls[0][0].role).toBe("user")
+    expect(chatMock.insertPendingChoice).toHaveBeenCalledTimes(1)
+    expect(chatMock.insertPendingChoice.mock.calls[0][0]).toMatchObject({
+      threadId: "t-new",
+      userMessageId: "m-user",
+      reason: "external-prerequisites",
+      subject: "Kubernetes",
+      messageText: "which are the prerequisites for Kubernetes?",
+    })
+    expect(mistralMock.mistralStream).not.toHaveBeenCalled()
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+    // The suggestion turn does NOT consume the one-turn override or run the
+    // hybrid classifier (no synthesis → no model resolution needed).
+    expect(chatMock.consumeOneTurnOverride).not.toHaveBeenCalled()
+    expect(modelsMock.classifyDifficultyHybrid).not.toHaveBeenCalled()
   })
 
-  it("does not search when the classifier says no-search", async () => {
+  it("auto + detector does NOT propose → site-first synthesis, NO search", async () => {
     setupOk()
     process.env.TAVILY_API_KEY = "tvly-test"
-    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: false, decision: "no-search", via: "heuristic" })
+    webTriggerMock.detectExternalVerificationNeed.mockReturnValue({ suggested: false })
     mistralMock.mistralStream.mockImplementation(async (opts: any) => {
-      opts.onContent?.("hi!")
-      return { role: "assistant", content: "hi!", tool_calls: [], finish_reason: "stop" }
+      opts.onContent?.("site-first answer")
+      return { role: "assistant", content: "site-first answer", tool_calls: [], finish_reason: "stop" }
     })
     const res = await POST(makeRequest({ message: "hi" }))
     await drainSSE(res)
-    expect(webTriggerMock.decideWebEnabled).toHaveBeenCalledTimes(1)
+    expect(webTriggerMock.detectExternalVerificationNeed).toHaveBeenCalledTimes(1)
+    expect(chatMock.insertPendingChoice).not.toHaveBeenCalled()
     expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+    expect(mistralMock.mistralStream).toHaveBeenCalled()
   })
 
-  it("/noweb forces off even on a fresh-factual message", async () => {
+  it("/noweb forces off → detection never runs, no search", async () => {
     setupOk()
     process.env.TAVILY_API_KEY = "tvly-test"
-    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: true, decision: "search", via: "heuristic" })
     mistralMock.mistralStream.mockImplementation(async (opts: any) => {
       opts.onContent?.("ok")
       return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
     })
     const res = await POST(makeRequest({ message: "/noweb what has Dan Koe said about AI in 2025?" }))
     await drainSSE(res)
-    // /noweb forces off → classifier must not run, no search.
-    expect(webTriggerMock.decideWebEnabled).not.toHaveBeenCalled()
+    expect(webTriggerMock.detectExternalVerificationNeed).not.toHaveBeenCalled()
     expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
     // Stored user message has the /noweb prefix stripped.
     const userAppend = chatMock.appendMessage.mock.calls.find((c) => c[0].role === "user")
     expect(userAppend?.[0].content).toBe("what has Dan Koe said about AI in 2025?")
   })
 
-  it("webMode:on forces search without the classifier", async () => {
+  it("webMode:on forces search without detection", async () => {
     setupOk()
     process.env.TAVILY_API_KEY = "tvly-test"
-    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: true, decision: "search", via: "heuristic" })
     rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["q"], subject: null })
     tavilyMock.searchWeb.mockResolvedValue({ provider: "tavily", query: "q", searchedAt: "x", sources: [] })
     tavilyMock.formatWebEvidenceGuarded.mockReturnValue("")
@@ -1057,22 +1112,174 @@ describe("POST /api/chat — auto web-trigger", () => {
     })
     const res = await POST(makeRequest({ message: "q", webMode: "on" }))
     await drainSSE(res)
-    expect(webTriggerMock.decideWebEnabled).not.toHaveBeenCalled()
+    expect(webTriggerMock.detectExternalVerificationNeed).not.toHaveBeenCalled()
     expect(tavilyMock.searchWeb).toHaveBeenCalled()
   })
 
-  it("webMode:off skips search even when the classifier would say search", async () => {
+  it("webMode:off skips detection and search", async () => {
     setupOk()
     process.env.TAVILY_API_KEY = "tvly-test"
-    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: true, decision: "search", via: "heuristic" })
     mistralMock.mistralStream.mockImplementation(async (opts: any) => {
       opts.onContent?.("a")
       return { role: "assistant", content: "a", tool_calls: [], finish_reason: "stop" }
     })
     const res = await POST(makeRequest({ message: "what has Dan Koe said about AI in 2025?", webMode: "off" }))
     await drainSSE(res)
-    expect(webTriggerMock.decideWebEnabled).not.toHaveBeenCalled()
+    expect(webTriggerMock.detectExternalVerificationNeed).not.toHaveBeenCalled()
     expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+  })
+
+  it("auto never searches even when the detector could fire and the key is missing (no proposal path runs search)", async () => {
+    setupOk()
+    // No TAVILY_API_KEY → the auto/detect branch is skipped entirely; even a
+    // proposing message synthesizes site-first rather than silently searching.
+    webTriggerMock.detectExternalVerificationNeed.mockReturnValue({ suggested: true })
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("site-first")
+      return { role: "assistant", content: "site-first", tool_calls: [], finish_reason: "stop" }
+    })
+    const res = await POST(makeRequest({ message: "which are the prerequisites for Kubernetes?" }))
+    await drainSSE(res)
+    expect(webTriggerMock.detectExternalVerificationNeed).not.toHaveBeenCalled()
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+    expect(chatMock.insertPendingChoice).not.toHaveBeenCalled()
+    expect(mistralMock.mistralStream).toHaveBeenCalled()
+  })
+})
+
+describe("POST /api/chat — external-verification resume (approve / decline / replay)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    delete process.env.TAVILY_API_KEY
+  })
+
+  function pendingRow(over: Partial<{}> = {}) {
+    return {
+      id: "p1",
+      thread_id: "t-resume",
+      user_message_id: "m-user",
+      reason: "external-prerequisites",
+      subject: "Kubernetes",
+      message_text: "which are the prerequisites for Kubernetes?",
+      created_at: "2026-07-19T00:00:00Z",
+      resolved_at: null,
+      choice: null,
+      ...over,
+    }
+  }
+
+  it("approve → resolves the pending row, runs the audited web pipeline, does NOT re-append the user row", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    chatMock.loadPendingChoice.mockResolvedValueOnce(pendingRow())
+    chatMock.resolvePendingChoice.mockResolvedValueOnce(pendingRow({ resolved_at: "x", choice: "search" }))
+    chatMock.getThread.mockResolvedValue({
+      id: "t-resume",
+      title: "Kubernetes",
+      created_at: "2026-07-19",
+      updated_at: "2026-07-19",
+      model_preference: "auto",
+      one_turn_override: null,
+      purpose: "chat",
+      subject_type: null,
+      subject_key: null,
+    })
+    chatMock.getMessages.mockResolvedValue([
+      { id: "m-user", thread_id: "t-resume", role: "user", content: "which are the prerequisites for Kubernetes?", tool_calls: null, created_at: "2026-07-19" },
+    ])
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["Kubernetes prerequisites"], subject: "Kubernetes" })
+    tavilyMock.searchWeb.mockResolvedValue({
+      provider: "tavily", query: "Kubernetes prerequisites", searchedAt: "x",
+      sources: [{ title: "K8s docs", url: "https://k8s.io", domain: "k8s.io", snippet: "prereqs", score: 0.9 }],
+    })
+    tavilyMock.mergeWebResearch.mockImplementation((s: any[]) => s[0])
+    tavilyMock.rankSources.mockImplementation((s: any[]) => s)
+    tavilyMock.subjectInSources.mockReturnValue(true)
+    tavilyMock.extractPages.mockResolvedValue({ pages: [], failed: [] })
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("[EVIDENCE]")
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      opts.onContent?.("audited answer")
+      return { role: "assistant", content: "audited answer", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({
+      threadId: "t-resume",
+      sourceChoice: "search",
+      pendingChoiceId: "p1",
+    }))
+    const events = await drainSSE(res)
+
+    // Pending row loaded + resolved (consumed).
+    expect(chatMock.loadPendingChoice).toHaveBeenCalledWith("p1", "t-resume")
+    expect(chatMock.resolvePendingChoice).toHaveBeenCalledWith("p1", "search")
+    // The audited pipeline ran.
+    expect(tavilyMock.searchWeb).toHaveBeenCalledWith("Kubernetes prerequisites")
+    expect(events.some((e) => e.type === "done")).toBe(true)
+    // The user row was NOT re-appended (it exists from the suggestion turn).
+    // Only assistant rows are appended by the stream.
+    const userAppends = chatMock.appendMessage.mock.calls.filter((c: any[]) => c[0]?.role === "user")
+    expect(userAppends).toHaveLength(0)
+    // Detection does NOT re-run on resume.
+    expect(webTriggerMock.detectExternalVerificationNeed).not.toHaveBeenCalled()
+  })
+
+  it("decline → site-first synthesis + scope label, NO search, resolves the pending row", async () => {
+    setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
+    chatMock.loadPendingChoice.mockResolvedValueOnce(pendingRow())
+    chatMock.resolvePendingChoice.mockResolvedValueOnce(pendingRow({ resolved_at: "x", choice: "stay" }))
+    chatMock.getThread.mockResolvedValue({
+      id: "t-resume", title: "Kubernetes", created_at: "2026-07-19", updated_at: "2026-07-19",
+      model_preference: "auto", one_turn_override: null, purpose: "chat", subject_type: null, subject_key: null,
+    })
+    chatMock.getMessages.mockResolvedValue([
+      { id: "m-user", thread_id: "t-resume", role: "user", content: "which are the prerequisites for Kubernetes?", tool_calls: null, created_at: "2026-07-19" },
+    ])
+    let capturedSystem = ""
+    mistralMock.mistralStream.mockImplementation(async (opts: any) => {
+      capturedSystem = opts.messages[0].content
+      opts.onContent?.("site-scoped answer")
+      return { role: "assistant", content: "site-scoped answer", tool_calls: [], finish_reason: "stop" }
+    })
+
+    const res = await POST(makeRequest({ threadId: "t-resume", sourceChoice: "stay", pendingChoiceId: "p1" }))
+    await drainSSE(res)
+
+    expect(chatMock.resolvePendingChoice).toHaveBeenCalledWith("p1", "stay")
+    // No search on decline.
+    expect(tavilyMock.searchWeb).not.toHaveBeenCalled()
+    // Scope label injected into the system prompt.
+    expect(capturedSystem).toContain("[SCOPE]")
+    expect(capturedSystem).toContain("may not reflect current public information")
+  })
+
+  it("re-resume an already-resolved pending → 409, no synthesis", async () => {
+    setupOk()
+    chatMock.loadPendingChoice.mockResolvedValueOnce(pendingRow({ resolved_at: "2026-07-19T00:00:05Z", choice: "stay" }))
+    const res = await POST(makeRequest({ threadId: "t-resume", sourceChoice: "stay", pendingChoiceId: "p1" }))
+    expect(res.status).toBe(409)
+    expect(chatMock.resolvePendingChoice).not.toHaveBeenCalled()
+    expect(mistralMock.mistralStream).not.toHaveBeenCalled()
+  })
+
+  it("resume with a pending id that does not exist / wrong thread → 404", async () => {
+    setupOk()
+    chatMock.loadPendingChoice.mockResolvedValueOnce(null)
+    const res = await POST(makeRequest({ threadId: "t-resume", sourceChoice: "search", pendingChoiceId: "missing" }))
+    expect(res.status).toBe(404)
+    expect(mistralMock.mistralStream).not.toHaveBeenCalled()
+  })
+
+  it("resume without a threadId → 400", async () => {
+    setupOk()
+    const res = await POST(makeRequest({ sourceChoice: "search", pendingChoiceId: "p1" }))
+    expect(res.status).toBe(400)
+  })
+
+  it("resume with an invalid choice → 400", async () => {
+    setupOk()
+    const res = await POST(makeRequest({ threadId: "t-resume", sourceChoice: "maybe" as any, pendingChoiceId: "p1" }))
+    expect(res.status).toBe(400)
   })
 })
 
@@ -1294,16 +1501,21 @@ describe("POST /api/chat — newest-post auto-inject on 'new post' intent", () =
 
   it("does NOT inject on a web turn (even if intent matches)", async () => {
     setupOk()
+    process.env.TAVILY_API_KEY = "tvly-test"
     postReadMock.detectPostReviewIntent.mockReturnValue(true)
     postReadMock.loadNewestPostForPrompt.mockResolvedValue("body")
-    webTriggerMock.decideWebEnabled.mockResolvedValue({ webEnabled: true, decision: "search", via: "heuristic" })
+    rewriteMock.rewriteSearchQueries.mockResolvedValue({ queries: ["q"], subject: null })
+    tavilyMock.searchWeb.mockResolvedValue({ provider: "tavily", query: "q", searchedAt: "x", sources: [] })
+    tavilyMock.formatWebEvidenceGuarded.mockReturnValue("")
     let capturedSystem = ""
     mistralMock.mistralStream.mockImplementation(async (opts: any) => {
       capturedSystem = opts.messages[0].content
       opts.onContent?.("ok")
       return { role: "assistant", content: "ok", tool_calls: [], finish_reason: "stop" }
     })
-    await POST(makeRequest({ message: "review my new blog post" }))
+    // Under the round-7 pivot a web turn only happens via an explicit /web or
+    // webMode:"on" (the auto path never auto-searches). Force it explicitly.
+    await POST(makeRequest({ message: "review my new blog post", webMode: "on" }))
     expect(postReadMock.loadNewestPostForPrompt).not.toHaveBeenCalled()
     expect(capturedSystem).not.toContain("Post under discussion")
   })

@@ -5,10 +5,15 @@ import {
   appendMessage,
   getMessages,
   consumeOneTurnOverride,
+  insertPendingChoice,
+  loadPendingChoice,
+  resolvePendingChoice,
   type MessageRole,
   type DebugTelemetry,
   type WebResearchAudit,
   type WebResearchRun,
+  type SourceChoice,
+  type PendingSourceChoice,
 } from "@/lib/db/chat"
 import { recallMemories } from "@/lib/db/chat"
 import { buildSiteContext } from "@/lib/chat/awareness"
@@ -26,7 +31,7 @@ import {
   type ExtractedPage,
 } from "@/lib/chat/tavily-search"
 import { rewriteSearchQueries } from "@/lib/chat/query-rewrite"
-import { decideWebEnabled, type WebDecision } from "@/lib/chat/web-trigger"
+import { detectExternalVerificationNeed } from "@/lib/chat/web-trigger"
 import { detectPostReviewIntent, loadNewestPostForPrompt } from "@/lib/chat/post-read"
 import { snapshotWebResearch, buildPipelineAuditRun } from "@/lib/chat/tools"
 import {
@@ -65,6 +70,15 @@ const WEB_BUDGET_PAGES = 8000
 // to mistralStream; on abort the partial answer is persisted (graceful degrade).
 const SOFT_DEADLINE_MS = 55_000
 
+// Scope label appended to the system prompt on a declined (stay) resume turn,
+// so the model states the answer is from site/existing context and may not
+// reflect current public information. A prompt-side clause is probabilistic on
+// a non-reasoning model (non-reasoning-model-output-guards doctrine), but the
+// label is also surfaced to the user as a visible provenance badge — that
+// visible badge is the deterministic guard.
+const STAY_SCOPE_LABEL =
+  "Answering from this site and your existing context. This may not reflect current public information — say so if the question turns on it."
+
 // Snapshot the per-turn web-research audit for persistence on an assistant row
 // (capture-by-model-call-visibility: each assistant call sees the runs
 // accumulated so far). Deep-copies the runs so a later tool run pushed onto the
@@ -97,63 +111,189 @@ export async function POST(request: Request) {
     modelPreference?: ModelPreference
     webMode?: "auto" | "on" | "off"
     webEnabled?: boolean // legacy boolean alias → on/off
+    sourceChoice?: SourceChoice // resume: the user's approve/decline
+    pendingChoiceId?: string // resume: the pending row to resolve
   }
   try {
     body = (await request.json()) as typeof body
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 })
   }
-  let rawMessage = (body.message ?? "").trim()
-  if (!rawMessage) {
-    return Response.json({ error: "Missing message" }, { status: 400 })
-  }
-  if (rawMessage.length > 4000) {
-    return Response.json({ error: "Message too long (≤4000 chars)" }, { status: 413 })
+
+  // ── Resume branch (second POST of an external-verification turn) ──────────
+  // The detector PROPOSED external verification on a prior turn; that turn
+  // PAUSED (returned {pendingChoice}, no synthesis) and a pending_source_choices
+  // row was written. The user's approve/decline click is THIS request. We
+  // load + resolve the pending row, then synthesize: approve ("search") → the
+  // existing audited web pipeline (forced on); decline ("stay") → site-first
+  // synthesis with a scope label. The original user row already exists (it was
+  // appended on the suggestion turn), so we do NOT re-append it and do NOT
+  // re-run detection. Explicit /web //noweb do not reach here — they never
+  // return {pendingChoice}. See docs/superpowers/specs/2026-07-19-external-
+  // verification-suggestion.md §1 + §4.
+  let resume: {
+    threadId: string
+    message: string
+    choice: SourceChoice
+  } | null = null
+  if (body.sourceChoice && body.pendingChoiceId) {
+    if (body.sourceChoice !== "search" && body.sourceChoice !== "stay") {
+      return Response.json({ error: "Invalid source choice" }, { status: 400 })
+    }
+    if (!body.threadId) {
+      return Response.json({ error: "threadId required to resume" }, { status: 400 })
+    }
+    const pending = await loadPendingChoice(body.pendingChoiceId, body.threadId)
+    if (!pending) {
+      return Response.json({ error: "Choice no longer pending" }, { status: 404 })
+    }
+    if (pending.resolved_at) {
+      return Response.json({ error: "Choice no longer pending" }, { status: 409 })
+    }
+    // Consume the choice FIRST so a duplicate/crashed resume can't double-
+    // synthesize: the .is(resolved_at, null) guard makes resolve idempotent;
+    // a re-resume loads the now-resolved row and 409s above.
+    await resolvePendingChoice(body.pendingChoiceId, body.sourceChoice)
+    resume = {
+      threadId: pending.thread_id,
+      message: pending.message_text,
+      choice: body.sourceChoice,
+    }
   }
 
-  // ── Web-search trigger ──────────────────────────────────────────────────
-  // Tri-state: auto (a pre-turn classifier decides), on (force), off (force).
-  // /web and /noweb prefixes force on/off; the legacy webEnabled boolean is
-  // aliased to on/off for backward compatibility. Default is auto. The
-  // classifier runs later (after history is fetched so it can read prior rows).
-  let webMode: "auto" | "on" | "off" = body.webMode ?? (body.webEnabled ? "on" : "auto")
-  let message = rawMessage
+  // ── Message + web-mode (skipped on resume — message is the pending text) ──
+  // Tri-state: auto (the detector PROPOSES, never auto-searches), on (force),
+  // off (force). /web and /noweb prefixes force on/off; the legacy webEnabled
+  // boolean is aliased to on/off for backward compatibility. Default is auto.
+  let webMode: "auto" | "on" | "off"
+  let message: string
   let nopost = false
-  message = message.replace(/^\/web\s*/i, () => { webMode = "on"; return "" }).trim()
-  message = message.replace(/^\/noweb\s*/i, () => { webMode = "off"; return "" }).trim()
-  message = message.replace(/^\/nopost\s*/i, () => { nopost = true; return "" }).trim()
-  if (!message) {
-    return Response.json({ error: "Missing message after prefix" }, { status: 400 })
+  let scopeLabel: string | null = null
+  if (resume) {
+    // Resume: force webMode from the user's choice; message is the stored text
+    // (prefixes were already stripped on the suggestion turn). Stay gets a
+    // scope label; search runs the audited pipeline.
+    message = resume.message
+    webMode = resume.choice === "search" ? "on" : "off"
+    if (resume.choice === "stay") scopeLabel = STAY_SCOPE_LABEL
+  } else {
+    let rawMessage = (body.message ?? "").trim()
+    if (!rawMessage) {
+      return Response.json({ error: "Missing message" }, { status: 400 })
+    }
+    if (rawMessage.length > 4000) {
+      return Response.json({ error: "Message too long (≤4000 chars)" }, { status: 413 })
+    }
+    webMode = body.webMode ?? (body.webEnabled ? "on" : "auto")
+    message = rawMessage
+    message = message.replace(/^\/web\s*/i, () => { webMode = "on"; return "" }).trim()
+    message = message.replace(/^\/noweb\s*/i, () => { webMode = "off"; return "" }).trim()
+    message = message.replace(/^\/nopost\s*/i, () => { nopost = true; return "" }).trim()
+    if (!message) {
+      return Response.json({ error: "Missing message after prefix" }, { status: 400 })
+    }
   }
 
   // ── Thread ──────────────────────────────────────────────────────────────
   // A supplied threadId must be an existing CHAT thread. A companion thread
   // (purpose='blog-companion') is rejected with 400 — the client cannot
   // repurpose a companion thread as a chat thread (spec §11/§13). A nonexistent
-  // thread id falls through to createThread (preserves the first-turn UX).
-  let threadId = body.threadId
-  let modelPreference = body.modelPreference // optional, unused by the UI today (reserved)
-  if (threadId) {
+  // thread id falls through to createThread (preserves the first-turn UX). On
+  // resume the pending row pins the thread (FK), so we only read its model
+  // preference and never createThread.
+  let threadId: string
+  let modelPreference: ModelPreference
+  if (resume) {
+    threadId = resume.threadId
     const t = await getThread(threadId)
-    if (t && t.purpose !== "chat") {
+    if (!t || t.purpose !== "chat") {
       return Response.json({ error: "Thread not available for chat" }, { status: 400 })
     }
-    if (!t) threadId = undefined
-    else modelPreference = t.model_preference ?? "auto"
-  }
-  if (!threadId) {
-    const t = await createThread(message.slice(0, 60))
-    threadId = t.id
     modelPreference = t.model_preference ?? "auto"
+  } else {
+    threadId = body.threadId ?? ""
+    modelPreference = body.modelPreference ?? "auto" // reserved (UI doesn't send it today)
+    if (threadId) {
+      const t = await getThread(threadId)
+      if (t && t.purpose !== "chat") {
+        return Response.json({ error: "Thread not available for chat" }, { status: 400 })
+      }
+      if (!t) threadId = ""
+      else modelPreference = t.model_preference ?? "auto"
+    }
+    if (!threadId) {
+      const t = await createThread(message.slice(0, 60))
+      threadId = t.id
+      modelPreference = t.model_preference ?? "auto"
+    }
   }
 
-  // ── Resolve the model for this turn (once per request) ──────────────────
-  // A one-turn override (set by the set_model tool last turn) wins and is
+  // ── Append the user row (skipped on resume — it exists from the suggestion
+  // turn). Capture the row id so the suggestion path can link the pending
+  // choice to it.
+  let userMessageId: string | null = null
+  if (!resume) {
+    const userRow = await appendMessage({ threadId, role: "user", content: message })
+    userMessageId = userRow.id
+  }
+
+  // ── Build prompt context (once) ────────────────────────────────────────
+  // Fetched before web research so the query-rewrite step can use recent
+  // conversation history to resolve pronouns/shorthand ("他", "that") into the
+  // explicit subject the user is asking about.
+  const [siteContext, memories, historyRows] = await Promise.all([
+    buildSiteContext(),
+    recallMemories({ limit: 40 }),
+    getMessages(threadId),
+  ])
+  const history = historyRows.map(rowToMistral).filter((m): m is MistralMessage => m !== null)
+
+  // ── Web decision + the suggestion short-circuit ─────────────────────────
+  // on → force search (unless the Tavily key is missing). auto → run the
+  // detector; if it PROPOSES, write a pending choice and return {pendingChoice}
+  // WITHOUT synthesizing (the pause-before-synthesize guarantee — no assistant
+  // row, no model call on the suggestion turn). If it does NOT propose, fall
+  // through to site-first synthesis (webTurn stays false). off → never.
+  // webRequested tracks "did the user want web" so we can surface unavailable
+  // when the key is missing (applies to /web and resume-approve).
+  const tavilyKeyMissing = !process.env.TAVILY_API_KEY
+  let webTurn = false
+  let webRequested = false
+  if (webMode === "on") {
+    webRequested = true
+    webTurn = !tavilyKeyMissing
+  } else if (webMode === "auto" && !tavilyKeyMissing) {
+    const priorRows = historyRows.slice(0, -1) // exclude the just-appended current message
+    const suggestion = detectExternalVerificationNeed(message, priorRows)
+    if (suggestion.suggested) {
+      // PAUSE: persist a turn-scoped pending choice linked to the user row,
+      // return it to the client. No synthesis, no assistant row, no model call.
+      const pending = await insertPendingChoice({
+        threadId,
+        userMessageId: userMessageId!,
+        reason: suggestion.reason!,
+        subject: suggestion.subject ?? null,
+        messageText: message,
+      })
+      return Response.json({
+        pendingChoice: {
+          id: pending.id,
+          reason: pending.reason,
+          subject: pending.subject,
+        },
+      })
+    }
+    // no suggestion → site-first synthesis (webTurn stays false)
+  }
+
+  // ── Resolve the model for this turn (once per request, AFTER the web
+  // decision so a suggestion turn never consumes the one-turn override or
+  // runs the hybrid classifier — both are wasted on a non-synthesizing turn,
+  // and consuming the override on a suggestion turn would lose it before the
+  // resume). A one-turn override (set by the set_model tool) wins and is
   // consumed. Then a pinned preference. Then auto-routing via the hybrid
   // classifier. Then the default tier. Web-synthesis turns force the large
-  // tier (best synthesis, reusing the env-rerouted reasoning model) — the
-  // pill/override is still resolved + consumed so it doesn't dangle, then
-  // overridden for the actual model on web turns.
+  // tier (best synthesis, reusing the env-rerouted reasoning model).
   const override = await consumeOneTurnOverride(threadId)
   let tier: ModelTier = DEFAULT_TIER
   let reason = `default (${DEFAULT_TIER})`
@@ -168,44 +308,6 @@ export async function POST(request: Request) {
     tier = bandToTier(band)
     reason = `auto → ${tier} (${band})`
   }
-  // webTurn + final modelId are resolved after history is fetched (the auto
-  // path needs prior rows for the needs-web? classifier).
-
-  await appendMessage({ threadId, role: "user", content: message })
-
-  // ── Build prompt context (once) ────────────────────────────────────────
-  // Fetched before web research so the query-rewrite step can use recent
-  // conversation history to resolve pronouns/shorthand ("他", "that") into the
-  // explicit subject the user is asking about.
-  const [siteContext, memories, historyRows] = await Promise.all([
-    buildSiteContext(),
-    recallMemories({ limit: 40 }),
-    getMessages(threadId),
-  ])
-  const history = historyRows.map(rowToMistral).filter((m): m is MistralMessage => m !== null)
-
-  // ── Resolve the web turn + final model (needs history for the classifier) ──
-  // on → force search (unless the key is missing). auto → run decideWebEnabled
-  // with prior rows; search iff it says so. off → never. webRequested tracks
-  // "did the user want web" so we can surface unavailable when the key is missing.
-  const tavilyKeyMissing = !process.env.TAVILY_API_KEY
-  let webTurn = false
-  let webRequested = false
-  let webDecision: WebDecision | undefined
-  let webDecisionVia: "heuristic" | "mistral-small" | undefined
-  if (webMode === "on") {
-    webRequested = true
-    webTurn = !tavilyKeyMissing
-  } else if (webMode === "auto" && !tavilyKeyMissing) {
-    const priorRows = historyRows.slice(0, -1) // exclude the just-appended current message
-    const decision = await decideWebEnabled(message, priorRows)
-    webRequested = decision.webEnabled
-    webTurn = decision.webEnabled
-    if (decision.webEnabled) {
-      webDecision = decision.decision
-      webDecisionVia = decision.via
-    }
-  }
   if (webTurn) {
     tier = "large" // force best synthesis for web-research turns
   }
@@ -217,12 +319,15 @@ export async function POST(request: Request) {
   // never when there are no published posts. It is read-only admin-authored
   // site text — never from web/chat, never into save_memory/infer, never
   // rendered as raw HTML. The read_post tool remains the fallback for any
-  // specific/older post. See lib/chat/post-read.ts.
+  // specific/older post. See lib/chat/post-read.ts. A decline (stay) resume
+  // appends the scope label so the model states the answer is site-scoped.
   let postUnderDiscussion: string | null = null
   if (!webTurn && !nopost && detectPostReviewIntent(message)) {
     postUnderDiscussion = await loadNewestPostForPrompt()
   }
-  const baseSystemPrompt = buildSystemPrompt({ siteContext, memories, postUnderDiscussion })
+  const baseSystemPrompt = scopeLabel
+    ? `${buildSystemPrompt({ siteContext, memories, postUnderDiscussion })}\n\n[SCOPE] ${scopeLabel}`
+    : buildSystemPrompt({ siteContext, memories, postUnderDiscussion })
 
   // 55s soft-deadline AbortController (cleared on stream close).
   const deadlineController = new AbortController()
@@ -326,8 +431,8 @@ export async function POST(request: Request) {
           webAuditRuns.push(
             buildPipelineAuditRun({
               mode: webMode === "on" ? "on" : "auto",
-              decision: webDecision,
-              decisionVia: webDecisionVia,
+              decision: undefined,
+              decisionVia: undefined,
               queries: webQueries,
               subject: webSubject,
               subjectMatch,
