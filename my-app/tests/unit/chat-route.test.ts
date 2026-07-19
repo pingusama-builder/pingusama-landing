@@ -1042,6 +1042,7 @@ describe("POST /api/chat — auto web-trigger (round-7 pivot: suggest-or-site-fi
     // Not an SSE stream — a plain JSON response carrying the pending choice.
     expect(res.headers.get("Content-Type") ?? "").toContain("application/json")
     const json = await res.json()
+    expect(json.threadId).toBe("t-new")
     expect(json.pendingChoice).toEqual({
       id: "p1",
       reason: "external-prerequisites",

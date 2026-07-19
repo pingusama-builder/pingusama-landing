@@ -109,6 +109,15 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
   } | null>(null);
   const [webPhase, setWebPhase] = useState<string | null>(null);
   const [webQueries, setWebQueries] = useState<string[]>([]);
+  // External-verification suggestion (round-7 pivot): when the detector
+  // PROPOSES, the route returns {pendingChoice} JSON instead of a stream.
+  // We render an inline, non-blocking [Search public sources] / [Stay on this
+  // site] choice; the click is a resume POST (read as a normal SSE stream).
+  const [pendingChoice, setPendingChoice] = useState<{
+    id: string;
+    reason: string;
+    subject: string | null;
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
   const nextId = () => `m${++idCounter.current}`;
@@ -150,7 +159,23 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, toolLog]);
+  }, [messages, toolLog, pendingChoice]);
+
+  // Esc on the inline source-choice = Stay on this site (a11y, round-7 §5).
+  // Not a modal, so no focus trap — just a key shortcut on the active choice.
+  useEffect(() => {
+    if (!pendingChoice) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        void chooseSource("stay");
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+    // chooseSource is a stable useCallback below; deps covered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingChoice]);
 
   const openThread = useCallback(
     async (id: string) => {
@@ -163,6 +188,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
       setWebStatus(null);
       setWebPhase(null);
       setWebQueries([]);
+      setPendingChoice(null);
       const { thread, messages: rows } = await getThreadAction(id);
       setModelPref(thread?.model_preference ?? "auto");
       setMessages(
@@ -194,6 +220,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     setWebStatus(null);
     setWebPhase(null);
     setWebQueries([]);
+    setPendingChoice(null);
   };
 
   const inferNow = () => {
@@ -252,6 +279,113 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     }
   };
 
+  // Consume a chat SSE stream into UI state. Returns the threadId carried by
+  // the stream (for post-stream thread activation). Shared by send() (normal
+  // turn) and chooseSource() (resume after an external-verification choice).
+  const consumeStream = async (res: Response, fallbackThreadId: string | null): Promise<string | null> => {
+    if (!res.ok || !res.body) {
+      const errText = await res.text().catch(() => res.statusText);
+      throw new Error(`Request failed (${res.status}): ${errText}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let threadId = fallbackThreadId;
+
+    const handleEvent = (payload: string) => {
+      if (!payload) return;
+      let evt: { type: string; [k: string]: unknown };
+      try {
+        evt = JSON.parse(payload);
+      } catch {
+        return;
+      }
+      switch (evt.type) {
+        case "thread":
+          threadId = (evt.threadId as string) ?? threadId;
+          break;
+        case "model": {
+          const tier = (evt.tier as string) ?? null;
+          setLiveModel(tier);
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant") {
+              last.model = (evt.modelId as string) ?? last.model;
+            }
+            return next;
+          });
+          break;
+        }
+        case "content": {
+          const delta = (evt.delta as string) ?? "";
+          setMessages((prev) => appendAssistantDelta(prev, "content", delta));
+          break;
+        }
+        case "tool": {
+          const name = (evt.name as string) ?? "tool";
+          const status = (evt.status as string) ?? "";
+          setToolLog((l) => [...l, `${name} · ${status}`]);
+          break;
+        }
+        case "web_phase": {
+          setWebPhase((evt.phase as string) ?? null);
+          break;
+        }
+        case "web_sources": {
+          setWebQuery((evt.query as string) ?? null);
+          setWebSources((evt.sources as WebSource[]) ?? []);
+          setWebQueries((evt.queries as string[]) ?? []);
+          break;
+        }
+        case "web_status": {
+          setWebStatus({
+            status: evt.status as "empty" | "unavailable" | "subject_absent",
+            reason: (evt.reason as string) ?? undefined,
+            subject: (evt.subject as string) ?? undefined,
+            query: (evt.query as string) ?? undefined,
+          });
+          break;
+        }
+        case "done":
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last) last.streaming = false;
+            return next;
+          });
+          break;
+        case "error":
+          setError((evt.message as string) ?? "Chat error");
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant" && last.content === "") {
+              next.pop();
+            } else if (last) {
+              last.streaming = false;
+            }
+            return next;
+          });
+          break;
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (line.startsWith("data:")) handleEvent(line.slice(5).trim());
+      }
+    }
+    if (buffer.startsWith("data:")) handleEvent(buffer.slice(5).trim());
+    return threadId;
+  };
+
   const send = async () => {
     const text = input.trim();
     if (!text || streaming) return;
@@ -264,6 +398,7 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
     setWebStatus(null);
     setWebPhase(null);
     setWebQueries([]);
+    setPendingChoice(null);
 
     const userMsg: UIMessage = { id: nextId(), role: "user", content: text };
     const assistantMsg: UIMessage = { id: nextId(), role: "assistant", content: "", streaming: true };
@@ -275,115 +410,90 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: activeId, message: text, webMode }),
       });
-      if (!res.ok || !res.body) {
-        const errText = await res.text().catch(() => res.statusText);
-        throw new Error(`Request failed (${res.status}): ${errText}`);
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let threadId = activeId;
-
-      const handleEvent = (payload: string) => {
-        if (!payload) return;
-        let evt: { type: string; [k: string]: unknown };
-        try {
-          evt = JSON.parse(payload);
-        } catch {
+      // The route returns a plain JSON {threadId, pendingChoice} (not a stream)
+      // when the detector PROPOSES external verification — pause-before-
+      // synthesize. Render the inline choice; no assistant content yet.
+      const ct = res.headers.get("Content-Type") ?? "";
+      if (ct.includes("application/json") || !res.body) {
+        const json = (await res.json()) as {
+          threadId?: string;
+          pendingChoice?: { id: string; reason: string; subject: string | null };
+          error?: string;
+        };
+        if (json.error) throw new Error(json.error);
+        if (json.pendingChoice) {
+          // Drop the optimistic empty assistant bubble — there is no answer
+          // yet; the choice block stands in for it until the user resumes.
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant" && last.content === "") next.pop();
+            return next;
+          });
+          if (json.threadId && json.threadId !== activeId) setActiveId(json.threadId);
+          setPendingChoice({
+            id: json.pendingChoice.id,
+            reason: json.pendingChoice.reason,
+            subject: json.pendingChoice.subject ?? null,
+          });
+          setThreads(await listThreadsAction());
           return;
         }
-        switch (evt.type) {
-          case "thread":
-            threadId = (evt.threadId as string) ?? threadId;
-            break;
-          case "model": {
-            const tier = (evt.tier as string) ?? null;
-            setLiveModel(tier);
-            setMessages((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              if (last && last.role === "assistant") {
-                last.model = (evt.modelId as string) ?? last.model;
-              }
-              return next;
-            });
-            break;
-          }
-          case "content": {
-            const delta = (evt.delta as string) ?? "";
-            setMessages((prev) => appendAssistantDelta(prev, "content", delta));
-            break;
-          }
-          case "tool": {
-            const name = (evt.name as string) ?? "tool";
-            const status = (evt.status as string) ?? "";
-            setToolLog((l) => [...l, `${name} · ${status}`]);
-            break;
-          }
-          case "web_phase": {
-            setWebPhase((evt.phase as string) ?? null);
-            break;
-          }
-          case "web_sources": {
-            setWebQuery((evt.query as string) ?? null);
-            setWebSources((evt.sources as WebSource[]) ?? []);
-            setWebQueries((evt.queries as string[]) ?? []);
-            break;
-          }
-          case "web_status": {
-            setWebStatus({
-              status: evt.status as "empty" | "unavailable" | "subject_absent",
-              reason: (evt.reason as string) ?? undefined,
-              subject: (evt.subject as string) ?? undefined,
-              query: (evt.query as string) ?? undefined,
-            });
-            break;
-          }
-          case "done":
-            setMessages((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              if (last) last.streaming = false;
-              return next;
-            });
-            break;
-          case "error":
-            setError((evt.message as string) ?? "Chat error");
-            setMessages((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              if (last && last.role === "assistant" && last.content === "") {
-                next.pop();
-              } else if (last) {
-                last.streaming = false;
-              }
-              return next;
-            });
-            break;
-        }
-      };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let nl: number;
-        while ((nl = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, nl).trim();
-          buffer = buffer.slice(nl + 1);
-          if (line.startsWith("data:")) handleEvent(line.slice(5).trim());
-        }
+        throw new Error("Unexpected response from server");
       }
-      if (buffer.startsWith("data:")) handleEvent(buffer.slice(5).trim());
 
-      // Refresh thread list + activate the (possibly new) thread.
-      if (threadId && threadId !== activeId) {
-        setActiveId(threadId);
-      }
+      const threadId = await consumeStream(res, activeId);
+      if (threadId && threadId !== activeId) setActiveId(threadId);
       setThreads(await listThreadsAction());
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Send failed";
+      setError(msg);
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last && last.role === "assistant" && last.content === "") next.pop();
+        else if (last) last.streaming = false;
+        return next;
+      });
+    } finally {
+      setStreaming(false);
+    }
+  };
+
+  // Resume an external-verification turn: the user picked approve (search) or
+  // decline (stay). Sends a resume POST; the route resolves the pending row
+  // and streams the synthesis (search → audited pipeline, stay → site-first).
+  const chooseSource = async (choice: "search" | "stay") => {
+    if (!pendingChoice || streaming) return;
+    const pc = pendingChoice;
+    setPendingChoice(null);
+    setError(null);
+    setStreaming(true);
+    setToolLog([]);
+    setWebSources([]);
+    setWebQuery(null);
+    setWebStatus(null);
+    setWebPhase(null);
+    setWebQueries([]);
+    // A real assistant answer now streams into a fresh bubble.
+    const assistantMsg: UIMessage = { id: nextId(), role: "assistant", content: "", streaming: true };
+    setMessages((m) => [...m, assistantMsg]);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: activeId,
+          sourceChoice: choice,
+          pendingChoiceId: pc.id,
+        }),
+      });
+      const threadId = await consumeStream(res, activeId);
+      if (threadId && threadId !== activeId) setActiveId(threadId);
+      setThreads(await listThreadsAction());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Resume failed";
       setError(msg);
       setMessages((prev) => {
         const next = [...prev];
@@ -561,6 +671,43 @@ export default function ChatUI({ initialThreads }: { initialThreads: ThreadSumma
               {toolLog.map((t, i) => (
                 <div key={i}>{t}</div>
               ))}
+            </div>
+          )}
+          {pendingChoice && (
+            <div
+              className="chat-source-choice"
+              role="group"
+              aria-label="External verification choice"
+            >
+              <p className="chat-source-choice-label">
+                This might depend on current public information
+                {pendingChoice.subject ? (
+                  <>
+                    {" "}about <span className="chat-source-choice-subject">{pendingChoice.subject}</span>
+                  </>
+                ) : null}
+                . I can search and cite public sources, or answer from this site
+                and my existing context.
+              </p>
+              <div className="chat-source-choice-actions">
+                <button
+                  type="button"
+                  className="chat-source-choice-btn primary"
+                  onClick={() => chooseSource("search")}
+                  disabled={streaming}
+                  autoFocus
+                >
+                  Search public sources
+                </button>
+                <button
+                  type="button"
+                  className="chat-source-choice-btn"
+                  onClick={() => chooseSource("stay")}
+                  disabled={streaming}
+                >
+                  Stay on this site
+                </button>
+              </div>
             </div>
           )}
         </div>

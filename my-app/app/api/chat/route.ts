@@ -276,6 +276,7 @@ export async function POST(request: Request) {
         messageText: message,
       })
       return Response.json({
+        threadId,
         pendingChoice: {
           id: pending.id,
           reason: pending.reason,

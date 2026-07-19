@@ -98,3 +98,29 @@ describe("ChatUI — delete-thread", () => {
     expect(html).toContain("chat-thread-delete")
   })
 });
+
+describe("ChatUI — external-verification suggestion (round-7 pivot)", () => {
+  it("wires the inline source-choice block with the a11y contract + resume POST, no dangerouslySetInnerHTML", () => {
+    const src = readFileSync(fileURLToPath(new URL("../../components/ChatUI.tsx", import.meta.url)), "utf8")
+    // The choice renders only when the detector proposed (route returns
+    // {pendingChoice} JSON instead of a stream → pause-before-synthesize).
+    expect(src).toContain("pendingChoice")
+    // Inline, non-blocking, NOT a modal: role="group" (not dialog/aria-modal).
+    expect(src).toContain('role="group"')
+    expect(src).toContain("chat-source-choice")
+    // Two labelled actions; both keyboard-reachable <button>s (Enter/Space).
+    expect(src).toContain("Search public sources")
+    expect(src).toContain("Stay on this site")
+    expect(src).toContain('chooseSource("search")')
+    expect(src).toContain('chooseSource("stay")')
+    // Esc = stay (a11y keyboard shortcut).
+    expect(src).toMatch(/Escape[\s\S]*chooseSource\("stay"\)/)
+    // The resume POST sends sourceChoice + pendingChoiceId (not message/webMode).
+    expect(src).toContain("sourceChoice: choice")
+    expect(src).toContain("pendingChoiceId: pc.id")
+    // The suggestion response is JSON, detected by Content-Type (not a stream).
+    expect(src).toContain("application/json")
+    // No raw HTML injection anywhere on the choice path.
+    expect(src).not.toContain("dangerouslySetInnerHTML")
+  })
+});
