@@ -336,6 +336,18 @@
       line-height: 1.5;
     }
 
+    .slip-title {
+      font-family: "Noto Serif TC", serif;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--ink-wash);
+      line-height: 1.4;
+      margin-top: 0.35rem;
+      padding-right: 62px;
+    }
+
+    .slip-title.with-crest { padding-right: 60px; }
+
     .slip-seal {
       position: absolute;
       right: 8px;
@@ -978,6 +990,13 @@
 
     .overlay-body p { margin: 0 0 1rem; }
 
+    .overlay-original-title {
+      font-size: 0.85rem;
+      color: var(--ink-wash);
+      font-family: "Noto Serif TC", serif;
+      margin-top: -0.35rem;
+    }
+
     .overlay-close {
       position: absolute;
       top: 1rem;
@@ -1416,7 +1435,8 @@
     const slipsData = [
       {
         quote: "Payoff larger than the sum of its parts",
-        title: "9-nine- Yukiiro Yukihana Yukinoato",
+        title: "9-nine- 雪色雪花雪之痕",
+        originalTitle: "9-nine- Yukiiro Yukihana Yukinoato",
         crest: "nine",
         cover: "https://t.vndb.org/cv/30/95130.jpg",
         domain: "structure",
@@ -1426,7 +1446,8 @@
       },
       {
         quote: "雨音雨音雨音，聲畫佳，人物刻劃深",
-        title: "Tsuki no Kanata de Aimashou",
+        title: "在月之彼方再會",
+        originalTitle: "Tsuki no Kanata de Aimashou",
         crest: "moon",
         cover: "https://t.vndb.org/cv/54/100854.jpg",
         domain: "character",
@@ -1436,7 +1457,8 @@
       },
       {
         quote: "Books, library, good characterization and pace",
-        title: "Daitoshokan no Hitsujikai",
+        title: "大圖書館的牧羊人",
+        originalTitle: "Daitoshokan no Hitsujikai",
         crest: "library",
         cover: "https://t.vndb.org/cv/72/86072.jpg",
         domain: "structure",
@@ -1446,7 +1468,8 @@
       },
       {
         quote: "養成+戰略遊戲性一流",
-        title: "Kamidori Alchemy Meister",
+        title: "神采煉金名匠",
+        originalTitle: "Kamidori Alchemy Meister",
         crest: "kamidori",
         cover: "https://t.vndb.org/cv/28/89128.jpg",
         domain: "gameplay",
@@ -1456,7 +1479,8 @@
       },
       {
         quote: "只論玩法已是超一流，路線設計驚艷",
-        title: "Sengoku Rance",
+        title: "戰國蘭斯",
+        originalTitle: "Sengoku Rance",
         crest: "rance",
         cover: "https://t.vndb.org/cv/75/95775.jpg",
         domain: "gameplay",
@@ -1466,7 +1490,8 @@
       },
       {
         quote: "有華麗戰鬥又有萌妹子，好柚子不香嗎",
-        title: "Senren＊Banka",
+        title: "千戀＊萬花",
+        originalTitle: "Senren＊Banka",
         crest: "senren",
         cover: "https://t.vndb.org/cv/46/80746.jpg",
         domain: "genre",
@@ -1476,7 +1501,8 @@
       },
       {
         quote: "M學妹太棒啦，純愛",
-        title: "Natsu Uso -Ahead of the Reminiscence-",
+        title: "夏天的謊言 -Ahead of the Reminiscence-",
+        originalTitle: "Natsu Uso -Ahead of the Reminiscence-",
         crest: "natsu",
         cover: "https://t.vndb.org/cv/86/107386.jpg",
         domain: "character",
@@ -1486,7 +1512,8 @@
       },
       {
         quote: "氛圍感，直死之魔眼夠型",
-        title: "Tsukihime",
+        title: "月姬",
+        originalTitle: "Tsukihime",
         crest: "tsukihime",
         cover: "https://t.vndb.org/cv/48/90048.jpg",
         domain: "character",
@@ -1497,6 +1524,7 @@
       {
         quote: "可憐太有魅力",
         title: "Making＊Lovers",
+        originalTitle: "Making＊Lovers",
         crest: "making",
         cover: "https://t.vndb.org/cv/98/94598.jpg",
         domain: "character",
@@ -1507,6 +1535,7 @@
       {
         quote: "反轉再反轉，妹子戰鬥都不錯",
         title: "Sorceress＊Alive!",
+        originalTitle: "Sorceress＊Alive!",
         crest: "sorceress",
         cover: "https://t.vndb.org/cv/12/100612.jpg",
         domain: "structure",
@@ -1516,7 +1545,8 @@
       },
       {
         quote: "熱血就完了",
-        title: "11eyes -Tsumi to Batsu to Aganai no Shoujo-",
+        title: "11eyes -罪與罰與贖罪的少女-",
+        originalTitle: "11eyes -Tsumi to Batsu to Aganai no Shoujo-",
         crest: "eleveneyes",
         cover: "https://t.vndb.org/cv/65/94265.jpg",
         domain: "genre",
@@ -1527,6 +1557,7 @@
       {
         quote: "I ask of you: are you my master?",
         title: "Fate/stay night",
+        originalTitle: "Fate/stay night",
         crest: "fate",
         cover: "https://t.vndb.org/cv/71/89071.jpg",
         domain: "quote",
@@ -1601,6 +1632,7 @@
           <span class="slip-number ${visualClass}">${String(index + 1).padStart(2, '0')}</span>
           <span class="slip-quote ${visualClass}">${item.quote}</span>
           ${visual}
+          <span class="slip-title ${visualClass}">${item.title}</span>
           <span class="slip-domain ${item.domain}" aria-hidden="true">${domainLabels[item.domain]}</span>
           <span class="slip-seal" aria-hidden="true"></span>
           <span class="slip-corner" aria-hidden="true"></span>
@@ -1618,7 +1650,8 @@
         : `<img class="overlay-cover" src="${item.cover}" alt="" aria-hidden="true" />`;
       overlayMeta.textContent = `${String(index + 1).padStart(2, '0')} / 12 · ${item.year} · ${item.length}`;
       overlayTitle.textContent = item.title;
-      overlayBody.innerHTML = `${visual}<p>${item.read}</p>`;
+      const originalLabel = item.originalTitle !== item.title ? `<p class="overlay-original-title">${item.originalTitle}</p>` : '';
+      overlayBody.innerHTML = `${visual}${originalLabel}<p>${item.read}</p>`;
       const provenanceNote = document.getElementById('provenance-note');
       if (provenanceNote) provenanceNote.textContent = `原文：${item.quote}`;
       overlay.classList.add('is-open');
