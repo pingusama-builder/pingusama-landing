@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>藏書台 — 夜墨小圖志</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #F3EFE4;
+      --paper-edge: #E4E0D5;
+      --ink-wash: #8A8680;
+      --ink-stroke: #4A4642;
+      --night: #2D2B28;
+      --night-deep: #1C1A17;
+      --moon: #A8B8C8;
+      --moon-dim: #7E9AAF;
+      --seal: #B3473E;
+      --seal-ink: #8A332B;
+      --lantern: #E9C46A;
+      --lantern-glow: rgba(233, 196, 106, 0.18);
+      --shadow-soft: rgba(0, 0, 0, 0.28);
+      --shadow-deep: rgba(0, 0, 0, 0.55);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--night-deep);
+      color: var(--paper);
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      overflow: hidden;
+    }
+
+    .room {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background:
+        radial-gradient(ellipse 70% 50% at 55% 35%, rgba(168,184,196,0.10) 0%, transparent 60%),
+        linear-gradient(180deg, #252320 0%, var(--night-deep) 70%);
+      overflow: hidden;
+      opacity: 0;
+      animation: fadeInRoom 1.2s ease-out forwards;
+    }
+
+    @keyframes fadeInRoom {
+      from { opacity: 0; transform: scale(1.02); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .room, .book, .book-spine, .shelf, .water, .lantern-body {
+        animation: none !important;
+        transition: none !important;
+      }
+      .room { transform: none; }
+    }
+
+    /* Cliff wall behind shelves */
+    .room::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      background:
+        repeating-linear-gradient(90deg, rgba(244,241,234,0.03) 0px, rgba(244,241,234,0.03) 2px, transparent 2px, transparent 180px),
+        linear-gradient(180deg, rgba(60,55,50,0.35) 0%, transparent 45%);
+      pointer-events: none;
+    }
+
+    /* Water-window on the right: a vertical slit of moonlit water */
+    .water-window {
+      position: absolute;
+      right: 0;
+      top: 12%;
+      width: 160px;
+      height: 76%;
+      background:
+        linear-gradient(180deg, rgba(168,184,196,0.18) 0%, rgba(90,110,118,0.12) 100%);
+      border-left: 2px solid rgba(244,241,234,0.12);
+      box-shadow: inset 12px 0 40px rgba(0,0,0,0.35);
+      z-index: 1;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .water-window::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 200%;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent 0px,
+        transparent 18px,
+        rgba(244,241,234,0.05) 19px,
+        rgba(244,241,234,0.05) 20px
+      );
+      animation: waterDrift 18s linear infinite;
+    }
+
+    @keyframes waterDrift {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(-50%); }
+    }
+
+    /* Back-to-map door, left wall */
+    .door-frame {
+      position: absolute;
+      left: 4.5%;
+      top: 18%;
+      width: 160px;
+      height: 66%;
+      border: 2px solid rgba(244,241,234,0.18);
+      border-bottom: none;
+      background: linear-gradient(180deg, rgba(28,26,23,0.85) 0%, rgba(45,43,40,0.55) 100%);
+      box-shadow: inset 0 0 40px rgba(0,0,0,0.6), 4px 0 30px var(--shadow-deep);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      cursor: pointer;
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
+      text-decoration: none;
+      z-index: 5;
+    }
+
+    .door-frame:hover, .door-frame:focus-visible {
+      border-color: rgba(233,196,106,0.45);
+      box-shadow: inset 0 0 50px rgba(233,196,106,0.08), 6px 0 40px var(--shadow-deep);
+      outline: none;
+    }
+
+    .door-frame:focus-visible { outline: 2px solid var(--lantern); outline-offset: 4px; }
+
+    .door-label {
+      writing-mode: vertical-rl;
+      font-family: "Noto Serif TC", serif;
+      font-size: 1.25rem;
+      letter-spacing: 0.18em;
+      color: rgba(244,241,234,0.75);
+      margin-bottom: 2rem;
+      transition: color 0.25s ease;
+    }
+
+    .door-frame:hover .door-label, .door-frame:focus-visible .door-label { color: var(--paper); }
+
+    .door-sill {
+      width: 100%;
+      height: 10px;
+      background: rgba(244,241,234,0.12);
+    }
+
+    /* Hanging lantern */
+    .lantern {
+      position: absolute;
+      left: 50%;
+      top: 8%;
+      width: 64px;
+      height: 86px;
+      transform: translateX(-50%);
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    .lantern-hood {
+      position: absolute;
+      top: 0;
+      left: 6px;
+      right: 6px;
+      height: 18px;
+      background: var(--ink-stroke);
+      border-radius: 2px 2px 0 0;
+    }
+
+    .lantern-body {
+      position: absolute;
+      top: 16px;
+      left: 0;
+      right: 0;
+      height: 54px;
+      background:
+        radial-gradient(ellipse 70% 80% at 50% 45%, rgba(233,196,106,0.85) 0%, rgba(179,71,62,0.25) 70%, transparent 100%),
+        repeating-linear-gradient(90deg, rgba(74,70,66,0.35) 0px, rgba(74,70,66,0.35) 2px, transparent 2px, transparent 10px);
+      border: 1px solid rgba(244,241,234,0.18);
+      border-radius: 4px;
+      box-shadow: 0 0 90px var(--lantern-glow), 0 0 140px rgba(233,196,106,0.1);
+      animation: lanternFlicker 6s ease-in-out infinite alternate;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .lantern-body { animation: none; }
+    }
+
+    @keyframes lanternFlicker {
+      0% { opacity: 0.92; filter: brightness(1); }
+      45% { opacity: 0.97; filter: brightness(1.04); }
+      70% { opacity: 0.9; filter: brightness(0.98); }
+      100% { opacity: 0.96; filter: brightness(1.02); }
+    }
+
+    .lantern-base {
+      position: absolute;
+      bottom: 4px;
+      left: 6px;
+      right: 6px;
+      height: 14px;
+      background: var(--ink-stroke);
+      border-radius: 0 0 2px 2px;
+    }
+
+    /* Room title */
+    .room-title {
+      position: absolute;
+      left: 50%;
+      top: 3.5%;
+      transform: translateX(-50%);
+      z-index: 7;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .room-title h1 {
+      font-family: "Noto Serif TC", serif;
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      margin: 0 0 0.35rem;
+      color: rgba(244,241,234,0.92);
+    }
+
+    .room-title p {
+      margin: 0;
+      font-size: 0.78rem;
+      color: var(--ink-wash);
+      letter-spacing: 0.08em;
+    }
+
+    /* Curator note */
+    .curator-note {
+      position: absolute;
+      left: 4%;
+      top: 18%;
+      width: 260px;
+      max-height: 34vh;
+      overflow-y: auto;
+      padding: 1.1rem 1.25rem;
+      background: rgba(28,26,23,0.72);
+      border-left: 3px solid var(--lantern);
+      color: rgba(244,241,234,0.82);
+      font-size: 0.84rem;
+      line-height: 1.75;
+      z-index: 5;
+      pointer-events: auto;
+    }
+
+    .curator-note p { margin: 0 0 0.7rem; }
+    .curator-note p:last-child { margin-bottom: 0; }
+
+    .curator-note .provenance {
+      display: block;
+      margin-top: 0.7rem;
+      padding-top: 0.6rem;
+      border-top: 1px solid rgba(244,241,234,0.12);
+      font-size: 0.72rem;
+      color: var(--ink-wash);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    /* Shelves */
+    .library {
+      position: absolute;
+      left: 50%;
+      bottom: 8%;
+      width: min(900px, 86vw);
+      transform: translateX(-50%);
+      z-index: 6;
+      display: flex;
+      flex-direction: column;
+      gap: 1.4rem;
+    }
+
+    .shelf {
+      position: relative;
+      width: 100%;
+      height: 132px;
+      padding: 0.6rem 1.2rem 0.3rem;
+      background:
+        linear-gradient(180deg, rgba(60,55,50,0.55) 0%, rgba(45,43,40,0.45) 100%),
+        repeating-linear-gradient(90deg, rgba(244,241,234,0.04) 0px, rgba(244,241,234,0.04) 1px, transparent 1px, transparent 80px);
+      border-top: 3px solid rgba(244,241,234,0.14);
+      border-bottom: 6px solid rgba(244,241,234,0.12);
+      box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+      display: flex;
+      align-items: flex-end;
+      gap: 0.55rem;
+    }
+
+    .shelf::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: -12px;
+      height: 12px;
+      background: rgba(244,241,234,0.06);
+    }
+
+    .shelf-label {
+      position: absolute;
+      right: 1rem;
+      top: -1.6rem;
+      font-size: 0.7rem;
+      color: var(--ink-wash);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.08em;
+    }
+
+    /* Book spines */
+    .book {
+      position: relative;
+      height: 108px;
+      padding: 0.7rem 0.5rem;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.06) 0%, transparent 12%, transparent 88%, rgba(0,0,0,0.18) 100%),
+        var(--paper);
+      color: var(--ink-stroke);
+      border: 1px solid rgba(74,70,66,0.22);
+      border-radius: 2px;
+      box-shadow: 2px 3px 8px rgba(0,0,0,0.2);
+      cursor: pointer;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      font-family: "Noto Serif TC", serif;
+      font-size: 0.9rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      line-height: 1.4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                  box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+      opacity: 0;
+      animation: spineLand 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation-delay: var(--stagger, 0s);
+      flex-shrink: 0;
+    }
+
+    .book:nth-child(1) { width: 38px; background-color: #D4C5A9; }
+    .book:nth-child(2) { width: 42px; background-color: #C9B8A0; }
+    .book:nth-child(3) { width: 46px; background-color: #DBCbb5; }
+    .book:nth-child(4) { width: 40px; background-color: #CFC0A6; }
+
+    @keyframes spineLand {
+      from { opacity: 0; transform: translateY(-18px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .book:hover, .book:focus-visible {
+      transform: translateY(-22px) scale(1.08) !important;
+      box-shadow:
+        0 28px 70px rgba(0,0,0,0.5),
+        0 0 0 3px rgba(233,196,106,0.28);
+      outline: none;
+      z-index: 10;
+    }
+
+    .book:focus-visible { outline: 2px solid var(--lantern); outline-offset: 3px; }
+
+    .book .spine-title {
+      max-height: 88px;
+      overflow: hidden;
+    }
+
+    .book .spine-author {
+      position: absolute;
+      bottom: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.55rem;
+      color: var(--ink-wash);
+      letter-spacing: 0.04em;
+      writing-mode: horizontal-tb;
+      text-orientation: mixed;
+      white-space: nowrap;
+    }
+
+    /* Empty spaces on shelves */
+    .shelf-space {
+      flex: 1;
+      height: 100%;
+      min-width: 20px;
+    }
+
+    /* Peer rooms note */
+    .peer-rooms {
+      position: absolute;
+      right: 4%;
+      bottom: 18%;
+      width: 180px;
+      padding: 0.85rem 1rem;
+      background: rgba(28,26,23,0.55);
+      border: 1px solid rgba(244,241,234,0.12);
+      color: var(--ink-wash);
+      font-size: 0.72rem;
+      line-height: 1.6;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .peer-rooms strong {
+      color: rgba(244,241,234,0.75);
+      font-weight: 500;
+    }
+
+    /* Overlay */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(28,26,23,0.82);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.25s ease, visibility 0.25s ease;
+      z-index: 100;
+    }
+
+    .overlay.is-open { opacity: 1; visibility: visible; }
+
+    .overlay-panel {
+      position: relative;
+      width: min(560px, 100%);
+      max-height: min(80vh, 640px);
+      overflow-y: auto;
+      background: var(--paper);
+      color: var(--ink-stroke);
+      padding: 2rem 2.2rem 2.2rem;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.55);
+      border-top: 4px solid var(--seal);
+    }
+
+    .overlay-panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(0deg, transparent 0px, transparent 23px, rgba(138,134,128,0.06) 24px);
+      pointer-events: none;
+    }
+
+    .overlay-header {
+      font-family: "Noto Serif TC", serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin: 0 0 0.6rem;
+      padding-right: 2rem;
+      line-height: 1.45;
+    }
+
+    .overlay-meta {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.72rem;
+      color: var(--ink-wash);
+      letter-spacing: 0.08em;
+      margin-bottom: 1.2rem;
+    }
+
+    .overlay-body {
+      font-size: 1rem;
+      line-height: 1.8;
+      color: var(--ink-stroke);
+    }
+
+    .overlay-body p { margin: 0 0 1rem; }
+
+    .overlay-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      width: 36px;
+      height: 36px;
+      border: 1px solid rgba(74,70,66,0.25);
+      background: transparent;
+      color: var(--ink-stroke);
+      font-size: 1.4rem;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .overlay-close:hover, .overlay-close:focus-visible {
+      background: var(--seal);
+      color: var(--paper);
+      outline: none;
+    }
+
+    .overlay-close:focus-visible { outline: 2px solid var(--ink-stroke); outline-offset: 2px; }
+
+    .read-status {
+      display: inline-block;
+      margin-top: 1.2rem;
+      padding: 0.35rem 0.7rem;
+      font-size: 0.72rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: var(--seal-ink);
+      border: 1px solid rgba(179,71,62,0.35);
+      background: rgba(179,71,62,0.06);
+    }
+
+    .helper {
+      position: absolute;
+      left: 50%;
+      bottom: 2.2%;
+      transform: translateX(-50%);
+      font-size: 0.72rem;
+      color: var(--ink-wash);
+      letter-spacing: 0.06em;
+      z-index: 7;
+      pointer-events: none;
+    }
+
+    /* Mobile */
+    @media (max-width: 760px) {
+      .door-frame {
+        position: relative;
+        left: auto;
+        top: auto;
+        width: 100%;
+        height: 56px;
+        border: none;
+        border-bottom: 1px solid rgba(244,241,234,0.12);
+        background: rgba(28,26,23,0.6);
+        flex-direction: row;
+        justify-content: center;
+        padding: 0.5rem;
+        box-shadow: none;
+      }
+      .door-label {
+        writing-mode: horizontal-tb;
+        margin: 0;
+        font-size: 0.95rem;
+      }
+      .door-sill { display: none; }
+      .water-window { width: 80px; }
+      .lantern { top: 64px; }
+      .room-title { top: 12px; }
+      .room-title h1 { font-size: 1.15rem; }
+      .library {
+        position: relative;
+        left: auto;
+        bottom: auto;
+        transform: none;
+        width: 100%;
+        padding: 1rem 1rem 4rem;
+        gap: 1rem;
+      }
+      .shelf {
+        height: auto;
+        min-height: 120px;
+        flex-wrap: wrap;
+        justify-content: center;
+        padding: 0.8rem;
+      }
+      .shelf-space { display: none; }
+      .book {
+        writing-mode: horizontal-tb;
+        text-orientation: mixed;
+        height: auto;
+        min-height: 86px;
+        width: calc(50% - 0.5rem) !important;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 1rem 0.8rem 1.4rem;
+      }
+      .book .spine-title {
+        max-height: none;
+        text-align: center;
+      }
+      .book .spine-author {
+        position: absolute;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+      .book:hover, .book:focus-visible {
+        transform: translateY(-6px) scale(1.03) !important;
+      }
+      .curator-note {
+        position: relative;
+        left: auto;
+        top: auto;
+        width: 100%;
+        max-height: none;
+        order: -1;
+        border-left: none;
+        border-bottom: 2px solid var(--lantern);
+        background: rgba(28,26,23,0.55);
+      }
+      .peer-rooms { display: none; }
+      .helper { bottom: 1%; }
+    }
+
+    @media (max-width: 420px) {
+      .overlay-panel { padding: 1.4rem 1.3rem 1.6rem; }
+      .overlay-header { font-size: 1.15rem; }
+      .overlay-body { font-size: 0.95rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="room" aria-label="藏書台：崖壁鑿出的書洞，暫放四枚選定的書脊">
+    <a class="door-frame" href="/portrait/atlas" aria-label="返回夜墨小圖志地圖">
+      <span class="door-label">返回地圖</span>
+      <span class="door-sill" aria-hidden="true"></span>
+    </a>
+
+    <div class="water-window" aria-hidden="true"></div>
+
+    <div class="lantern" aria-hidden="true">
+      <div class="lantern-hood"></div>
+      <div class="lantern-body"></div>
+      <div class="lantern-base"></div>
+    </div>
+
+    <div class="room-title">
+      <h1>藏書台</h1>
+      <p>水岸高台，四枚暫留的書脊</p>
+    </div>
+
+    <aside class="curator-note" aria-label="房間策展語">
+      <p>水岸高台暫留數個書脊。這些書在此相近，不必證明相同；它們只是此刻被選來停放的幾本。</p>
+      <p>個別閱讀筆記尚未加入。此處先保留書名作為 trace，等以後親手補上每則 note 再展開。</p>
+      <span class="provenance">策展語摘自夜墨小圖志地圖 · 設計階段</span>
+    </aside>
+
+    <div class="peer-rooms" aria-hidden="true">
+      <strong>夜墨小圖志</strong> 的其中一間同級房間。藏書台不是全書單，也不是排名；它只是幾本書暫時靠在一起。
+    </div>
+
+    <div class="library" id="library" role="list" aria-label="選定書脊">
+      <div class="shelf" role="group" aria-label="第一層書脊">
+        <span class="shelf-label">selected · still collecting</span>
+        <!-- Books generated by JS -->
+      </div>
+    </div>
+
+    <p class="helper" aria-hidden="true">點擊書脊展開 · 按 Esc 關閉</p>
+  </main>
+
+  <div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="overlay-title" aria-hidden="true">
+    <article class="overlay-panel">
+      <button class="overlay-close" id="overlay-close" aria-label="關閉">×</button>
+      <p class="overlay-meta" id="overlay-meta">01 / 04</p>
+      <h2 class="overlay-header" id="overlay-title">Title</h2>
+      <div class="overlay-body" id="overlay-body">
+        <p>Content</p>
+      </div>
+      <span class="read-status">selected spine · 個人筆記待補</span>
+    </article>
+  </div>
+
+  <script>
+    const booksData = [
+      {
+        title: "Stoner",
+        author: "John Williams",
+        year: 1965,
+        note: "書脊已選，個人閱讀筆記尚未寫下。"
+      },
+      {
+        title: "海邊的卡夫卡",
+        originalTitle: "Kafka on the Shore",
+        author: "Haruki Murakami",
+        year: 2002,
+        note: "書脊已選，個人閱讀筆記尚未寫下。"
+      },
+      {
+        title: "笑傲江湖",
+        author: "金庸",
+        year: 1967,
+        note: "書脊已選，個人閱讀筆記尚未寫下。"
+      },
+      {
+        title: "覆雨翻雲",
+        author: "黃易",
+        year: 1992,
+        note: "書脊已選，個人閱讀筆記尚未寫下。"
+      }
+    ];
+
+    const shelf = document.querySelector('.shelf');
+    const overlay = document.getElementById('overlay');
+    const overlayMeta = document.getElementById('overlay-meta');
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlayBody = document.getElementById('overlay-body');
+    const overlayClose = document.getElementById('overlay-close');
+
+    function renderBooks() {
+      shelf.innerHTML = '<span class="shelf-label">selected · still collecting</span>';
+
+      booksData.forEach((book, index) => {
+        const el = document.createElement('button');
+        el.className = 'book';
+        el.setAttribute('role', 'listitem');
+        el.setAttribute('aria-label', `第 ${index + 1} 枚書脊：${book.title}`);
+        el.style.setProperty('--stagger', `${0.15 + index * 0.1}s`);
+
+        el.innerHTML = `
+          <span class="spine-title">${book.title}</span>
+          <span class="spine-author">${book.author}</span>
+        `;
+
+        el.addEventListener('click', () => openOverlay(index));
+        shelf.appendChild(el);
+      });
+
+      const space = document.createElement('div');
+      space.className = 'shelf-space';
+      space.setAttribute('aria-hidden', 'true');
+      shelf.appendChild(space);
+    }
+
+    function openOverlay(index) {
+      const book = booksData[index];
+      overlayMeta.textContent = `${String(index + 1).padStart(2, '0')} / 04 · ${book.year}`;
+      overlayTitle.textContent = book.title;
+      const original = book.originalTitle ? `<p>${book.originalTitle}</p>` : '';
+      overlayBody.innerHTML = `${original}<p>${book.note}</p><p>作者：${book.author}</p>`;
+      overlay.classList.add('is-open');
+      overlay.setAttribute('aria-hidden', 'false');
+      overlayClose.focus();
+      document.addEventListener('keydown', onKey);
+    }
+
+    function closeOverlay() {
+      overlay.classList.remove('is-open');
+      overlay.setAttribute('aria-hidden', 'true');
+      document.removeEventListener('keydown', onKey);
+    }
+
+    function onKey(e) {
+      if (e.key === 'Escape') closeOverlay();
+    }
+
+    overlayClose.addEventListener('click', closeOverlay);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeOverlay();
+    });
+
+    renderBooks();
+  </script>
+</body>
+</html>
