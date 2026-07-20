@@ -1,0 +1,1656 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VN 舊驛 — 夜墨小圖志</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #F3EFE4;
+      --paper-edge: #E4E0D5;
+      --ink-wash: #8A8680;
+      --ink-stroke: #4A4642;
+      --night: #2D2B28;
+      --night-deep: #1C1A17;
+      --moon: #A8B8C8;
+      --moon-dim: #7E8A94;
+      --seal: #B3473E;
+      --seal-ink: #8A332B;
+      --lantern: #E9C46A;
+      --lantern-glow: rgba(233, 196, 106, 0.18);
+      --shadow-soft: rgba(0, 0, 0, 0.28);
+      --shadow-deep: rgba(0, 0, 0, 0.55);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--night-deep);
+      color: var(--paper);
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      overflow: hidden;
+    }
+
+    /* Room shell — one-point perspective, desktop first */
+    .room {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background:
+        radial-gradient(ellipse 80% 55% at 68% 38%, rgba(168,184,196,0.12) 0%, transparent 60%),
+        linear-gradient(180deg, var(--night) 0%, var(--night-deep) 72%);
+      overflow: hidden;
+      opacity: 0;
+      animation: fadeInRoom 1.2s ease-out forwards;
+    }
+
+    @keyframes fadeInRoom {
+      from { opacity: 0; transform: scale(1.02); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .room, .slip, .slip-crest, .slip-crest *, .slip-crest *::before, .slip-crest *::after,
+      .lantern-body, .slip-cover, .slip:hover, .slip:focus-visible {
+        animation: none !important;
+        transition: none !important;
+        opacity: 1;
+      }
+      .room { transform: none; }
+      .slip { transform: none !important; }
+    }
+
+    .room::before {
+      /* floor plane */
+      content: "";
+      position: absolute;
+      left: -10%;
+      right: -10%;
+      bottom: -18%;
+      height: 46%;
+      background:
+        linear-gradient(0deg, rgba(138,134,128,0.35) 0%, rgba(45,43,40,0) 100%),
+        repeating-linear-gradient(90deg, rgba(244,241,234,0.04) 0px, rgba(244,241,234,0.04) 1px, transparent 1px, transparent 120px);
+      transform: perspective(900px) rotateX(46deg);
+      transform-origin: center bottom;
+      pointer-events: none;
+    }
+
+    .room::after {
+      /* faint ceiling beam */
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 18%;
+      background: linear-gradient(180deg, rgba(0,0,0,0.35) 0%, transparent 100%);
+      pointer-events: none;
+    }
+
+    /* Back-to-map door, left wall */
+    .door-frame {
+      position: absolute;
+      left: 4.5%;
+      top: 18%;
+      width: 160px;
+      height: 66%;
+      border: 2px solid rgba(244,241,234,0.18);
+      border-bottom: none;
+      background: linear-gradient(180deg, rgba(28,26,23,0.85) 0%, rgba(45,43,40,0.55) 100%);
+      box-shadow: inset 0 0 40px rgba(0,0,0,0.6), 4px 0 30px var(--shadow-deep);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      cursor: pointer;
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
+      text-decoration: none;
+      z-index: 5;
+    }
+
+    .door-frame:hover, .door-frame:focus-visible {
+      border-color: rgba(233,196,106,0.45);
+      box-shadow: inset 0 0 50px rgba(233,196,106,0.08), 6px 0 40px var(--shadow-deep);
+      outline: none;
+    }
+
+    .door-frame:focus-visible { outline: 2px solid var(--lantern); outline-offset: 4px; }
+
+    .door-label {
+      writing-mode: vertical-rl;
+      font-family: "Noto Serif TC", serif;
+      font-size: 1.25rem;
+      letter-spacing: 0.18em;
+      color: rgba(244,241,234,0.75);
+      margin-bottom: 2rem;
+      transition: color 0.25s ease;
+    }
+
+    .door-frame:hover .door-label, .door-frame:focus-visible .door-label { color: var(--paper); }
+
+    .door-sill {
+      width: 100%;
+      height: 10px;
+      background: rgba(244,241,234,0.12);
+    }
+
+    /* Window, right wall, moon light */
+    .window {
+      position: absolute;
+      right: 6%;
+      top: 12%;
+      width: 220px;
+      height: 160px;
+      border: 2px solid rgba(244,241,234,0.14);
+      background:
+        radial-gradient(circle at 78% 32%, rgba(168,184,196,0.35) 0%, transparent 35%),
+        linear-gradient(180deg, rgba(168,184,196,0.12) 0%, rgba(45,43,40,0.35) 100%);
+      box-shadow: 0 0 80px rgba(168,184,196,0.12), inset 0 0 30px rgba(168,184,196,0.08);
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .window::before, .window::after {
+      content: "";
+      position: absolute;
+      background: rgba(244,241,234,0.16);
+    }
+    .window::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+    .window::after { left: 0; top: 50%; width: 100%; height: 2px; transform: translateY(-50%); }
+
+    .moon {
+      position: absolute;
+      right: 10%;
+      top: 16%;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, var(--paper) 0%, var(--moon) 50%, var(--moon-dim) 100%);
+      box-shadow: 0 0 50px rgba(168,184,196,0.35);
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* Hanging lantern — warm glow center */
+    .lantern {
+      position: absolute;
+      left: 50%;
+      top: 8%;
+      width: 64px;
+      height: 86px;
+      transform: translateX(-50%);
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    .lantern-hood {
+      position: absolute;
+      top: 0;
+      left: 6px;
+      right: 6px;
+      height: 18px;
+      background: var(--ink-stroke);
+      border-radius: 2px 2px 0 0;
+    }
+
+    .lantern-body {
+      position: absolute;
+      top: 16px;
+      left: 0;
+      right: 0;
+      height: 54px;
+      background:
+        radial-gradient(ellipse 70% 80% at 50% 45%, rgba(233,196,106,0.85) 0%, rgba(179,71,62,0.25) 70%, transparent 100%),
+        repeating-linear-gradient(90deg, rgba(74,70,66,0.35) 0px, rgba(74,70,66,0.35) 2px, transparent 2px, transparent 10px);
+      border: 1px solid rgba(244,241,234,0.18);
+      border-radius: 4px;
+      box-shadow: 0 0 90px var(--lantern-glow), 0 0 140px rgba(233,196,106,0.1);
+      animation: lanternFlicker 6s ease-in-out infinite alternate;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .lantern-body { animation: none; }
+    }
+
+    @keyframes lanternFlicker {
+      0% { opacity: 0.92; filter: brightness(1); }
+      45% { opacity: 0.97; filter: brightness(1.04); }
+      70% { opacity: 0.9; filter: brightness(0.98); }
+      100% { opacity: 0.96; filter: brightness(1.02); }
+    }
+
+    .lantern-base {
+      position: absolute;
+      bottom: 4px;
+      left: 6px;
+      right: 6px;
+      height: 14px;
+      background: var(--ink-stroke);
+      border-radius: 0 0 2px 2px;
+    }
+
+    /* Table surface where slips rest */
+    .table {
+      position: absolute;
+      left: 50%;
+      bottom: 6%;
+      width: min(1080px, 96vw);
+      height: 58%;
+      transform: translateX(-50%);
+      z-index: 6;
+      overflow: visible;
+    }
+
+    /* Paper slips */
+    .slip {
+      position: absolute;
+      width: clamp(160px, 20vw, 220px);
+      min-height: 110px;
+      padding: 0.9rem 1rem 0.85rem;
+      background:
+        linear-gradient(135deg, var(--paper) 0%, var(--paper-edge) 100%);
+      color: var(--ink-stroke);
+      border: 1px solid rgba(74,70,66,0.18);
+      box-shadow:
+        2px 3px 8px rgba(0,0,0,0.18),
+        inset 0 0 22px rgba(179,71,62,0.03);
+      cursor: pointer;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                  box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                  z-index 0s linear 0s;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      font-size: 0.92rem;
+      line-height: 1.55;
+      text-align: left;
+      opacity: 0;
+      animation: slipLand 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation-delay: var(--stagger, 0s);
+    }
+
+    @keyframes slipLand {
+      from { opacity: 0; transform: translateY(-24px) rotate(var(--base-rot, 0deg)) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) rotate(var(--base-rot, 0deg)) scale(1); }
+    }
+
+    .slip:hover, .slip:focus-visible {
+      transform: translateY(-28px) rotate(0deg) scale(2) !important;
+      transform-origin: center center;
+      box-shadow:
+        0 38px 95px rgba(0,0,0,0.5),
+        0 0 0 4px rgba(233,196,106,0.28),
+        inset 0 0 34px rgba(179,71,62,0.06);
+      z-index: 200;
+      outline: none;
+    }
+
+    .slip:focus-visible { outline: 2px solid var(--lantern); outline-offset: 3px; }
+
+    .slip-number {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.68rem;
+      color: var(--ink-wash);
+      letter-spacing: 0.12em;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .slip-number::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: rgba(138,134,128,0.35);
+    }
+
+    .slip-domain {
+      position: absolute;
+      left: 10px;
+      bottom: 8px;
+      font-size: 0.62rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.08em;
+      color: var(--ink-wash);
+      text-transform: uppercase;
+    }
+
+    .slip-domain.character { color: #C9A86C; }
+    .slip-domain.gameplay { color: #7FA082; }
+    .slip-domain.structure { color: #7E9AAF; }
+    .slip-domain.genre { color: #B38FB6; }
+    .slip-domain.quote { color: #D89C7A; }
+
+    .slip-quote {
+      font-family: "Noto Serif TC", serif;
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: var(--ink-stroke);
+      line-height: 1.5;
+    }
+
+    .slip-seal {
+      position: absolute;
+      right: 8px;
+      bottom: 7px;
+      width: 18px;
+      height: 18px;
+      background: var(--seal);
+      border-radius: 2px;
+      opacity: 0.75;
+      box-shadow: inset 0 0 2px rgba(0,0,0,0.2);
+    }
+
+    .slip-corner {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 18px;
+      height: 18px;
+      background: linear-gradient(135deg, transparent 50%, rgba(138,134,128,0.2) 50%);
+      pointer-events: none;
+    }
+
+    /* Cover image (VNDB) */
+    .slip-cover {
+      position: absolute;
+      right: 10px;
+      top: 10px;
+      width: 52px;
+      height: 74px;
+      object-fit: cover;
+      border: 1px solid rgba(74,70,66,0.22);
+      box-shadow: 1px 2px 6px rgba(0,0,0,0.18);
+      filter: sepia(22%) saturate(72%) brightness(0.95) contrast(0.96);
+      pointer-events: none;
+    }
+
+    .slip-quote.with-cover,
+    .slip-number.with-cover {
+      padding-right: 62px;
+    }
+
+    /* Symbolic crest for each work — original, no copyrighted imagery */
+    .slip-crest {
+      position: absolute;
+      right: 10px;
+      top: 10px;
+      width: 52px;
+      height: 52px;
+      pointer-events: none;
+      background: rgba(28,26,23,0.35);
+      border-radius: 4px;
+      padding: 6px;
+      box-shadow: inset 0 0 8px rgba(0,0,0,0.25), 1px 2px 6px rgba(0,0,0,0.12);
+    }
+
+    .slip-quote.with-crest,
+    .slip-number.with-crest {
+      padding-right: 60px;
+    }
+
+    /* 1. 9-nine- : four shards converge into payoff */
+    .crest-nine {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-nine .shard {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      background: var(--moon);
+      opacity: 0.5;
+      animation: shardConverge 2.4s ease-in-out infinite;
+    }
+    .crest-nine .shard:nth-child(1) { left: 0; top: 0; --tx: 16px; --ty: 16px; animation-delay: 0s; }
+    .crest-nine .shard:nth-child(2) { right: 0; top: 0; --tx: -16px; --ty: 16px; animation-delay: 0.2s; }
+    .crest-nine .shard:nth-child(3) { left: 0; bottom: 0; --tx: 16px; --ty: -16px; animation-delay: 0.4s; }
+    .crest-nine .shard:nth-child(4) { right: 0; bottom: 0; --tx: -16px; --ty: -16px; animation-delay: 0.6s; }
+    .crest-nine .core {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 6px; height: 6px;
+      background: var(--lantern);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0;
+      animation: coreGlow 2.4s ease-in-out infinite;
+      animation-delay: 1.2s;
+    }
+    @keyframes shardConverge {
+      0%, 100% { transform: translate(0,0) scale(1); opacity: 0.45; }
+      50% { transform: translate(var(--tx), var(--ty)) scale(0.6); opacity: 0.9; }
+    }
+    @keyframes coreGlow {
+      0%, 100% { opacity: 0; box-shadow: 0 0 0 rgba(233,196,106,0); }
+      50% { opacity: 1; box-shadow: 0 0 8px rgba(233,196,106,0.6); }
+    }
+
+    /* 2. Tsuki no Kanata : three raindrops → ripple */
+    .crest-moon {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-moon .drop {
+      position: absolute;
+      width: 4px;
+      height: 8px;
+      background: var(--moon);
+      border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+      left: 50%;
+      transform: translateX(-50%);
+      opacity: 0;
+      animation: rainDrop 2s ease-in infinite;
+    }
+    .crest-moon .drop:nth-child(1) { top: 0; animation-delay: 0s; }
+    .crest-moon .drop:nth-child(2) { top: 0; animation-delay: 0.55s; }
+    .crest-moon .drop:nth-child(3) { top: 0; animation-delay: 1.1s; }
+    .crest-moon .ripple {
+      position: absolute;
+      left: 50%; bottom: 2px;
+      width: 16px; height: 4px;
+      border: 1px solid var(--moon);
+      border-radius: 50%;
+      transform: translateX(-50%) scale(0);
+      opacity: 0;
+      animation: rippleOut 2s ease-out infinite;
+    }
+    @keyframes rainDrop {
+      0% { transform: translateX(-50%) translateY(-4px); opacity: 0; }
+      20% { opacity: 0.7; }
+      80% { opacity: 0.7; }
+      100% { transform: translateX(-50%) translateY(22px); opacity: 0; }
+    }
+    @keyframes rippleOut {
+      0%, 60% { transform: translateX(-50%) scale(0); opacity: 0; }
+      70% { opacity: 0.5; }
+      100% { transform: translateX(-50%) scale(1.2); opacity: 0; }
+    }
+
+    /* 3. Daitoshokan : breathing open book */
+    .crest-library {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-library .page {
+      position: absolute;
+      width: 14px;
+      height: 20px;
+      background: var(--paper-edge);
+      border: 1px solid var(--ink-wash);
+      animation: pageBreathe 3s ease-in-out infinite;
+    }
+    .crest-library .page.left {
+      left: 3px; top: 50%;
+      transform: translateY(-50%) perspective(20px) rotateY(12deg);
+      transform-origin: right center;
+      border-radius: 0 2px 2px 0;
+      --base-rot: 12deg;
+    }
+    .crest-library .page.right {
+      right: 3px; top: 50%;
+      transform: translateY(-50%) perspective(20px) rotateY(-12deg);
+      transform-origin: left center;
+      border-radius: 2px 0 0 2px;
+      --base-rot: -12deg;
+      animation-delay: 1.5s;
+    }
+    @keyframes pageBreathe {
+      0%, 100% { transform: translateY(-50%) perspective(20px) rotateY(var(--base-rot)); }
+      50% { transform: translateY(-50%) perspective(20px) rotateY(calc(var(--base-rot) * 1.8)); }
+    }
+
+    /* 4. Kamidori : strategic token on 3x3 grid */
+    .crest-kamidori {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 2px;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    .crest-kamidori .cell {
+      background: rgba(138,134,128,0.25);
+      border-radius: 1px;
+    }
+    .crest-kamidori .token {
+      position: absolute;
+      width: 10px; height: 10px;
+      background: var(--lantern);
+      border-radius: 50%;
+      box-shadow: 0 0 4px rgba(233,196,106,0.5);
+      animation: tokenMove 3.5s steps(1, end) infinite;
+    }
+    @keyframes tokenMove {
+      0% { left: 2px; top: 2px; }
+      20% { left: calc(100% - 12px); top: 2px; }
+      40% { left: calc(50% - 5px); top: calc(50% - 5px); }
+      60% { left: 2px; top: calc(100% - 12px); }
+      80% { left: calc(100% - 12px); top: calc(100% - 12px); }
+      100% { left: 2px; top: 2px; }
+    }
+
+    /* 5. Sengoku Rance : conquest nodes lighting up */
+    .crest-rance {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-rance .node {
+      position: absolute;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: rgba(138,134,128,0.35);
+      animation: nodeClaim 2.8s ease-in-out infinite;
+    }
+    .crest-rance .node:nth-child(1) { left: 4px; top: 18px; animation-delay: 0s; }
+    .crest-rance .node:nth-child(2) { left: 13px; top: 8px; animation-delay: 0.35s; }
+    .crest-rance .node:nth-child(3) { right: 13px; top: 12px; animation-delay: 0.7s; }
+    .crest-rance .node:nth-child(4) { right: 4px; top: 22px; animation-delay: 1.05s; }
+    .crest-rance .node:nth-child(5) { left: 50%; top: 50%; transform: translate(-50%, -50%); animation-delay: 1.4s; }
+    .crest-rance .route-line {
+      position: absolute;
+      height: 1px;
+      background: rgba(138,134,128,0.25);
+      transform-origin: left center;
+      animation: routeDraw 2.8s ease-in-out infinite;
+    }
+    @keyframes nodeClaim {
+      0%, 100% { background: rgba(138,134,128,0.35); box-shadow: 0 0 0 transparent; }
+      40% { background: var(--seal); box-shadow: 0 0 4px rgba(179,71,62,0.5); }
+      60% { background: var(--seal); }
+    }
+    @keyframes routeDraw {
+      0% { opacity: 0.2; }
+      50% { opacity: 0.6; background: rgba(179,71,62,0.4); }
+      100% { opacity: 0.2; }
+    }
+
+    /* 6. Senren Banka : sword slash + petal */
+    .crest-senren {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-senren .slash {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 28px; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--paper), transparent);
+      transform: translate(-50%, -50%) rotate(-30deg) scaleX(0);
+      animation: slashSweep 2.2s ease-out infinite;
+    }
+    .crest-senren .petal {
+      position: absolute;
+      width: 5px; height: 5px;
+      background: rgba(179,71,62,0.55);
+      border-radius: 50% 0 50% 0;
+      opacity: 0;
+      animation: petalFloat 2.2s ease-out infinite;
+    }
+    .crest-senren .petal:nth-child(2) { left: 20%; top: 40%; animation-delay: 0.3s; }
+    .crest-senren .petal:nth-child(3) { left: 60%; top: 25%; animation-delay: 0.6s; }
+    @keyframes slashSweep {
+      0% { transform: translate(-50%, -50%) rotate(-30deg) scaleX(0); opacity: 0; }
+      30% { opacity: 1; }
+      60% { transform: translate(-50%, -50%) rotate(-30deg) scaleX(1); opacity: 0.8; }
+      100% { transform: translate(-50%, -50%) rotate(-30deg) scaleX(1.2); opacity: 0; }
+    }
+    @keyframes petalFloat {
+      0% { transform: translate(0,0) rotate(0deg); opacity: 0; }
+      40% { opacity: 0.7; }
+      100% { transform: translate(-10px, 12px) rotate(120deg); opacity: 0; }
+    }
+
+    /* 7. Natsu Uso : tightening chain pulse */
+    .crest-natsu {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-natsu .chain {
+      position: absolute;
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      width: 26px;
+      height: 26px;
+      border: 2px dashed rgba(179,71,62,0.5);
+      border-radius: 50%;
+      animation: chainPulse 2.6s ease-in-out infinite;
+    }
+    .crest-natsu .heart {
+      position: absolute;
+      left: 50%; top: 55%;
+      width: 8px; height: 8px;
+      background: var(--seal);
+      transform: translate(-50%, -50%) rotate(45deg);
+      opacity: 0.85;
+      animation: heartBeat 2.6s ease-in-out infinite;
+    }
+    .crest-natsu .heart::before, .crest-natsu .heart::after {
+      content: "";
+      position: absolute;
+      width: 8px; height: 8px;
+      background: var(--seal);
+      border-radius: 50%;
+    }
+    .crest-natsu .heart::before { left: -4px; top: 0; }
+    .crest-natsu .heart::after { left: 0; top: -4px; }
+    @keyframes chainPulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); border-color: rgba(179,71,62,0.35); }
+      50% { transform: translate(-50%, -50%) scale(0.88); border-color: rgba(179,71,62,0.65); }
+    }
+    @keyframes heartBeat {
+      0%, 100% { transform: translate(-50%, -50%) rotate(45deg) scale(1); }
+      50% { transform: translate(-50%, -50%) rotate(45deg) scale(1.12); }
+    }
+
+    /* 8. Tsukihime : death-perception cracks */
+    .crest-tsukihime {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-tsukihime .eye {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 24px; height: 14px;
+      border: 1.5px solid var(--moon);
+      border-radius: 80% 0 80% 0;
+      transform: translate(-50%, -50%) rotate(-45deg);
+      overflow: hidden;
+    }
+    .crest-tsukihime .eye::before {
+      content: "";
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 6px; height: 6px;
+      background: var(--seal);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+    .crest-tsukihime .crack {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 16px; height: 1px;
+      background: rgba(244,241,234,0.55);
+      transform-origin: left center;
+      transform: translate(-50%, -50%) rotate(var(--a)) scaleX(0);
+      animation: crackSpread 2.6s ease-out infinite;
+    }
+    .crest-tsukihime .crack:nth-child(2) { --a: -30deg; animation-delay: 0s; }
+    .crest-tsukihime .crack:nth-child(3) { --a: 30deg; animation-delay: 0.2s; }
+    .crest-tsukihime .crack:nth-child(4) { --a: 90deg; animation-delay: 0.4s; }
+    @keyframes crackSpread {
+      0% { transform: translate(-50%, -50%) rotate(var(--a)) scaleX(0); opacity: 0; }
+      40% { opacity: 1; }
+      100% { transform: translate(-50%, -50%) rotate(var(--a)) scaleX(1.1); opacity: 0; }
+    }
+
+    /* 9. Making Lovers : one heroine glow */
+    .crest-making {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-making .figure {
+      position: absolute;
+      left: 50%; bottom: 3px;
+      width: 10px; height: 20px;
+      background: linear-gradient(180deg, var(--paper) 0%, var(--paper-edge) 100%);
+      border-radius: 5px 5px 2px 2px;
+      transform: translateX(-50%);
+      animation: figureGlow 2.8s ease-in-out infinite;
+    }
+    .crest-making .heart-mini {
+      position: absolute;
+      left: 62%; top: 4px;
+      width: 5px; height: 5px;
+      background: var(--seal);
+      transform: rotate(45deg);
+      opacity: 0;
+      animation: heartPop 2.8s ease-in-out infinite;
+    }
+    @keyframes figureGlow {
+      0%, 100% { box-shadow: 0 0 0 rgba(233,196,106,0); }
+      50% { box-shadow: 0 0 10px rgba(233,196,106,0.4); }
+    }
+    @keyframes heartPop {
+      0%, 100% { transform: rotate(45deg) scale(0); opacity: 0; }
+      50% { transform: rotate(45deg) scale(1); opacity: 0.75; }
+    }
+
+    /* 10. Sorceress Alive : card flip / loop */
+    .crest-sorceress {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-sorceress .card {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 18px; height: 24px;
+      border: 1px solid var(--ink-wash);
+      border-radius: 2px;
+      background: var(--paper-edge);
+      transform: translate(-50%, -50%);
+      animation: cardFlip 2.4s ease-in-out infinite;
+    }
+    .crest-sorceress .card::after {
+      content: "";
+      position: absolute;
+      inset: 3px;
+      border: 1px solid var(--seal);
+      border-radius: 2px;
+      opacity: 0.6;
+    }
+    @keyframes cardFlip {
+      0% { transform: translate(-50%, -50%) rotateY(0deg); }
+      45% { transform: translate(-50%, -50%) rotateY(180deg); }
+      55% { transform: translate(-50%, -50%) rotateY(180deg); }
+      100% { transform: translate(-50%, -50%) rotateY(360deg); }
+    }
+
+    /* 11. 11eyes : red-moon / hot-blooded pulse */
+    .crest-eleveneyes {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-eleveneyes .red-moon {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: var(--seal);
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 0 rgba(179,71,62,0);
+      animation: redMoonPulse 2s ease-in-out infinite;
+    }
+    .crest-eleveneyes .flare {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 2px;
+      height: 8px;
+      background: rgba(244,241,234,0.7);
+      transform-origin: center bottom;
+      transform: translate(-50%, -100%) rotate(var(--a));
+      opacity: 0;
+      animation: flareShoot 2s ease-out infinite;
+    }
+    .crest-eleveneyes .flare:nth-child(2) { --a: 0deg; animation-delay: 0s; }
+    .crest-eleveneyes .flare:nth-child(3) { --a: 72deg; animation-delay: 0.13s; }
+    .crest-eleveneyes .flare:nth-child(4) { --a: 144deg; animation-delay: 0.26s; }
+    .crest-eleveneyes .flare:nth-child(5) { --a: 216deg; animation-delay: 0.39s; }
+    .crest-eleveneyes .flare:nth-child(6) { --a: 288deg; animation-delay: 0.52s; }
+    @keyframes redMoonPulse {
+      0%, 100% { box-shadow: 0 0 0 rgba(179,71,62,0); transform: translate(-50%, -50%) scale(1); }
+      50% { box-shadow: 0 0 14px rgba(179,71,62,0.5); transform: translate(-50%, -50%) scale(1.08); }
+    }
+    @keyframes flareShoot {
+      0% { transform: translate(-50%, -100%) rotate(var(--a)) scaleY(0); opacity: 0; }
+      20% { opacity: 1; }
+      60% { transform: translate(-50%, -160%) rotate(var(--a)) scaleY(1.2); opacity: 0.7; }
+      100% { transform: translate(-50%, -220%) rotate(var(--a)) scaleY(1.6); opacity: 0; }
+    }
+
+    /* 12. Fate/stay night : summoning circle runes */
+    .crest-fate {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .crest-fate .circle {
+      position: absolute;
+      left: 50%; top: 50%;
+      border: 1.5px solid var(--seal);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.7;
+    }
+    .crest-fate .circle:nth-child(1) { width: 30px; height: 30px; animation: runeSpin 8s linear infinite; }
+    .crest-fate .circle:nth-child(2) { width: 22px; height: 22px; border-color: rgba(179,71,62,0.55); animation: runeSpin 6s linear infinite reverse; }
+    .crest-fate .circle:nth-child(3) { width: 14px; height: 14px; border-color: rgba(244,241,234,0.4); animation: runeSpin 4s linear infinite; }
+    .crest-fate .rune {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 2px;
+      height: 10px;
+      background: var(--seal);
+      transform-origin: center bottom;
+      transform: translate(-50%, -100%) rotate(var(--a));
+      opacity: 0.7;
+      animation: runeFlicker 2.2s ease-in-out infinite;
+    }
+    .crest-fate .rune:nth-child(4) { --a: 0deg; animation-delay: 0s; }
+    .crest-fate .rune:nth-child(5) { --a: 72deg; animation-delay: 0.15s; }
+    .crest-fate .rune:nth-child(6) { --a: 144deg; animation-delay: 0.3s; }
+    .crest-fate .rune:nth-child(7) { --a: 216deg; animation-delay: 0.45s; }
+    .crest-fate .rune:nth-child(8) { --a: 288deg; animation-delay: 0.6s; }
+    @keyframes runeSpin {
+      from { transform: translate(-50%, -50%) rotate(0deg); }
+      to { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+    @keyframes runeFlicker {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 0.95; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .slip-crest, .slip-crest *, .slip-crest *::before, .slip-crest *::after {
+        animation: none !important;
+      }
+    }
+
+    /* Decorative weights: cup / book corner */
+    .prop-cup {
+      position: absolute;
+      left: 54%;
+      top: 62%;
+      width: 44px;
+      height: 30px;
+      background: radial-gradient(circle at 40% 30%, rgba(244,241,234,0.35), rgba(138,134,128,0.5));
+      border-radius: 0 0 22px 22px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+      z-index: 12;
+      pointer-events: none;
+    }
+
+    .prop-book {
+      position: absolute;
+      right: 18%;
+      top: 34%;
+      width: 78px;
+      height: 56px;
+      background: linear-gradient(180deg, #6B4C3A 0%, #4A3529 100%);
+      border-left: 4px solid #3E2D22;
+      box-shadow: 3px 4px 12px rgba(0,0,0,0.35);
+      z-index: 10;
+      pointer-events: none;
+      transform: rotate(-12deg);
+    }
+
+    /* Modal / expanded slip read */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(28,26,23,0.82);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.25s ease, visibility 0.25s ease;
+      z-index: 100;
+    }
+
+    .overlay.is-open { opacity: 1; visibility: visible; }
+
+    .overlay-panel {
+      position: relative;
+      width: min(640px, 100%);
+      max-height: min(80vh, 720px);
+      overflow-y: auto;
+      background: var(--paper);
+      color: var(--ink-stroke);
+      padding: 2rem 2.2rem 2.2rem;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.55);
+      border-top: 4px solid var(--seal);
+    }
+
+    .overlay-panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(0deg, transparent 0px, transparent 23px, rgba(138,134,128,0.06) 24px);
+      pointer-events: none;
+    }
+
+    .overlay-header {
+      font-family: "Noto Serif TC", serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin: 0 0 0.6rem;
+      padding-right: 2rem;
+      line-height: 1.45;
+    }
+
+    .overlay-cover {
+      float: right;
+      width: 120px;
+      height: 168px;
+      object-fit: cover;
+      margin: 0 0 1rem 1.2rem;
+      border: 1px solid rgba(74,70,66,0.18);
+      box-shadow: 2px 4px 14px rgba(0,0,0,0.18);
+    }
+
+    .overlay-crest {
+      float: right;
+      width: 120px;
+      height: 120px;
+      margin: 0 0 1rem 1.2rem;
+      border: 1px solid rgba(74,70,66,0.18);
+      background: var(--night-deep);
+      border-radius: 4px;
+      box-shadow: 2px 4px 14px rgba(0,0,0,0.18);
+      padding: 12px;
+    }
+
+    @media (max-width: 560px) {
+      .overlay-cover, .overlay-crest {
+        float: none;
+        display: block;
+        margin: 0 auto 1.2rem;
+      }
+      .overlay-cover {
+        width: 110px;
+        height: 154px;
+      }
+    }
+
+    .overlay-meta {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.72rem;
+      color: var(--ink-wash);
+      letter-spacing: 0.08em;
+      margin-bottom: 1.2rem;
+    }
+
+    .overlay-body {
+      font-size: 1rem;
+      line-height: 1.8;
+      color: var(--ink-stroke);
+    }
+
+    .overlay-body p { margin: 0 0 1rem; }
+
+    .overlay-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      width: 36px;
+      height: 36px;
+      border: 1px solid rgba(74,70,66,0.25);
+      background: transparent;
+      color: var(--ink-stroke);
+      font-size: 1.4rem;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .overlay-close:hover, .overlay-close:focus-visible {
+      background: var(--seal);
+      color: var(--paper);
+      outline: none;
+    }
+
+    .overlay-close:focus-visible { outline: 2px solid var(--ink-stroke); outline-offset: 2px; }
+
+    .read-status {
+      display: inline-block;
+      margin-top: 1.2rem;
+      padding: 0.35rem 0.7rem;
+      font-size: 0.72rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: var(--seal-ink);
+      border: 1px solid rgba(179,71,62,0.35);
+      background: rgba(179,71,62,0.06);
+    }
+
+    .provenance-drawer {
+      margin-top: 1.4rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(74,70,66,0.18);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .provenance-item {
+      font-size: 0.74rem;
+      line-height: 1.5;
+      color: var(--ink-wash);
+    }
+
+    .provenance-item.user {
+      color: var(--ink-stroke);
+      font-family: "Noto Serif TC", serif;
+    }
+
+    .provenance-item.engine {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.68rem;
+    }
+
+    /* Room title / helper text */
+    .room-title {
+      position: absolute;
+      left: 50%;
+      top: 3.5%;
+      transform: translateX(-50%);
+      z-index: 7;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .room-title h1 {
+      font-family: "Noto Serif TC", serif;
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      margin: 0 0 0.35rem;
+      color: rgba(244,241,234,0.92);
+    }
+
+    .room-title p {
+      margin: 0;
+      font-size: 0.78rem;
+      color: var(--ink-wash);
+      letter-spacing: 0.08em;
+    }
+
+    .helper {
+      position: absolute;
+      left: 50%;
+      bottom: 2.2%;
+      transform: translateX(-50%);
+      font-size: 0.72rem;
+      color: var(--ink-wash);
+      letter-spacing: 0.06em;
+      z-index: 7;
+      pointer-events: none;
+    }
+
+    .curator-note {
+      position: absolute;
+      left: 4%;
+      top: 18%;
+      width: 260px;
+      max-height: 34vh;
+      overflow-y: auto;
+      padding: 1.1rem 1.25rem;
+      background: rgba(28,26,23,0.72);
+      border-left: 3px solid var(--lantern);
+      color: rgba(244,241,234,0.82);
+      font-size: 0.84rem;
+      line-height: 1.75;
+      z-index: 5;
+      pointer-events: auto;
+    }
+
+    .curator-note p {
+      margin: 0 0 0.7rem;
+    }
+
+    .curator-note p:last-child { margin-bottom: 0; }
+
+    .curator-note .provenance {
+      display: block;
+      margin-top: 0.7rem;
+      padding-top: 0.6rem;
+      border-top: 1px solid rgba(244,241,234,0.12);
+      font-size: 0.72rem;
+      color: var(--ink-wash);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .peer-rooms {
+      position: absolute;
+      right: 4%;
+      bottom: 18%;
+      width: 180px;
+      padding: 0.85rem 1rem;
+      background: rgba(28,26,23,0.55);
+      border: 1px solid rgba(244,241,234,0.12);
+      color: var(--ink-wash);
+      font-size: 0.72rem;
+      line-height: 1.6;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .peer-rooms strong {
+      color: rgba(244,241,234,0.75);
+      font-weight: 500;
+    }
+
+    .view-toggle {
+      position: absolute;
+      right: 3%;
+      bottom: 2.5%;
+      z-index: 20;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.55rem;
+      background: rgba(28,26,23,0.65);
+      border: 1px solid rgba(244,241,234,0.18);
+      border-radius: 999px;
+      color: var(--paper);
+      font-size: 0.78rem;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .view-toggle:hover, .view-toggle:focus-visible {
+      border-color: rgba(233,196,106,0.45);
+      background: rgba(28,26,23,0.85);
+      outline: none;
+    }
+
+    .view-toggle:focus-visible { outline: 2px solid var(--lantern); outline-offset: 2px; }
+
+    .view-toggle-label {
+      font-family: "Noto Serif TC", serif;
+      transition: opacity 0.2s ease;
+    }
+
+    .view-toggle-label.dim { opacity: 0.5; }
+
+    .view-toggle[aria-pressed="true"] .view-toggle-label:first-child { opacity: 0.5; }
+    .view-toggle[aria-pressed="true"] .view-toggle-label.dim { opacity: 1; }
+
+    .view-toggle-knob {
+      width: 34px;
+      height: 18px;
+      border-radius: 999px;
+      background: rgba(244,241,234,0.2);
+      position: relative;
+      transition: background 0.2s ease;
+    }
+
+    .view-toggle-knob::after {
+      content: "";
+      position: absolute;
+      left: 2px;
+      top: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--paper);
+      transition: transform 0.2s ease;
+    }
+
+    .view-toggle[aria-pressed="true"] .view-toggle-knob { background: rgba(233,196,106,0.35); }
+    .view-toggle[aria-pressed="true"] .view-toggle-knob::after { transform: translateX(16px); }
+
+    /* Mobile adaptation: top-down flat layout */
+    @media (max-width: 760px) {
+      .room::before { display: none; }
+      .door-frame {
+        position: relative;
+        left: auto;
+        top: auto;
+        width: 100%;
+        height: 56px;
+        border: none;
+        border-bottom: 1px solid rgba(244,241,234,0.12);
+        background: rgba(28,26,23,0.6);
+        flex-direction: row;
+        justify-content: center;
+        padding: 0.5rem;
+        box-shadow: none;
+      }
+      .door-label {
+        writing-mode: horizontal-tb;
+        margin: 0;
+        font-size: 0.95rem;
+      }
+      .door-sill { display: none; }
+      .window { width: 120px; height: 86px; right: 4%; top: 76px; }
+      .moon { width: 28px; height: 28px; right: 7%; top: 90px; }
+      .lantern { top: 64px; }
+      .room-title { top: 12px; }
+      .room-title h1 { font-size: 1.15rem; }
+      .table {
+        position: relative;
+        left: auto;
+        bottom: auto;
+        transform: none;
+        width: 100%;
+        height: auto;
+        padding: 1rem 1rem 3.5rem;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.85rem;
+        overflow-y: auto;
+        max-height: calc(100vh - 132px);
+      }
+      .slip {
+        position: relative !important;
+        width: 100%;
+        transform: none !important;
+        left: auto !important;
+        top: auto !important;
+        min-height: 120px;
+      }
+      .slip:hover, .slip:focus-visible {
+        transform: translateY(-6px) scale(1.05) !important;
+      }
+      .slip-crest {
+        width: 46px;
+        height: 46px;
+        right: 8px;
+        top: 8px;
+      }
+      .slip-cover {
+        width: 46px;
+        height: 66px;
+        right: 8px;
+        top: 8px;
+      }
+      .slip-quote.with-crest,
+      .slip-number.with-crest,
+      .slip-quote.with-cover,
+      .slip-number.with-cover {
+        padding-right: 54px;
+      }
+      .view-toggle {
+        right: 50%;
+        bottom: 1.2%;
+        transform: translateX(50%);
+      }
+      .prop-cup, .prop-book { display: none; }
+      .helper { bottom: 1%; }
+      .curator-note {
+        position: relative;
+        left: auto;
+        top: auto;
+        width: 100%;
+        max-height: none;
+        order: -1;
+        border-left: none;
+        border-bottom: 2px solid var(--lantern);
+        background: rgba(28,26,23,0.55);
+      }
+      .peer-rooms { display: none; }
+    }
+
+    @media (max-width: 420px) {
+      .table { grid-template-columns: 1fr; }
+      .overlay-panel { padding: 1.4rem 1.3rem 1.6rem; }
+      .overlay-header { font-size: 1.15rem; }
+      .overlay-body { font-size: 0.95rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="room" aria-label="VN 舊驛：一間散放 12 張記憶紙條的暗室">
+    <a class="door-frame" href="./atlas.html" aria-label="返回夜墨小圖志地圖">
+      <span class="door-label">返回地圖</span>
+      <span class="door-sill" aria-hidden="true"></span>
+    </a>
+
+    <div class="moon" aria-hidden="true"></div>
+    <div class="window" aria-hidden="true"></div>
+
+    <div class="lantern" aria-hidden="true">
+      <div class="lantern-hood"></div>
+      <div class="lantern-body"></div>
+      <div class="lantern-base"></div>
+    </div>
+
+    <div class="room-title">
+      <h1>VN 舊驛</h1>
+      <p>12 張紙條，12 則過去自我的閱讀記憶</p>
+    </div>
+
+    <aside class="curator-note" aria-label="房間策展語">
+      <p>我讀視覺小說最集中的時候是十到十五年前的學生時代。它曾經是核心，現在不再是，但也沒有完全停止。這裡的十二部是 2026 年一次回頭整理，從過去自我的閱讀裡抽出還能拉動的槓桿。</p>
+      <p>一則 note 壓縮了數十小時的閱讀；它省略的與它命名的一樣重要。這間舊驛不是現在的品味宣言，而是一個退役介質的策展現場。</p>
+      <span class="provenance">策展語摘自 VN-reading-thread.md · 設計階段草稿 · 待 Robin 核准</span>
+    </aside>
+
+    <div class="peer-rooms" aria-hidden="true">
+      <strong>夜墨小圖志</strong> 的其中一間同級房間。VN 舊驛不是中心；藏書台、幕影亭、靜頁屋、微光渡、燈工房與它並置。
+    </div>
+
+    <div class="table" id="table" role="list" aria-label="記憶紙條">
+      <!-- Slips generated by JS -->
+    </div>
+
+    <div class="prop-cup" aria-hidden="true"></div>
+    <div class="prop-book" aria-hidden="true"></div>
+
+    <button class="view-toggle" id="view-toggle" aria-pressed="false" aria-label="切換為符號動畫">
+      <span class="view-toggle-label">封面</span>
+      <span class="view-toggle-knob"></span>
+      <span class="view-toggle-label dim">符號</span>
+    </button>
+
+    <p class="helper" aria-hidden="true">點擊紙條展開 possible read · 按 Esc 關閉</p>
+  </main>
+
+  <div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="overlay-title" aria-hidden="true">
+    <article class="overlay-panel">
+      <button class="overlay-close" id="overlay-close" aria-label="關閉">×</button>
+      <p class="overlay-meta" id="overlay-meta">01 / 12</p>
+      <h2 class="overlay-header" id="overlay-title">Title</h2>
+      <div class="overlay-body" id="overlay-body">
+        <p>Content</p>
+      </div>
+      <span class="read-status">possible read · 待 Robin 核准後方可成為 self-description</span>
+      <div class="provenance-drawer" id="provenance-drawer">
+        <span class="provenance-item user" id="provenance-note"></span>
+        <span class="provenance-item engine">事實與解讀均為輔助，非 Robin 自述</span>
+      </div>
+    </article>
+  </div>
+
+  <script>
+    const crestTemplates = {
+      nine:    `<div class="slip-crest crest-nine">
+                  <span class="shard"></span><span class="shard"></span><span class="shard"></span><span class="shard"></span>
+                  <span class="core"></span>
+                </div>`,
+      moon:    `<div class="slip-crest crest-moon">
+                  <span class="drop"></span><span class="drop"></span><span class="drop"></span>
+                  <span class="ripple"></span>
+                </div>`,
+      library: `<div class="slip-crest crest-library">
+                  <span class="page left"></span><span class="page right"></span>
+                </div>`,
+      kamidori:`<div class="slip-crest crest-kamidori">
+                  <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+                  <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+                  <span class="cell"></span><span class="cell"></span><span class="cell"></span>
+                  <span class="token"></span>
+                </div>`,
+      rance:   `<div class="slip-crest crest-rance">
+                  <span class="node"></span><span class="node"></span><span class="node"></span>
+                  <span class="node"></span><span class="node"></span>
+                  <span class="route-line" style="left:7px;top:21px;width:12px;transform:rotate(-55deg);"></span>
+                  <span class="route-line" style="left:16px;top:11px;width:14px;transform:rotate(18deg);"></span>
+                  <span class="route-line" style="left:28px;top:14px;width:12px;transform:rotate(55deg);"></span>
+                  <span class="route-line" style="left:34px;top:25px;width:10px;transform:rotate(-30deg);"></span>
+                </div>`,
+      senren:  `<div class="slip-crest crest-senren">
+                  <span class="slash"></span>
+                  <span class="petal"></span><span class="petal"></span>
+                </div>`,
+      natsu:   `<div class="slip-crest crest-natsu">
+                  <span class="chain"></span>
+                  <span class="heart"></span>
+                </div>`,
+      tsukihime:`<div class="slip-crest crest-tsukihime">
+                  <span class="eye"></span>
+                  <span class="crack"></span><span class="crack"></span><span class="crack"></span>
+                </div>`,
+      making:  `<div class="slip-crest crest-making">
+                  <span class="figure"></span>
+                  <span class="heart-mini"></span>
+                </div>`,
+      sorceress:`<div class="slip-crest crest-sorceress">
+                  <span class="card"></span>
+                </div>`,
+      eleveneyes:`<div class="slip-crest crest-eleveneyes">
+                  <span class="red-moon"></span>
+                  <span class="flare"></span><span class="flare"></span>
+                  <span class="flare"></span><span class="flare"></span><span class="flare"></span>
+                </div>`,
+      fate:    `<div class="slip-crest crest-fate">
+                  <span class="circle"></span><span class="circle"></span><span class="circle"></span>
+                  <span class="rune"></span><span class="rune"></span><span class="rune"></span>
+                  <span class="rune"></span><span class="rune"></span>
+                </div>`
+    };
+
+    const slipsData = [
+      {
+        quote: "Payoff larger than the sum of its parts",
+        title: "9-nine- Yukiiro Yukihana Yukinoato",
+        crest: "nine",
+        cover: "https://t.vndb.org/cv/30/95130.jpg",
+        domain: "structure",
+        year: 2020,
+        length: "~12h",
+        read: "這則 note 不是評價角色或路線，而是對「分割商法」這個發行結構本身的判詞。四部獨立發售的章節中，前三次的積累在第四部被一次兌現；note 認為最終的回報值得等待。它壓縮的是一個橫跨 2018–2020 年的閱讀過程，並為那個過程提供了事後的正當性。"
+      },
+      {
+        quote: "雨音雨音雨音，聲畫佳，人物刻劃深",
+        title: "Tsuki no Kanata de Aimashou",
+        crest: "moon",
+        cover: "https://t.vndb.org/cv/54/100854.jpg",
+        domain: "character",
+        year: 2019,
+        length: "~48h",
+        read: "「雨音」是女主角佐倉雨音的名字，不是雨聲。這是一句 Class 1 的角色名 affection chant，重複三次是記憶的槓桿。note 同時點出 tone work's 的聲畫品質與人物刻劃深度，而 reception 也確認雨音路線是整部作品「真正結晶化」的部分。"
+      },
+      {
+        quote: "Books, library, good characterization and pace",
+        title: "Daitoshokan no Hitsujikai",
+        crest: "library",
+        cover: "https://t.vndb.org/cv/72/86072.jpg",
+        domain: "structure",
+        year: 2013,
+        length: "~42h",
+        read: "最乾淨的 craft-descriptor：設定（書、圖書館）加兩項 craft 品質（人物刻劃、節奏）。note 沒有點名任何女主角，因為這部作品的核心是群體友誼與夥伴關係，而非單一戀愛對象。"
+      },
+      {
+        quote: "養成+戰略遊戲性一流",
+        title: "Kamidori Alchemy Meister",
+        crest: "kamidori",
+        cover: "https://t.vndb.org/cv/28/89128.jpg",
+        domain: "gameplay",
+        year: 2011,
+        length: "~120h",
+        read: "純粹的 gameplay verdict。鍊金養成、SRPG、地下城探索、New Game Plus 循環才是這 120 小時的重心；劇情文字量偏少不是缺點，而是這則 note 判定「遊戲性一流」的前提。"
+      },
+      {
+        quote: "只論玩法已是超一流，路線設計驚艷",
+        title: "Sengoku Rance",
+        crest: "rance",
+        cover: "https://t.vndb.org/cv/75/95775.jpg",
+        domain: "gameplay",
+        year: 2006,
+        length: "~58h",
+        read: "兩個判詞疊加：「只論玩法已是超一流」是 gameplay 本身的評價；「路線設計驚艷」則指向征服地圖上不同據點/角色解鎖不同路線的結構。note 稱讚的是路線設計，而不是某一條特定路線。"
+      },
+      {
+        quote: "有華麗戰鬥又有萌妹子，好柚子不香嗎",
+        title: "Senren＊Banka",
+        crest: "senren",
+        cover: "https://t.vndb.org/cv/46/80746.jpg",
+        domain: "genre",
+        year: 2016,
+        length: "~46h",
+        read: "三層組合：華麗戰鬥（村紗、蕾娜等劍鬥場面）、萌妹子（Yuzusoft 可愛女主群），以及「好柚子不香嗎」這句雙關——「柚子」是 Yuzusoft/柚子社。在「柚子社作品都一個味道」的批評聲中，這則 note 是一種帶品牌忠誠的正面回應。"
+      },
+      {
+        quote: "M學妹太棒啦，純愛",
+        title: "Natsu Uso -Ahead of the Reminiscence-",
+        crest: "natsu",
+        cover: "https://t.vndb.org/cv/86/107386.jpg",
+        domain: "character",
+        year: 2018,
+        length: "~6h",
+        read: "M 不是縮寫，而是 SM 中的 M 屬性；學妹是 sole primary heroine 和泉葵。這是書架最短的作品（約 6 小時），也是社群討論最稀薄的條目，因此這則 note 最接近純粹的個人偏好槓桿。"
+      },
+      {
+        quote: "氛圍感，直死之魔眼夠型",
+        title: "Tsukihime",
+        crest: "tsukihime",
+        cover: "https://t.vndb.org/cv/48/90048.jpg",
+        domain: "character",
+        year: 2000,
+        length: "~43h",
+        read: "氛圍感指向陰鬱哥德基調；「直死之魔眼」是遠野志貴的能力名稱，屬於 Class 4 的機械/能力名稱讚嘆。note 只命名入口感受，而 Far Side 三條路線的家族秘史深度則成為未明說的背景。"
+      },
+      {
+        quote: "可憐太有魅力",
+        title: "Making＊Lovers",
+        crest: "making",
+        cover: "https://t.vndb.org/cv/98/94598.jpg",
+        domain: "character",
+        year: 2017,
+        length: "~30h",
+        read: "「可憐」是女主角北大路可憐的名字，不是形容詞。這是書架上三則純角色 affection note 之一，等於一張過去自我投給特定女主角的一行選票。"
+      },
+      {
+        quote: "反轉再反轉，妹子戰鬥都不錯",
+        title: "Sorceress＊Alive!",
+        crest: "sorceress",
+        cover: "https://t.vndb.org/cv/12/100612.jpg",
+        domain: "structure",
+        year: 2018,
+        length: "~33h",
+        read: "「反轉再反轉」指向作品結構：前半 Sorceress（四女主線）翻轉進入後半 Alive（學園孤島/Island 式循環命運對抗）。這是社群中文討論極稀薄的條目，note 因此更像個人對結構的判讀。"
+      },
+      {
+        quote: "熱血就完了",
+        title: "11eyes -Tsumi to Batsu to Aganai no Shoujo-",
+        crest: "eleveneyes",
+        cover: "https://t.vndb.org/cv/65/94265.jpg",
+        domain: "genre",
+        year: 2008,
+        length: "~47h",
+        read: "純粹的 genre-affection verdict：熱血戰鬥就夠了。紅月下的都市奇幻群像戰鬥、中二病元素大集合，這則 note 把約 47 小時、多結局的作品壓縮成一個類型槓桿。"
+      },
+      {
+        quote: "I ask of you: are you my master?",
+        title: "Fate/stay night",
+        crest: "fate",
+        cover: "https://t.vndb.org/cv/71/89071.jpg",
+        domain: "quote",
+        year: 2004,
+        length: "~89h",
+        read: "Saber 召喚台詞，一句 quote 式的共鳴 note。它命名的是 Fate 路線起點的接觸瞬間，而 Fate → UBW → Heaven's Feel 三線遞升的結構深度則作為未明說背景存在。"
+      }
+    ];
+
+    const table = document.getElementById('table');
+    const overlay = document.getElementById('overlay');
+    const overlayMeta = document.getElementById('overlay-meta');
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlayBody = document.getElementById('overlay-body');
+    const overlayClose = document.getElementById('overlay-close');
+    const viewToggle = document.getElementById('view-toggle');
+
+    let useCrests = false;
+
+    // Desktop placement: scattered, slightly rotated, not a grid.
+    const desktopPlacements = [
+      { left: 6, top: 8, rot: -4 },
+      { left: 30, top: 4, rot: 2 },
+      { left: 54, top: 10, rot: -2 },
+      { left: 76, top: 6, rot: 5 },
+      { left: 10, top: 40, rot: 3 },
+      { left: 36, top: 36, rot: -5 },
+      { left: 62, top: 42, rot: 1 },
+      { left: 84, top: 38, rot: -3 },
+      { left: 16, top: 68, rot: -2 },
+      { left: 42, top: 66, rot: 4 },
+      { left: 66, top: 70, rot: -4 },
+      { left: 88, top: 64, rot: 2 }
+    ];
+
+    function renderSlips() {
+      const isMobile = window.matchMedia('(max-width: 760px)').matches;
+      table.innerHTML = '';
+
+      slipsData.forEach((item, index) => {
+        const el = document.createElement('button');
+        el.className = 'slip';
+        el.setAttribute('role', 'listitem');
+        el.setAttribute('aria-label', `第 ${index + 1} 張紙條：${item.title}`);
+
+        if (!isMobile) {
+          const p = desktopPlacements[index];
+          el.style.left = `${p.left}%`;
+          el.style.top = `${p.top}%`;
+          el.style.setProperty('--base-rot', `${p.rot}deg`);
+          el.style.setProperty('--stagger', `${0.15 + index * 0.06}s`);
+          el.style.transform = `rotate(${p.rot}deg)`;
+        } else {
+          el.style.setProperty('--base-rot', '0deg');
+          el.style.setProperty('--stagger', `${0.1 + index * 0.04}s`);
+        }
+
+        const visualClass = useCrests ? 'with-crest' : 'with-cover';
+        const visual = useCrests
+          ? crestTemplates[item.crest]
+          : `<img class="slip-cover" src="${item.cover}" alt="" loading="lazy" aria-hidden="true" />`;
+
+        const domainLabels = {
+          character: 'character',
+          gameplay: 'gameplay',
+          structure: 'structure',
+          genre: 'genre',
+          quote: 'quote'
+        };
+
+        el.innerHTML = `
+          <span class="slip-number ${visualClass}">${String(index + 1).padStart(2, '0')}</span>
+          <span class="slip-quote ${visualClass}">${item.quote}</span>
+          ${visual}
+          <span class="slip-domain ${item.domain}" aria-hidden="true">${domainLabels[item.domain]}</span>
+          <span class="slip-seal" aria-hidden="true"></span>
+          <span class="slip-corner" aria-hidden="true"></span>
+        `;
+
+        el.addEventListener('click', () => openOverlay(index));
+        table.appendChild(el);
+      });
+    }
+
+    function openOverlay(index) {
+      const item = slipsData[index];
+      const visual = useCrests
+        ? `<div class="overlay-crest" aria-hidden="true">${crestTemplates[item.crest]}</div>`
+        : `<img class="overlay-cover" src="${item.cover}" alt="" aria-hidden="true" />`;
+      overlayMeta.textContent = `${String(index + 1).padStart(2, '0')} / 12 · ${item.year} · ${item.length}`;
+      overlayTitle.textContent = item.title;
+      overlayBody.innerHTML = `${visual}<p>${item.read}</p>`;
+      const provenanceNote = document.getElementById('provenance-note');
+      if (provenanceNote) provenanceNote.textContent = `原文：${item.quote}`;
+      overlay.classList.add('is-open');
+      overlay.setAttribute('aria-hidden', 'false');
+      overlayClose.focus();
+      document.addEventListener('keydown', onKey);
+    }
+
+    viewToggle.addEventListener('click', () => {
+      useCrests = !useCrests;
+      viewToggle.setAttribute('aria-pressed', String(useCrests));
+      viewToggle.setAttribute('aria-label', useCrests ? '切換為封面圖' : '切換為符號動畫');
+      renderSlips();
+    });
+
+    function closeOverlay() {
+      overlay.classList.remove('is-open');
+      overlay.setAttribute('aria-hidden', 'true');
+      document.removeEventListener('keydown', onKey);
+    }
+
+    function onKey(e) {
+      if (e.key === 'Escape') closeOverlay();
+    }
+
+    overlayClose.addEventListener('click', closeOverlay);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeOverlay();
+    });
+
+    renderSlips();
+    window.addEventListener('resize', renderSlips);
+  </script>
+</body>
+</html>

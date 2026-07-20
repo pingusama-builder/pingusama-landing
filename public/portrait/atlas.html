@@ -1,0 +1,50 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>夜墨小圖志 v2</title><style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;600&family=VT323&display=swap');
+:root{--ink:#142238;--paper:#d9cca7;--gold:#edb45c;--mist:#d4d0bc}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 50% -20%,#314664,#0a1322 68%);color:#e7e0ce;font-family:'Noto Serif TC',serif}.page{max-width:1320px;margin:auto;padding:30px 24px 65px}.head{display:flex;justify-content:space-between;gap:20px;padding-bottom:17px;border-bottom:1px solid #66728a99;margin-bottom:17px}.tag,.edition{font:13px 'VT323',monospace;letter-spacing:1px;color:#e1b365}.head h1{font-size:clamp(29px,4vw,46px);font-weight:500;margin:4px 0 5px}.head p{margin:0;max-width:630px;font-size:14px;color:#c2c7c0;line-height:1.8}.edition{color:#95a5b4;text-align:right;white-space:nowrap}.atlas{position:relative;overflow:hidden;border:1px solid #7a806f;box-shadow:0 25px 75px #000c;background:#d6c89f}.atlas canvas{display:block;width:100%;height:auto;cursor:grab;image-rendering:pixelated}.atlas canvas:active{cursor:grabbing}.caption{position:absolute;left:17px;bottom:13px;font:16px 'VT323',monospace;color:#fff0bd;text-shadow:1px 1px 2px #1a2434}.key{position:absolute;right:16px;top:14px;background:#172238d9;border:1px solid #c5b68277;padding:8px 11px;color:#d8d4c3;font-size:11px;line-height:1.7}.light{display:inline-block;width:8px;height:8px;background:#efb75b;box-shadow:0 0 8px #ffbd61;border-radius:50%;margin-right:5px}.panel{display:none;margin-top:14px;background:#162239;border:1px solid #778397;border-left:3px solid #e4ad5a;padding:16px 20px;color:#d3d4cb;font-size:14px;line-height:1.8}.panel.show{display:block}.panel h2{margin:0;color:#f0d498;font-size:21px;font-weight:500}.meta{font:13px 'VT323',monospace;color:#98a9b8}.quote{font-style:italic;color:#f2e4c5}.foot{font-size:12px;line-height:1.8;color:#8fa0ad;max-width:800px;margin:15px 0 0}@media(max-width:620px){.page{padding:18px 10px 40px}.head{display:block}.edition{text-align:left;margin-top:8px}.key{font-size:9px;padding:5px}.caption{font-size:13px}}
+</style></head><body><main class="page"><header class="head"><div><div class="tag">PORTRAIT / NIGHT INK ATLAS / V2</div><h1>夜墨小圖志</h1><p>泛黃紙上先有山、水與留白；夜色從紙邊和山坳慢慢漫進來。像素只留給可親近的窗火與小景，不覆蓋整張山水。</p></div><div class="edition">水墨版原型 · 2026‑07‑20<br>拖曳 · 點一處燈火</div></header><section class="atlas"><canvas id="c" width="1280" height="760" aria-label="夜色水墨世界地圖"></canvas><div class="key"><span class="light"></span>此刻可見的 trace<br>暗處不是未解鎖</div><div class="caption">紙上有路，沒有任務　·　拖曳遊走，點一處地點</div></section><section id="panel" class="panel" aria-live="polite"></section><p class="foot">V2 將水墨保留為地形與紙面語言，並以暖燈作為「此刻可見」而非重要程度。這不是任何既有遊戲地圖的重製；地名、地勢與互動均為這個 portrait 的原創場景。</p></main><script>
+const c=document.querySelector('#c'),g=c.getContext('2d');g.imageSmoothingEnabled=false;let dx=0,dy=0,down=false,origin={};
+const sites=[
+{id:'vn',name:'VN 舊驛',x:258,y:362,on:1,type:'inn',meta:'已選 trace · revisited 2026‑07',text:'窗內夾著幾張泛黃小紙：<span class="quote">「雨音雨音雨音」</span>、<span class="quote">「Payoff larger than the sum of its parts」</span>、<span class="quote">「I ask of you: are you my master?」</span>。保留句子，不把它們改寫成結論。<br><br><a href="./vn.html" style="color:#f0d498;text-decoration:none;border-bottom:1px solid #f0d49866;padding-bottom:2px;">進入舊驛 →</a>'},
+{id:'books',name:'藏書台',x:638,y:259,on:1,type:'tower',meta:'已選 trace · still collecting',text:'水岸高台暫留數個書脊：<span class="quote">Stoner</span>、<span class="quote">Kafka on the Shore</span>、<span class="quote">《笑傲江湖》</span>、<span class="quote">《覆雨翻雲》</span>。這些書在此相近，不必證明相同。'},
+{id:'screen',name:'幕影亭',x:910,y:330,on:0,type:'pavilion',meta:'threshold · left silent',text:'一方竹簾，後面或有一格淡淡投影。尚未有畫面被選來停放。'},
+{id:'anime',name:'浮色坡',x:1048,y:190,on:0,type:'shrine',meta:'threshold · left silent',text:'薄霧裡留下一小段未命名的色彩。'},
+{id:'writing',name:'靜頁屋',x:527,y:537,on:0,type:'house',meta:'threshold · left silent',text:'燈還未點。一頁紙沒有翻開；未經選擇的文字不顯示。'},
+{id:'gaming',name:'微光渡',x:238,y:604,on:0,type:'dock',meta:'threshold · left silent',text:'臨水的渡口與一盞暗燈，為以後親手挑選的遊戲 trace 留著。'},
+{id:'tinker',name:'燈工房',x:746,y:490,on:1,type:'work',meta:'present · left on',text:'工房的燈最暖，並不因此成為地圖中心；它只是此刻有人在用的一處地方。'},
+{id:'bound',name:'不題名之門',x:1040,y:523,on:0,type:'gate',meta:'threshold · sealed',text:'遠山坳裡的石門。看得見門在，門後不需展示。'}];
+function fill(col){g.fillStyle=col}function mountain(points,col,edge){g.beginPath();points.forEach((p,i)=>i?g.lineTo(...p):g.moveTo(...p));g.closePath();fill(col);g.fill();if(edge){g.strokeStyle=edge;g.lineWidth=1;g.stroke()}}function rect(x,y,w,h,col){fill(col);g.fillRect(x,y,w,h)}
+function wash(cx,cy,rx,ry,col){g.save();g.globalAlpha=.06;for(let n=0;n<16;n++){g.beginPath();g.ellipse(cx+(n%4-2)*6,cy+(n%5-2)*5,rx*(.72+n/55),ry*(.72+n/60),n*.13,0,7);fill(col);g.fill()}g.restore()}
+function path(points,w,col){g.beginPath();points.forEach((p,i)=>i?g.lineTo(...p):g.moveTo(...p));g.lineWidth=w;g.strokeStyle=col;g.stroke()}
+function draw(){g.clearRect(0,0,1280,760);g.save();g.translate(dx,dy); // parchment
+let bg=g.createLinearGradient(0,0,1280,760);bg.addColorStop(0,'#d9cda9');bg.addColorStop(.55,'#c9bd98');bg.addColorStop(1,'#b5aa8d');fill(bg);g.fillRect(-180,-100,1640,960);
+// paper fibres and stains
+for(let i=0;i<2600;i++){let px=(i*97)%1280,py=(i*149)%760;rect(px,py,1,1,i%5?'#7f705522':'#f5e9c522')}wash(205,142,185,75,'#836d50');wash(958,620,260,135,'#5c6e69');wash(735,223,155,80,'#768c78');
+// night ink around edges, softly layered
+let night=g.createRadialGradient(640,365,260,640,365,850);night.addColorStop(0,'#11294300');night.addColorStop(.56,'#132b4538');night.addColorStop(1,'#07172cbe');fill(night);g.fillRect(-120,-100,1520,980);
+// distant mountains: ink outlines and green-blue thin washes
+mountain([[0,245],[75,176],[140,224],[220,111],[306,235],[390,156],[488,238],[584,132],[682,232],[755,169],[848,246],[940,145],[1044,226],[1128,114],[1280,216],[1280,340],[0,340]],'#536b6b99','#334c52');
+mountain([[0,300],[116,213],[212,300],[326,195],[439,295],[548,201],[667,303],[774,211],[897,301],[1010,202],[1118,294],[1210,207],[1280,263],[1280,376],[0,376]],'#385a5eaa','#28474f');
+for(let i=0;i<10;i++){path([[i*144-24,283],[i*135+64,225+(i%3)*12],[i*145+143,289]],1,'#e5dcb952')}
+// foreground slopes
+mountain([[0,416],[126,373],[251,425],[393,370],[532,429],[677,372],[815,423],[954,360],[1097,414],[1280,373],[1280,760],[0,760]],'#314f50','#244349');
+// blue-green mineral washes
+wash(366,370,168,57,'#487979');wash(747,394,175,62,'#527b70');wash(1025,344,130,55,'#698a70');wash(150,440,166,70,'#5d846f');
+// river: paper highlights within blue-grey water
+g.beginPath();g.moveTo(594,244);g.bezierCurveTo(517,344,715,377,623,477);g.bezierCurveTo(542,568,366,607,336,760);g.lineTo(675,760);g.bezierCurveTo(670,614,872,564,788,470);g.bezierCurveTo(701,374,748,321,689,240);g.closePath();fill('#5b8491aa');g.fill();g.strokeStyle='#e7dfbd88';g.lineWidth=2;g.stroke();for(let i=0;i<20;i++){path([[535+(i%3)*20,305+i*24],[621,294+i*24],[710-(i%2)*22,307+i*24]],1,'#f1e9ce66')}
+// trails - faded ochre, no arrows
+path([[258,362],[410,338],[525,282],[638,259],[759,290],[910,330]],4,'#8f75515e');path([[638,259],[663,363],[746,490],[880,466],[1040,523]],4,'#8f75515e');path([[258,362],[183,456],[238,604]],4,'#8f75515e');path([[527,537],[641,530],[746,490]],4,'#8f75515e');
+// tree groups as ink dots
+for(let i=0;i<330;i++){let px=(i*71)%1270,py=382+(i*101)%340;let s=1+i%3;fill(i%5?'#345b4f':'#25484a');g.beginPath();g.arc(px,py,s,0,7);g.fill()}
+sites.forEach(site);g.restore()}
+function site(p){let X=p.x,Y=p.y;g.save();if(p.on){g.shadowBlur=24;g.shadowColor='#efa94f';g.beginPath();g.arc(X,Y-20,27,0,7);fill('#efb35c44');g.fill()}g.shadowBlur=0;let wall=p.on?'#73523b':'#394451',roof=p.on?'#4b3540':'#293746',win=p.on?'#f1bc61':'#1b2e3d';
+if(p.type==='inn'){rect(X-28,Y-31,56,31,wall);mountain([[X-36,Y-31],[X,Y-55],[X+36,Y-31]],roof,'#283746');rect(X-17,Y-22,12,13,win);rect(X+7,Y-22,12,13,win);rect(X-21,Y-37,15,4,'#ede1bd')}
+if(p.type==='tower'){rect(X-11,Y-46,22,46,wall);mountain([[X-18,Y-46],[X,Y-72],[X+18,Y-46]],roof,'#283746');rect(X-5,Y-34,10,15,win)}
+if(p.type==='pavilion'){mountain([[X-34,Y-24],[X,Y-50],[X+34,Y-24],[X+28,Y-17],[X-28,Y-17]],'#423246','#263343');rect(X-24,Y-17,48,18,'#4b4c51');rect(X-4,Y-16,8,14,'#172637')}
+if(p.type==='shrine'){mountain([[X-29,Y],[X,Y-53],[X+29,Y]],'#3b4c58','#263b45');rect(X-19,Y-1,38,8,'#374a51')}
+if(p.type==='house'){rect(X-24,Y-28,48,28,wall);mountain([[X-32,Y-28],[X,Y-49],[X+32,Y-28]],roof,'#283746');rect(X-7,Y-20,14,20,'#172738')}
+if(p.type==='dock'){rect(X-30,Y-12,60,5,'#80614a');rect(X-15,Y-42,29,30,wall);mountain([[X-21,Y-42],[X,Y-59],[X+21,Y-42]],roof,'#293746');path([[X+30,Y-8],[X+54,Y+8],[X+29,Y+9]],2,'#9d7d5b')}
+if(p.type==='work'){rect(X-28,Y-31,56,31,wall);mountain([[X-35,Y-31],[X,Y-55],[X+35,Y-31]],roof,'#283746');rect(X-8,Y-23,16,15,win);rect(X+28,Y-19,9,3,'#d18a43')}
+if(p.type==='gate'){mountain([[X-26,Y],[X-26,Y-32],[X,Y-56],[X+26,Y-32],[X+26,Y]],'#4b4f4b','#293944');rect(X-11,Y-31,22,31,'#182535')}
+g.font='15px Noto Serif TC';g.textAlign='center';g.fillStyle=p.on?'#2c2520':'#445056';g.fillText(p.name,X,Y+22);g.restore()}
+function pos(e){let r=c.getBoundingClientRect();return{x:(e.clientX-r.left)*c.width/r.width-dx,y:(e.clientY-r.top)*c.height/r.height-dy}}c.addEventListener('pointerdown',e=>{down=true;origin={x:e.clientX-dx,y:e.clientY-dy};c.setPointerCapture(e.pointerId)});c.addEventListener('pointermove',e=>{if(!down)return;dx=Math.max(-150,Math.min(150,e.clientX-origin.x));dy=Math.max(-70,Math.min(70,e.clientY-origin.y));draw()});c.addEventListener('pointerup',e=>{let q=pos(e);down=false;let p=sites.find(v=>Math.hypot(v.x-q.x,v.y-q.y)<46);if(p){let d=document.querySelector('#panel');d.innerHTML='<h2>'+p.name+'</h2><div class="meta">'+p.meta+'</div><div>'+p.text+'</div>';d.classList.add('show');d.scrollIntoView({behavior:'smooth',block:'nearest'})}});draw();
+</script></body></html>
