@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-07-23 (book-world 3D prototype — The Eolian)
+
+- **First 3D book-world prototype built.** Picked *The Name of the Wind* → the Eolian music hall as the single light exploration. Created `my-app/public/portrait/world-name-of-the-wind.html`, a self-contained Three.js atmospheric scene: procedural stage, floating lute, tables/chairs with lanterns, bar counter, stone pillars, warm spotlight, dust particles, mist cone.
+- **Interaction:** orbit camera (drag/scroll) + raycast click on four trace objects (lute + three ember orbs) reveals excerpts from Robin's note in an in-scene panel. Esc or click empty space closes the panel.
+- **No external assets** — all geometry/materials are procedural; Three.js loaded via CDN importmap. Pattern matches existing static portrait pages (`/portrait/vn.html`, `/portrait/books.html`).
+- **Route wired:** `/portrait/world-name-of-the-wind` → `/portrait/world-name-of-the-wind.html` in `next.config.ts`. Build + tests green (812 pass / 20 skip). Committed `83f9cf7`; **not deployed yet** — waiting for explicit go-ahead.
+- **Observation / shape learning:** a single-book 3D "world" works as a peer room (like the VN inn or books room) rather than a replacement for the 2D atlas. It is a *threshold* experience: atmosphere first, text second, no synthesis. The Name of the Wind was a good first choice because the Eolian is visually concrete and Robin's note explicitly names it.
+
+---
+
 ## 2026-07-22 (visual library v2 — DEPLOYED to production)
 
 - **Books room — visual library v2 prototype DEPLOYED.** Copied `books-room-v2.html` → `my-app/public/portrait/books.html`, added rewrite `/portrait/books` → `/portrait/books.html` in `next.config.ts` (same pattern as `/portrait/atlas` and `/portrait/vn`). Build (`npm run build`) and tests (`npm run test`: 812 passed / 20 skipped) green.
