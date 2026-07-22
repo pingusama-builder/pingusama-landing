@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>風之名 · 伊奧林音樂廳｜Pingusama Portrait</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0f141f;
+      --ink-wash: #1a2332;
+      --paper: #e8dcc4;
+      --paper-dim: #c4b89e;
+      --gold: #d4a055;
+      --amber: #e9b86a;
+      --ember: #b85c38;
+      --mist: #8a9aaa;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      height: 100%;
+      background: var(--ink);
+      color: var(--paper);
+      font-family: "Noto Serif TC", "Noto Sans TC", serif;
+      overflow: hidden;
+    }
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+    }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 24px;
+    }
+    .header {
+      pointer-events: auto;
+      max-width: 420px;
+    }
+    .eyebrow {
+      font: 12px "Noto Sans TC", sans-serif;
+      letter-spacing: 2px;
+      color: var(--amber);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .title {
+      font-size: clamp(26px, 4vw, 40px);
+      font-weight: 500;
+      line-height: 1.25;
+      margin: 0 0 8px;
+      color: var(--paper);
+    }
+    .subtitle {
+      font: 14px/1.7 "Noto Sans TC", sans-serif;
+      color: var(--paper-dim);
+      margin: 0;
+      max-width: 360px;
+    }
+    .instruction {
+      font: 12px "Noto Sans TC", sans-serif;
+      color: var(--mist);
+      letter-spacing: 1px;
+      margin-top: 14px;
+    }
+    .panel {
+      pointer-events: auto;
+      align-self: flex-end;
+      width: min(420px, 92vw);
+      background: rgba(15, 20, 31, 0.82);
+      border: 1px solid rgba(212, 160, 85, 0.25);
+      border-left: 3px solid var(--gold);
+      padding: 18px 22px;
+      backdrop-filter: blur(8px);
+      transform: translateY(120%);
+      opacity: 0;
+      transition: transform 0.45s ease, opacity 0.45s ease;
+    }
+    .panel.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    .panel .quote {
+      font-size: 15px;
+      line-height: 1.9;
+      color: var(--paper);
+      margin: 0 0 10px;
+      font-style: italic;
+    }
+    .panel .source {
+      font: 11px "Noto Sans TC", sans-serif;
+      color: var(--amber);
+      letter-spacing: 1px;
+    }
+    .panel .close-hint {
+      font: 11px "Noto Sans TC", sans-serif;
+      color: var(--mist);
+      margin-top: 12px;
+    }
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      background: var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--paper-dim);
+      font: 14px "Noto Sans TC", sans-serif;
+      transition: opacity 0.6s ease;
+    }
+    @media (max-width: 640px) {
+      #overlay { padding: 16px; }
+      .panel { padding: 14px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">正在點亮音樂廳…</div>
+  <div id="canvas-container"></div>
+  <div id="overlay">
+    <div class="header">
+      <div class="eyebrow">Portrait · 靈氣之作：書</div>
+      <h1 class="title">風之名 · 伊奧林</h1>
+      <p class="subtitle">帕特．羅斯福斯筆下的音樂廳。燈光只照亮此刻選中的痕跡；其餘的座位與故事，留在暗處。</p>
+      <p class="instruction">拖曳旋轉 · 滾輪縮放 · 點擊發光物件聆聽一句話</p>
+    </div>
+    <div id="panel" class="panel" aria-live="polite">
+      <p class="quote" id="quote-text"></p>
+      <div class="source" id="quote-source"></div>
+      <div class="close-hint">點擊空白處或按 Esc 關閉</div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    // ── State ──
+    const container = document.getElementById("canvas-container");
+    const panel = document.getElementById("panel");
+    const quoteText = document.getElementById("quote-text");
+    const quoteSource = document.getElementById("quote-source");
+    let activeObject = null;
+
+    const traces = [
+      {
+        id: "lute",
+        title: "魯特琴的殘響",
+        text: "No matter when the final volume of the planned trilogy will come out... I wanted to thank Patrick Rothfuss for creating the world of Kvothe, of the University, of Denna, of Eolain, of Chandrian, of adventures and suffering, longing and despair, of hero and anti-hero, of the name of things and how we find and lose them.",
+        source: "Robin · The Name of the Wind note"
+      },
+      {
+        id: "late",
+        title: "晚到的特權",
+        text: "There is no such thing as experiencing something extraordinary too late. Actually, I think reading Pat Rothfuss's masterpiece of a story The Kingkiller Chronicle 12 years after it was first published... has enriched my experience by just that much.",
+        source: "Robin · The Name of the Wind note"
+      },
+      {
+        id: "legend",
+        title: "傳說與謠言",
+        text: "Much similar to Kvothe, the unforgettable central character of the story, who by the point we meet him has become some sort of a legend himself in the world he lives in, so many rumors have gathered around it is hard to know what is true anymore.",
+        source: "Robin · The Name of the Wind note"
+      },
+      {
+        id: "enough",
+        title: "已經足夠",
+        text: "Pat, you don't owe us anything more than Tolkien or C.S Lewis do, with their finished or unfinished works that are extraordinary the way we find them... I am so glad you have written this story, and I have found it and read it and enjoyed it. That is enough for me.",
+        source: "Robin · The Name of the Wind note"
+      }
+    ];
+
+    // ── Scene setup ──
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0f141f);
+    scene.fog = new THREE.FogExp2(0x0f141f, 0.045);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 4.5, 11);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 4;
+    controls.maxDistance = 18;
+    controls.maxPolarAngle = Math.PI / 2 - 0.05;
+    controls.target.set(0, 1.2, 0);
+
+    // ── Materials ──
+    const matFloor = new THREE.MeshStandardMaterial({ color: 0x2b2320, roughness: 0.85, metalness: 0.05 });
+    const matWoodDark = new THREE.MeshStandardMaterial({ color: 0x3d2e24, roughness: 0.75 });
+    const matWoodLight = new THREE.MeshStandardMaterial({ color: 0x6b4f3a, roughness: 0.7 });
+    const matStone = new THREE.MeshStandardMaterial({ color: 0x4a4542, roughness: 0.9 });
+    const matWall = new THREE.MeshStandardMaterial({ color: 0x1e2530, roughness: 0.95 });
+    const matCeiling = new THREE.MeshStandardMaterial({ color: 0x151a24, roughness: 0.9 });
+    const matGold = new THREE.MeshStandardMaterial({ color: 0xd4a055, roughness: 0.35, metalness: 0.6 });
+    const matCloth = new THREE.MeshStandardMaterial({ color: 0x7a2e22, roughness: 0.9 });
+    const matEmber = new THREE.MeshStandardMaterial({ color: 0xffaa55, emissive: 0xff6a22, emissiveIntensity: 2.5, toneMapped: false });
+    const matMist = new THREE.MeshBasicMaterial({ color: 0xe9b86a, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false });
+
+    // ── Room shell ──
+    const roomGroup = new THREE.Group();
+    scene.add(roomGroup);
+
+    // Floor
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), matFloor);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    roomGroup.add(floor);
+
+    // Ceiling
+    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), matCeiling);
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.y = 6.5;
+    roomGroup.add(ceiling);
+
+    // Walls
+    const wallH = 6.5, wallD = 0.4;
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(24, wallH, wallD), matWall);
+    backWall.position.set(0, wallH/2, -12);
+    backWall.receiveShadow = true;
+    roomGroup.add(backWall);
+
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallD, wallH, 24), matWall);
+    leftWall.position.set(-12, wallH/2, 0);
+    leftWall.receiveShadow = true;
+    roomGroup.add(leftWall);
+
+    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(wallD, wallH, 24), matWall);
+    rightWall.position.set(12, wallH/2, 0);
+    rightWall.receiveShadow = true;
+    roomGroup.add(rightWall);
+
+    // Wooden pillars
+    function pillar(x, z) {
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 6.5, 16), matWoodDark);
+      p.position.set(x, 3.25, z);
+      p.castShadow = true;
+      p.receiveShadow = true;
+      roomGroup.add(p);
+    }
+    [[-7,-7], [7,-7], [-7,4], [7,4], [-7,9], [7,9]].forEach(([x,z]) => pillar(x,z));
+
+    // Beams
+    for (let z = -9; z <= 9; z += 4.5) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(22, 0.25, 0.35), matWoodDark);
+      beam.position.set(0, 5.8, z);
+      beam.castShadow = true;
+      roomGroup.add(beam);
+    }
+
+    // ── Stage ──
+    const stage = new THREE.Mesh(new THREE.BoxGeometry(7, 0.6, 3.5), matWoodLight);
+    stage.position.set(0, 0.3, -9);
+    stage.receiveShadow = true;
+    stage.castShadow = true;
+    roomGroup.add(stage);
+
+    const stageRug = new THREE.Mesh(new THREE.PlaneGeometry(6.2, 2.7), matCloth);
+    stageRug.rotation.x = -Math.PI / 2;
+    stageRug.position.set(0, 0.61, -9);
+    stageRug.receiveShadow = true;
+    roomGroup.add(stageRug);
+
+    // ── Clickable trace: floating lute ──
+    function buildLute() {
+      const g = new THREE.Group();
+      // body
+      const bodyGeo = new THREE.SphereGeometry(0.55, 32, 24);
+      bodyGeo.scale(1, 1.35, 0.55);
+      const body = new THREE.Mesh(bodyGeo, matWoodLight);
+      body.castShadow = true;
+      g.add(body);
+      // sound hole
+      const hole = new THREE.Mesh(new THREE.CircleGeometry(0.18, 24), new THREE.MeshBasicMaterial({ color: 0x0f141f }));
+      hole.position.set(0, 0.1, 0.31);
+      g.add(hole);
+      // neck
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 1.4, 12), matWoodDark);
+      neck.position.set(0, 1.15, -0.05);
+      neck.castShadow = true;
+      g.add(neck);
+      // headstock
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.12), matWoodDark);
+      head.position.set(0, 1.85, -0.05);
+      g.add(head);
+      // strings (thin cylinders)
+      for (let i = -2; i <= 2; i++) {
+        const s = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1.7, 6), matGold);
+        s.position.set(i * 0.025, 0.95, 0.06);
+        g.add(s);
+      }
+      g.position.set(0, 2.6, -9);
+      return g;
+    }
+
+    const lute = buildLute();
+    lute.userData = traces[0];
+    roomGroup.add(lute);
+
+    // ── Clickable trace orbs (the other three excerpts) ──
+    const orbs = [];
+    const orbPositions = [
+      [-5, 1.4, -3],
+      [5.2, 1.4, -1],
+      [0, 1.3, 2.5]
+    ];
+
+    orbPositions.forEach((pos, idx) => {
+      const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 1), matEmber.clone());
+      orb.position.set(...pos);
+      orb.userData = traces[idx + 1];
+      orb.castShadow = false;
+      roomGroup.add(orb);
+      orbs.push(orb);
+    });
+
+    const interactables = [lute, ...orbs];
+
+    // ── Tables & chairs ──
+    function table(x, z) {
+      const g = new THREE.Group();
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.08, 24), matWoodLight);
+      top.position.y = 0.82;
+      top.castShadow = true;
+      top.receiveShadow = true;
+      g.add(top);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.82, 12), matWoodDark);
+      leg.position.y = 0.41;
+      leg.castShadow = true;
+      g.add(leg);
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.05, 16), matWoodDark);
+      base.position.y = 0.025;
+      g.add(base);
+      // lantern
+      const lantern = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.16), matEmber.clone());
+      lantern.position.y = 1.0;
+      lantern.material.emissiveIntensity = 1.8;
+      g.add(lantern);
+      const light = new THREE.PointLight(0xff9d4d, 1.2, 5, 2);
+      light.position.set(0, 1.05, 0);
+      light.castShadow = true;
+      light.shadow.bias = -0.001;
+      g.add(light);
+      g.position.set(x, 0, z);
+      return g;
+    }
+
+    [[-5,-5], [5,-5], [-5,2], [5,2], [-5,7], [5,7], [0,-3]].forEach(([x,z]) => {
+      roomGroup.add(table(x, z));
+    });
+
+    function chair(x, z, rot) {
+      const g = new THREE.Group();
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.08, 0.5), matWoodLight);
+      seat.position.y = 0.5;
+      seat.castShadow = true;
+      g.add(seat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.06), matWoodLight);
+      back.position.set(0, 0.82, -0.22);
+      back.castShadow = true;
+      g.add(back);
+      [0.2, -0.2].forEach(dx => {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 8), matWoodDark);
+        leg.position.set(dx, 0.25, 0.2);
+        g.add(leg);
+        const leg2 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 8), matWoodDark);
+        leg2.position.set(dx, 0.25, -0.2);
+        g.add(leg2);
+      });
+      g.position.set(x, 0, z);
+      g.rotation.y = rot;
+      return g;
+    }
+
+    [[-5,-4,0], [5,-4,Math.PI], [-5,3,0], [5,3,Math.PI], [-5,8,0], [5,8,Math.PI], [0,-4,0]].forEach(([x,z,rot]) => {
+      roomGroup.add(chair(x, z, rot));
+    });
+
+    // ── Bar counter ──
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(10, 1.1, 1.1), matWoodDark);
+    bar.position.set(0, 0.55, 9.5);
+    bar.castShadow = true;
+    bar.receiveShadow = true;
+    roomGroup.add(bar);
+
+    for (let x = -4; x <= 4; x += 1.6) {
+      const stool = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.75, 16), matWoodLight);
+      stool.position.set(x, 0.375, 10.5);
+      stool.castShadow = true;
+      roomGroup.add(stool);
+      const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.05, 16), matWoodDark);
+      seat.position.set(x, 0.75, 10.5);
+      roomGroup.add(seat);
+    }
+
+    // ── Lighting ──
+    const ambient = new THREE.AmbientLight(0x2a3342, 1.2);
+    scene.add(ambient);
+
+    const hemi = new THREE.HemisphereLight(0x4a5a6a, 0x1a1512, 0.5);
+    scene.add(hemi);
+
+    // Stage spotlight
+    const spot = new THREE.SpotLight(0xffe6b8, 80, 22, Math.PI / 7, 0.6, 1.5);
+    spot.position.set(0, 8, -5);
+    spot.target.position.set(0, 2.5, -9);
+    spot.castShadow = true;
+    spot.shadow.mapSize.width = 1024;
+    spot.shadow.mapSize.height = 1024;
+    spot.shadow.bias = -0.0002;
+    scene.add(spot);
+    scene.add(spot.target);
+
+    // Mist cone under lute
+    const mistGeo = new THREE.ConeGeometry(1.1, 3.2, 32, 1, true);
+    const mist = new THREE.Mesh(mistGeo, matMist);
+    mist.position.set(0, 1.1, -9);
+    scene.add(mist);
+
+    // ── Particles (dust motes) ──
+    const particleCount = 160;
+    const pGeo = new THREE.BufferGeometry();
+    const pPos = new Float32Array(particleCount * 3);
+    for (let i = 0; i < particleCount * 3; i += 3) {
+      pPos[i] = (Math.random() - 0.5) * 20;
+      pPos[i+1] = Math.random() * 5.5 + 0.5;
+      pPos[i+2] = (Math.random() - 0.5) * 20;
+    }
+    pGeo.setAttribute("position", new THREE.BufferAttribute(pPos, 3));
+    const pMat = new THREE.PointsMaterial({ color: 0xffcc88, size: 0.04, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
+    const particles = new THREE.Points(pGeo, pMat);
+    scene.add(particles);
+
+    // ── Interaction ──
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function showTrace(obj) {
+      const data = obj.userData;
+      if (!data || !data.text) return;
+      quoteText.textContent = data.text;
+      quoteSource.textContent = data.source;
+      panel.classList.add("show");
+      activeObject = obj;
+      // gentle pulse on active
+      if (obj.material && obj.material.emissive) {
+        obj.currentHex = obj.material.emissive.getHex();
+        obj.material.emissive.setHex(0xffffff);
+      }
+    }
+
+    function hideTrace() {
+      panel.classList.remove("show");
+      if (activeObject && activeObject.material && activeObject.currentHex !== undefined) {
+        activeObject.material.emissive.setHex(activeObject.currentHex);
+      }
+      activeObject = null;
+    }
+
+    function onPointerMove(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(interactables, true);
+      document.body.style.cursor = hits.length > 0 ? "pointer" : "default";
+    }
+
+    function onClick(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(interactables, true);
+      if (hits.length > 0) {
+        // find top-level interactive ancestor
+        let obj = hits[0].object;
+        while (obj && !obj.userData.text) obj = obj.parent;
+        if (obj && obj.userData.text) {
+          if (activeObject === obj) { hideTrace(); return; }
+          if (activeObject) hideTrace();
+          showTrace(obj);
+          return;
+        }
+      }
+      hideTrace();
+    }
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("click", onClick);
+    window.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTrace(); });
+
+    // ── Animation loop ──
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+
+      // Lute slow float + rotation
+      lute.position.y = 2.6 + Math.sin(t * 0.8) * 0.08;
+      lute.rotation.y = t * 0.15;
+      lute.rotation.z = Math.sin(t * 0.4) * 0.03;
+
+      // Orbs pulse
+      orbs.forEach((orb, i) => {
+        orb.position.y = orbPositions[i][1] + Math.sin(t * 1.2 + i) * 0.06;
+        orb.rotation.x = t * 0.3 + i;
+        orb.rotation.y = t * 0.5 + i;
+      });
+
+      // Mist breathe
+      mist.scale.setScalar(1 + Math.sin(t * 0.5) * 0.08);
+      mist.rotation.y = t * 0.05;
+
+      // Particles drift
+      const positions = particles.geometry.attributes.position.array;
+      for (let i = 0; i < particleCount; i++) {
+        positions[i*3+1] += Math.sin(t + i) * 0.0015;
+        if (positions[i*3+1] > 6) positions[i*3+1] = 0.5;
+      }
+      particles.geometry.attributes.position.needsUpdate = true;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    // ── Resize ──
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Hide loading
+    const loading = document.getElementById("loading");
+    loading.style.opacity = "0";
+    setTimeout(() => loading.remove(), 700);
+
+    animate();
+  </script>
+</body>
+</html>
