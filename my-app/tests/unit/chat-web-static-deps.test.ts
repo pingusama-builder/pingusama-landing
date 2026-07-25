@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 
 const files: Record<string, string> = {
   route: fileURLToPath(new URL("../../app/api/chat/route.ts", import.meta.url)),
+  chatTurn: fileURLToPath(new URL("../../lib/chat/chat-turn.ts", import.meta.url)),
   tavily: fileURLToPath(new URL("../../lib/chat/tavily-search.ts", import.meta.url)),
   rewrite: fileURLToPath(new URL("../../lib/chat/query-rewrite.ts", import.meta.url)),
   tools: fileURLToPath(new URL("../../lib/chat/tools.ts", import.meta.url)),
@@ -66,9 +67,35 @@ describe("web-search chat path — no site-write imports", () => {
   }
 })
 
+describe("chat-turn seam — the route is a thin translator (deepening)", () => {
+  // The 2026-07-25 deepening moved the turn logic from route.ts into
+  // lib/chat/chat-turn.ts. Pin that the route did NOT re-absorb it: the route
+  // imports only auth + the chat-turn module (+ type-only db/chat), never the
+  // chat internals directly. If a future edit reaches back into lib/chat/*
+  // from the route, the turn logic leaked back out of the deep module.
+  it("route imports only auth + chat-turn (+ type-only db/chat), no chat internal module", () => {
+    const raw = src("route")
+    const code = stripComments(raw)
+    expect(code).toMatch(/from\s+["']@\/lib\/auth["']/)
+    expect(code).toMatch(/from\s+["']@\/lib\/chat\/chat-turn["']/)
+    expect(code).not.toMatch(
+      /from\s+["']@\/lib\/chat\/(tavily-search|mistral|tools|models|query-rewrite|web-trigger|post-read|awareness|prompt|messages|infer|stream-updater|fiction-terminal|companion-tools|companion-prompt|writing-context|debug-log)["']/
+    )
+    expect(code).not.toMatch(/from\s+["']@\/lib\/supabase\/server["']/)
+  })
+
+  it("chat-turn owns the turn (imports the chat internals the route no longer does)", () => {
+    const raw = src("chatTurn")
+    // The deep module is the new home for the web pipeline + audit + tools.
+    expect(raw).toMatch(/from\s+["']@\/lib\/chat\/tavily-search["']/)
+    expect(raw).toMatch(/from\s+["']@\/lib\/chat\/tools["']/)
+    expect(raw).toMatch(/from\s+["']@\/lib\/chat\/web-trigger["']/)
+  })
+})
+
 describe("web-search chat path — web text never persisted to memory", () => {
-  it("route never calls a memory-persist function directly", () => {
-    const code = stripComments(src("route"))
+  it("chat-turn never calls a memory-persist function directly", () => {
+    const code = stripComments(src("chatTurn"))
     // saveMemory / inferMemoriesFromThread are the memory-persist entry points.
     // The web path must not flow extracted page text into either.
     expect(code).not.toMatch(/\bsaveMemory\s*\(/)
@@ -76,8 +103,8 @@ describe("web-search chat path — web text never persisted to memory", () => {
     expect(code).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
   })
 
-  it("route delivers web evidence only through formatWebEvidenceGuarded", () => {
-    const code = stripComments(src("route"))
+  it("chat-turn delivers web evidence only through formatWebEvidenceGuarded", () => {
+    const code = stripComments(src("chatTurn"))
     // The extracted page text is bound into the turn exclusively via the
     // guarded evidence formatter (which enforces the subject-absent guard and
     // the "not memory / not site content" reminder).
@@ -165,18 +192,20 @@ describe("web_search + web-trigger — the new auto-search-decision surface", ()
 })
 
 describe("debug-log capture — reasoning never reaches the author SSE", () => {
-  it("route wires onReasoning only to a local turnReasoning accumulator", () => {
-    const code = stripComments(src("route"))
+  it("chat-turn wires onReasoning only to a local turnReasoning accumulator", () => {
+    const code = stripComments(src("chatTurn"))
     expect(code).toMatch(/onReasoning:\s*\(chunk\)\s*=>\s*\{[^}]*turnReasoning\s*\+=\s*chunk/)
   })
 
-  it("no SSE send() object carries a reasoning field", () => {
-    const code = stripComments(src("route"))
-    expect(code).not.toMatch(/send\(\{[^}]*reasoning/i)
+  it("no pushed TurnEvent carries a reasoning field", () => {
+    const code = stripComments(src("chatTurn"))
+    // The turn pushes typed events to the event stream; none may carry
+    // reasoning (it is captured for the debug log only, never streamed).
+    expect(code).not.toMatch(/push\(\{[^}]*reasoning/i)
   })
 
   it("reasoning + telemetry flow only into appendMessage, never saveMemory/infer", () => {
-    const code = stripComments(src("route"))
+    const code = stripComments(src("chatTurn"))
     expect(code).not.toMatch(/\bsaveMemory\s*\(/)
     expect(code).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
   })
@@ -237,16 +266,16 @@ describe("web_research audit capture — history-feedback + no-sentinel boundary
     expect(code).not.toMatch(/webResearch/i)
   })
 
-  it("route never touches the snake_case web_research column directly (only via appendMessage webResearch param)", () => {
-    const code = stripComments(src("route"))
-    // The route must not read/write the DB column directly; it flows the audit
+  it("chat-turn never touches the snake_case web_research column directly (only via appendMessage webResearch param)", () => {
+    const code = stripComments(src("chatTurn"))
+    // The turn must not read/write the DB column directly; it flows the audit
     // through appendMessage's webResearch param (lib/db/chat maps it to the
     // jsonb column) and the snapshot/build helpers. No snake_case references.
     expect(code).not.toMatch(/web_research/)
   })
 
-  it("route never inserts a synthetic/sentinel tool row for web capture", () => {
-    const code = stripComments(src("route"))
+  it("chat-turn never inserts a synthetic/sentinel tool row for web capture", () => {
+    const code = stripComments(src("chatTurn"))
     // The only tool-row appendMessage is inside the real tool-call loop. The
     // advisor verdict ruled out a sentinel tool row (it would be fed back to
     // Mistral via rowToMistral, re-injecting stale evidence). Assert no
@@ -256,7 +285,7 @@ describe("web_research audit capture — history-feedback + no-sentinel boundary
   })
 
   it("web_research audit never reaches saveMemory or infer", () => {
-    const code = stripComments(src("route"))
+    const code = stripComments(src("chatTurn"))
     expect(code).not.toMatch(/\bsaveMemory\s*\(/)
     expect(code).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
   })
@@ -380,8 +409,8 @@ describe("pending source-choice — audit-boundary (round-7 pivot, security)", (
     expect(code).not.toMatch(/suggestion/i)
   })
 
-  it("the route never persists the pending choice to memory and writes it only via insertPendingChoice", () => {
-    const code = stripComments(src("route"))
+  it("chat-turn never persists the pending choice to memory and writes it only via insertPendingChoice", () => {
+    const code = stripComments(src("chatTurn"))
     expect(code).not.toMatch(/\bsaveMemory\s*\(/)
     expect(code).not.toMatch(/from\s+["']@\/lib\/chat\/infer["']/)
     // The pending choice is written ONLY through the dedicated turn-scoped
