@@ -11,7 +11,8 @@
 - **`my-app/public/portrait/atlas.html` now hosts the accepted v2 workshop scene.** It reuses the `atlas-motion-v1` foundation, actor layers, duplicate-foundation occlusion, `data-phase` state model, timing helpers, and semantic threshold control from the standalone prototype.
 - **Previous canvas atlas preserved as a time layer.** The 2026-07-20 night-ink map is saved as `my-app/public/portrait/atlas-night-ink-v2.html`; the original ink-wash foundation image remains untouched.
 - **Peer-room navigation retained.** The eight original sites (VN 舊驛, 藏書台, 幕影亭, 浮色坡, 靜頁屋, 微光渡, 燈工房, 不題名之門) are rendered as percentage-positioned hotspot markers on the v2 scene; clicking opens the same panel with links to `/portrait/vn` and `/portrait/books`.
-- **Added `tests/unit/atlas-port.test.ts`.** Full Vitest gate: 842 passed / 20 skipped; `npm run build` green. No merge, deploy, or production migration.
+- **Added `tests/unit/atlas-port.test.ts`.** Full Vitest gate: 842 passed / 20 skipped; `npm run build` green.
+- **Deployed to production from branch `deploy/atlas-portrait-fix`.** Deployment ID `dpl_AGio1ARUoLK884TgkJdJV9UCNVRQ`; live at `https://pingu-tinkering.vercel.app/portrait/atlas` (200). `/portrait/vn` and `/portrait/books` are intentionally not included in this minimal fix; `world-name-of-the-wind` remains abandoned and 404.
 - **Dedicated Present Workshop Room still unbuilt; substrate and mobile recomposition still Robin-gated.**
 
 ## 2026-07-26 (Atlas v2 + Pingusama invitation motion blocking built)
