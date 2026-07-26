@@ -3,10 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>現在・工坊 — Pingusama portrait atlas</title>
+    <title>現在・工坊 — Pingusama motion blocking</title>
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;600&family=VT323&display=swap');
-
       :root {
         color-scheme: dark;
         --ink-black: #071013;
@@ -14,9 +12,6 @@
         --lamp-amber: #e7a44d;
         --paper-gold: #f2d39a;
         --thread-red: #9c392b;
-        --panel-bg: #162239e6;
-        --panel-border: #778397;
-        --panel-accent: #e4ad5a;
       }
 
       * {
@@ -30,7 +25,6 @@
         margin: 0;
         overflow: hidden;
         background: var(--ink-black);
-        font-family: 'Noto Serif TC', serif;
       }
 
       button {
@@ -333,209 +327,6 @@
         opacity: 0.72;
       }
 
-      /* Hotspots: peer rooms and traces on the atlas */
-      .hotspots {
-        position: absolute;
-        z-index: 7;
-        inset: 0;
-        pointer-events: none;
-      }
-
-      .hotspot {
-        position: absolute;
-        transform: translate(-50%, -50%);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 5px;
-        padding: 6px;
-        border: 0;
-        background: transparent;
-        color: #d8d4c3;
-        font: 14px 'Noto Serif TC', serif;
-        cursor: pointer;
-        pointer-events: auto;
-        opacity: 0.78;
-        transition: opacity 180ms ease;
-      }
-
-      .hotspot::before {
-        content: "";
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background: #efb75b;
-        box-shadow: 0 0 10px #ffbd61;
-      }
-
-      .hotspot .label {
-        font-size: 12px;
-        text-shadow: 0 1px 2px #1a2434;
-        white-space: nowrap;
-        opacity: 0.9;
-      }
-
-      .hotspot:hover,
-      .hotspot:focus-visible {
-        opacity: 1;
-        outline: none;
-      }
-
-      .hotspot:hover .label,
-      .hotspot:focus-visible .label {
-        color: #f0d498;
-      }
-
-      /* Chrome/VN room link override */
-      .hotspot.vn .label,
-      .hotspot.books .label {
-        color: #f0d498;
-      }
-
-      /* Title and key overlays */
-      .chrome {
-        position: absolute;
-        z-index: 8;
-        top: 16px;
-        left: 16px;
-        right: 16px;
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 16px;
-        pointer-events: none;
-      }
-
-      .title-block {
-        color: #e7e0ce;
-      }
-
-      .title-block .tag {
-        font: 13px 'VT323', monospace;
-        letter-spacing: 1px;
-        color: #e1b365;
-      }
-
-      .title-block h1 {
-        font-size: clamp(22px, 3vw, 36px);
-        font-weight: 500;
-        margin: 4px 0 6px;
-        color: #f2e4c5;
-        text-shadow: 0 1px 3px #1a2434;
-      }
-
-      .title-block p {
-        margin: 0;
-        max-width: 520px;
-        font-size: 13px;
-        color: #c2c7c0;
-        line-height: 1.7;
-        text-shadow: 0 1px 2px #1a2434;
-      }
-
-      .key {
-        background: #172238d9;
-        border: 1px solid #c5b68277;
-        padding: 8px 11px;
-        color: #d8d4c3;
-        font: 12px 'VT323', monospace;
-        line-height: 1.7;
-        pointer-events: auto;
-      }
-
-      .key .light {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        background: #efb75b;
-        box-shadow: 0 0 8px #ffbd61;
-        border-radius: 50%;
-        margin-right: 5px;
-      }
-
-      .caption {
-        position: absolute;
-        z-index: 8;
-        left: 16px;
-        bottom: 16px;
-        font: 15px 'VT323', monospace;
-        color: #fff0bd;
-        text-shadow: 1px 1px 2px #1a2434;
-        pointer-events: none;
-      }
-
-      /* Panel for peer-room info and links */
-      .panel {
-        display: none;
-        position: fixed;
-        z-index: 20;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        max-height: 42vh;
-        overflow-y: auto;
-        background: var(--panel-bg);
-        border-top: 1px solid var(--panel-border);
-        border-left: 0;
-        padding: 16px 20px 20px;
-        color: #d3d4cb;
-        font-size: 14px;
-        line-height: 1.8;
-        backdrop-filter: blur(4px);
-      }
-
-      .panel.show {
-        display: block;
-      }
-
-      .panel h2 {
-        margin: 0 0 6px;
-        color: #f0d498;
-        font-size: 21px;
-        font-weight: 500;
-      }
-
-      .panel .meta {
-        font: 13px 'VT323', monospace;
-        color: #98a9b8;
-        margin-bottom: 10px;
-      }
-
-      .panel .quote {
-        font-style: italic;
-        color: #f2e4c5;
-      }
-
-      .panel a {
-        color: #f0d498;
-        text-decoration: none;
-        border-bottom: 1px solid #f0d49866;
-        padding-bottom: 2px;
-      }
-
-      .panel a:hover,
-      .panel a:focus {
-        border-bottom-color: #f0d498;
-      }
-
-      .panel-close {
-        position: absolute;
-        top: 10px;
-        right: 14px;
-        padding: 4px 10px;
-        background: transparent;
-        border: 1px solid #778397;
-        color: #c2c7c0;
-        font: 12px 'VT323', monospace;
-        cursor: pointer;
-      }
-
-      .panel-close:hover,
-      .panel-close:focus {
-        border-color: #f0d498;
-        color: #f0d498;
-      }
-
       .sr-only {
         position: absolute;
         width: 1px;
@@ -621,41 +412,6 @@
           width: 13.5%;
           height: 29%;
         }
-
-        .hotspot .label {
-          font-size: 11px;
-        }
-
-        .title-block p {
-          display: none;
-        }
-      }
-
-      @media (max-width: 620px) {
-        .chrome {
-          top: 10px;
-          left: 10px;
-          right: 10px;
-        }
-
-        .title-block h1 {
-          font-size: 20px;
-        }
-
-        .key {
-          font-size: 10px;
-          padding: 5px 7px;
-        }
-
-        .caption {
-          font-size: 12px;
-          left: 10px;
-          bottom: 10px;
-        }
-
-        .panel {
-          padding: 12px 14px 16px;
-        }
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -673,7 +429,6 @@
   <body data-phase="working">
     <main class="atlas-viewport" aria-labelledby="atlas-title">
       <h1 id="atlas-title" class="sr-only">現在・工坊</h1>
-
       <div class="stage-positioner">
         <div class="scene">
           <img
@@ -712,80 +467,10 @@
           <div class="closeup-traces" aria-hidden="true">
             <span></span><span></span><span></span>
           </div>
-
-          <nav class="hotspots" aria-label="地圖上的 trace 與房間"></nav>
         </div>
       </div>
-
-      <div class="chrome">
-        <div class="title-block">
-          <div class="tag">PORTRAIT / 現在・工坊</div>
-          <h1>現在・工坊</h1>
-          <p>水墨山水裡，一處仍在運作的認知工坊。點一處燈火，或跟隨 Pingusama 走進門檻。</p>
-        </div>
-        <div class="key">
-          <span class="light"></span>此刻可見的 trace<br>暗處不是未解鎖
-        </div>
-      </div>
-
-      <div class="caption" aria-hidden="true">
-        紙上有路，沒有任務 · 點一處地點，或走進工坊
-      </div>
-
-      <section id="panel" class="panel" aria-live="polite"></section>
       <p id="motion-status" class="sr-only" aria-live="polite"></p>
     </main>
-
     <script type="module" src="atlas-motion-v1.js"></script>
-    <script type="module">
-      const sites = [
-        { id: 'vn', name: 'VN 舊驛', x: 20, y: 48, on: 1, type: 'inn', meta: '已選 trace · revisited 2026-07', text: '窗內夾著幾張泛黃小紙：<span class="quote">「雨音雨音雨音」</span>、<span class="quote">「Payoff larger than the sum of its parts」</span>、<span class="quote">「I ask of you: are you my master?」</span>。保留句子，不把它們改寫成結論。<br><br><a href="/portrait/vn">進入舊驛 →</a>' },
-        { id: 'books', name: '藏書台', x: 50, y: 35, on: 1, type: 'tower', meta: 'threshold · still collecting', text: '水岸高台暫留數個書脊。這些書在此相近，不必證明相同；完整書單與個人筆記待後續整理。<br><br><a href="/portrait/books">進入藏書室 →</a>' },
-        { id: 'screen', name: '幕影亭', x: 71, y: 43, on: 0, type: 'pavilion', meta: 'threshold · left silent', text: '一方竹簾，後面或有一格淡淡投影。尚未有畫面被選來停放。' },
-        { id: 'anime', name: '浮色坡', x: 82, y: 25, on: 0, type: 'shrine', meta: 'threshold · left silent', text: '薄霧裡留下一小段未命名的色彩。' },
-        { id: 'writing', name: '靜頁屋', x: 41, y: 71, on: 0, type: 'house', meta: 'threshold · left silent', text: '燈還未點。一頁紙沒有翻開；未經選擇的文字不顯示。' },
-        { id: 'gaming', name: '微光渡', x: 18, y: 80, on: 0, type: 'dock', meta: 'threshold · left silent', text: '臨水的渡口與一盞暗燈，為以後親手挑選的遊戲 trace 留著。' },
-        { id: 'tinker', name: '燈工房', x: 58, y: 64, on: 1, type: 'work', meta: 'present · left on', text: '工房的燈最暖，並不因此成為地圖中心；它只是此刻有人在用的一處地方。' },
-        { id: 'bound', name: '不題名之門', x: 81, y: 69, on: 0, type: 'gate', meta: 'threshold · sealed', text: '遠山坳裡的石門。看得見門在，門後不需展示。' }
-      ];
-
-      const hotspotsEl = document.querySelector('.hotspots');
-      const panel = document.querySelector('#panel');
-
-      function openPanel(site) {
-        panel.innerHTML = `
-          <button class="panel-close" type="button" aria-label="關閉">Esc</button>
-          <h2>${site.name}</h2>
-          <div class="meta">${site.meta}</div>
-          <div>${site.text}</div>
-        `;
-        panel.classList.add('show');
-        panel.querySelector('.panel-close').addEventListener('click', closePanel);
-      }
-
-      function closePanel() {
-        panel.classList.remove('show');
-        panel.innerHTML = '';
-      }
-
-      if (hotspotsEl) {
-        for (const site of sites) {
-          const btn = document.createElement('button');
-          btn.className = `hotspot ${site.type} ${site.on ? 'on' : ''}`;
-          btn.style.left = `${site.x}%`;
-          btn.style.top = `${site.y}%`;
-          btn.setAttribute('aria-label', site.name);
-          btn.innerHTML = `<span class="label">${site.name}</span>`;
-          btn.addEventListener('click', () => openPanel(site));
-          hotspotsEl.appendChild(btn);
-        }
-      }
-
-      window.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && panel.classList.contains('show')) {
-          closePanel();
-        }
-      });
-    </script>
   </body>
 </html>
