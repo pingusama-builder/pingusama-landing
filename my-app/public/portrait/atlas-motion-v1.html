@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>現在・工坊 — Pingusama motion blocking</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink-black: #071013;
+        --deep-ink: #142329;
+        --lamp-amber: #e7a44d;
+        --paper-gold: #f2d39a;
+        --thread-red: #9c392b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--ink-black);
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .atlas-viewport {
+        position: relative;
+        width: 100vw;
+        height: 100svh;
+        min-height: 420px;
+        overflow: hidden;
+        isolation: isolate;
+        background:
+          radial-gradient(circle at 54% 65%, #4a3822 0, #172023 31%, #071013 78%),
+          var(--ink-black);
+      }
+
+      .stage-positioner {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: max(100vw, 177.6833svh);
+        aspect-ratio: 1672 / 941;
+        transform: translate(-50%, -50%);
+        transition: transform 1.9s cubic-bezier(0.2, 0.7, 0.15, 1);
+      }
+
+      .scene {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        transform: scale(1);
+        transform-origin: 55% 63%;
+        transition: transform 1.9s cubic-bezier(0.2, 0.7, 0.15, 1);
+        background: #c8b997;
+      }
+
+      .foundation,
+      .occlusion {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        user-select: none;
+        pointer-events: none;
+      }
+
+      .foundation {
+        z-index: 0;
+      }
+
+      .workshop-warmth {
+        position: absolute;
+        z-index: 1;
+        left: 42%;
+        top: 44%;
+        width: 29%;
+        height: 40%;
+        border-radius: 48%;
+        opacity: 0.18;
+        mix-blend-mode: screen;
+        background: radial-gradient(
+          ellipse at center,
+          rgb(255 176 78 / 0.42),
+          rgb(216 116 38 / 0.1) 48%,
+          transparent 72%
+        );
+        filter: blur(18px);
+        animation: lamp-breathe 3.8s ease-in-out infinite alternate;
+        pointer-events: none;
+      }
+
+      .actor {
+        position: absolute;
+        z-index: 3;
+        left: 30%;
+        bottom: 1.5%;
+        width: 12%;
+        height: 27%;
+        transform: translateX(-50%);
+        transition:
+          left 1.9s steps(12, end),
+          bottom 1.9s steps(12, end),
+          opacity 220ms linear;
+        pointer-events: none;
+      }
+
+      .work-pose,
+      .turn-pose {
+        position: absolute;
+        left: 50%;
+        bottom: 0;
+        height: 100%;
+        image-rendering: pixelated;
+        filter: drop-shadow(0 5px 4px rgb(9 16 18 / 0.42));
+        transition: opacity 120ms linear;
+      }
+
+      .work-pose {
+        width: auto;
+        transform: translateX(-50%);
+        opacity: 1;
+        animation: maker-work 1.2s steps(2, end) infinite;
+      }
+
+      .turn-pose {
+        width: auto;
+        aspect-ratio: 384 / 720;
+        transform: translateX(-50%);
+        opacity: 0;
+        background-image: url("atlas-motion-v1/pingu-turnaround.png");
+        background-repeat: no-repeat;
+        background-size: 400% 100%;
+        background-position: 0 0;
+      }
+
+      body[data-phase="notice"] .work-pose {
+        animation-play-state: paused;
+        transform: translateX(-50%) translateY(-0.7%);
+      }
+
+      body[data-phase="quarter"] .work-pose,
+      body[data-phase="side"] .work-pose,
+      body[data-phase="walking"] .work-pose,
+      body[data-phase="threshold"] .work-pose,
+      body[data-phase="closeup"] .work-pose {
+        opacity: 0;
+      }
+
+      body[data-phase="quarter"] .turn-pose,
+      body[data-phase="side"] .turn-pose,
+      body[data-phase="walking"] .turn-pose,
+      body[data-phase="threshold"] .turn-pose {
+        opacity: 1;
+      }
+
+      body[data-phase="quarter"] .turn-pose {
+        background-position: 33.333% 0;
+      }
+
+      body[data-phase="side"] .turn-pose {
+        background-position: 66.666% 0;
+      }
+
+      body[data-phase="walking"] .turn-pose,
+      body[data-phase="threshold"] .turn-pose {
+        background-position: 100% 0;
+      }
+
+      body[data-phase="walking"] .actor,
+      body[data-phase="threshold"] .actor,
+      body[data-phase="closeup"] .actor {
+        left: 54.5%;
+        bottom: 24%;
+      }
+
+      body[data-phase="walking"] .turn-pose {
+        animation: pixel-step 320ms steps(2, end) infinite;
+      }
+
+      body[data-phase="threshold"] .actor,
+      body[data-phase="closeup"] .actor {
+        opacity: 0;
+      }
+
+      body[data-phase="walking"] .scene,
+      body[data-phase="threshold"] .scene {
+        transform: scale(1.075) translate(-1.2%, 0.8%);
+      }
+
+      body[data-phase="closeup"] .scene {
+        transform: scale(1.58) translate(-1.4%, 1.4%);
+      }
+
+      .occlusion {
+        z-index: 4;
+        clip-path: polygon(50% 49%, 66% 49%, 68% 84%, 50% 84%);
+      }
+
+      .thread-tail {
+        position: absolute;
+        z-index: 5;
+        left: 48.7%;
+        top: 66.5%;
+        width: 8%;
+        height: 1px;
+        opacity: 0;
+        transform: rotate(-14deg);
+        transform-origin: right center;
+        background: linear-gradient(90deg, transparent, var(--thread-red) 28%, #bc503c);
+        box-shadow: 0 0 4px rgb(143 49 35 / 0.5);
+        transition: opacity 400ms ease;
+        pointer-events: none;
+      }
+
+      body[data-phase="threshold"] .thread-tail {
+        opacity: 0.72;
+        animation: thread-tug 1.7s steps(2, end) infinite;
+      }
+
+      .threshold {
+        position: absolute;
+        z-index: 6;
+        left: 54.5%;
+        top: 55%;
+        width: 13%;
+        height: 25%;
+        padding: 0;
+        border: 0;
+        border-radius: 48%;
+        opacity: 0;
+        visibility: hidden;
+        cursor: pointer;
+        appearance: none;
+        color: transparent;
+        background: radial-gradient(
+          ellipse at center,
+          rgb(247 174 79 / 0.19),
+          rgb(225 131 48 / 0.05) 50%,
+          transparent 73%
+        );
+        filter: drop-shadow(0 0 10px rgb(232 153 65 / 0.12));
+        transition:
+          opacity 450ms ease,
+          filter 220ms ease;
+      }
+
+      .threshold::before {
+        content: "";
+        position: absolute;
+        inset: 9% 13%;
+        border: 2px solid rgb(242 211 154 / 0.88);
+        border-radius: 53% 47% 56% 44% / 46% 58% 42% 54%;
+        opacity: 0;
+        transform: rotate(-4deg);
+        transition: opacity 180ms ease;
+      }
+
+      body[data-phase="threshold"] .threshold {
+        opacity: 1;
+        visibility: visible;
+        animation: threshold-breathe 2.4s ease-in-out infinite alternate;
+      }
+
+      .threshold:hover,
+      .threshold:focus-visible {
+        filter: drop-shadow(0 0 17px rgb(242 173 83 / 0.5));
+      }
+
+      .threshold:focus-visible {
+        outline: none;
+      }
+
+      .threshold:hover::before,
+      .threshold:focus-visible::before {
+        opacity: 0.78;
+      }
+
+      .closeup-traces {
+        position: absolute;
+        z-index: 5;
+        inset: 0;
+        opacity: 0;
+        transition: opacity 650ms ease 700ms;
+        pointer-events: none;
+      }
+
+      .closeup-traces span {
+        position: absolute;
+        width: 0.8%;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: #f0b25f;
+        box-shadow:
+          0 0 6px #f0b25f,
+          0 0 14px rgb(211 111 36 / 0.55);
+        animation: trace-flicker 2.8s steps(3, end) infinite;
+      }
+
+      .closeup-traces span:nth-child(1) {
+        left: 47.7%;
+        top: 58%;
+      }
+
+      .closeup-traces span:nth-child(2) {
+        left: 55.8%;
+        top: 67%;
+        animation-delay: -1.1s;
+      }
+
+      .closeup-traces span:nth-child(3) {
+        left: 63.2%;
+        top: 56%;
+        animation-delay: -2s;
+      }
+
+      body[data-phase="closeup"] .closeup-traces {
+        opacity: 0.72;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      @keyframes maker-work {
+        from {
+          transform: translateX(-50%) translateY(0);
+        }
+        to {
+          transform: translateX(-50%) translateY(-0.8%);
+        }
+      }
+
+      @keyframes pixel-step {
+        from {
+          transform: translateX(-50%) translateY(0);
+        }
+        to {
+          transform: translateX(-50%) translateY(-1.8%);
+        }
+      }
+
+      @keyframes lamp-breathe {
+        from {
+          opacity: 0.12;
+          transform: scale(0.96);
+        }
+        to {
+          opacity: 0.23;
+          transform: scale(1.04);
+        }
+      }
+
+      @keyframes threshold-breathe {
+        from {
+          transform: scale(0.97);
+        }
+        to {
+          transform: scale(1.035);
+        }
+      }
+
+      @keyframes thread-tug {
+        0%,
+        100% {
+          transform: rotate(-14deg) scaleX(0.94);
+        }
+        50% {
+          transform: rotate(-14deg) scaleX(1.04);
+        }
+      }
+
+      @keyframes trace-flicker {
+        0%,
+        100% {
+          opacity: 0.54;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+
+      @media (max-aspect-ratio: 1 / 1) {
+        .stage-positioner {
+          transform: translate(-43%, -50%);
+        }
+
+        body[data-phase="walking"] .stage-positioner,
+        body[data-phase="threshold"] .stage-positioner,
+        body[data-phase="closeup"] .stage-positioner {
+          transform: translate(-50%, -50%);
+        }
+
+        .actor {
+          width: 13.5%;
+          height: 29%;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 1ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body data-phase="working">
+    <main class="atlas-viewport" aria-labelledby="atlas-title">
+      <h1 id="atlas-title" class="sr-only">現在・工坊</h1>
+      <div class="stage-positioner">
+        <div class="scene">
+          <img
+            class="foundation"
+            src="atlas-motion-v1/foundation-v2.png"
+            alt="中國水墨山水中的暖光認知工坊，沿河排列著紙張、木桌與仍在進行的作品。"
+          />
+          <div class="workshop-warmth" aria-hidden="true"></div>
+
+          <div class="actor" aria-hidden="true">
+            <img
+              class="work-pose"
+              src="atlas-motion-v1/pingu-v0-cutout.png"
+              alt=""
+            />
+            <div class="turn-pose"></div>
+          </div>
+
+          <img
+            class="occlusion"
+            src="atlas-motion-v1/foundation-v2.png"
+            alt=""
+            aria-hidden="true"
+          />
+          <div class="thread-tail" aria-hidden="true"></div>
+
+          <button
+            id="workshop-threshold"
+            class="threshold"
+            type="button"
+            aria-label="跟隨 Pingusama 進入現在工坊；Follow Pingusama into the present workshop"
+            aria-hidden="true"
+            disabled
+          ></button>
+
+          <div class="closeup-traces" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
+      <p id="motion-status" class="sr-only" aria-live="polite"></p>
+    </main>
+    <script type="module" src="atlas-motion-v1.js"></script>
+  </body>
+</html>
