@@ -23,7 +23,8 @@
 - **No production changes:** no edits to `Header.tsx`, `LandingPage.tsx`, `next.config.ts`, no deployment, no new tests.
 - **Production implementation:** E2 wired into the landing page. Removed `portrait` from `Header.tsx` nav; added a `portrait-tile` link inside the hero `.scene` in `LandingPage.tsx` (beside the tool wheel / bench wagon / runner) with a built-in SVG ink-wash thumbnail in the 天之痕 palette (aged paper, bronze frame, jade mist, pine-ink mountains, cinnabar seal). Responsive: desktop = vertical tile with label/sub; mobile ≤640px = horizontal row above the wheel with compact thumbnail and hidden subtitle. Hover/focus-visible lift + shadow. No external assets.
 - **Verification:** `npx tsc --noEmit` clean, `npm run build` green, `npx vitest run` 842 passed / 20 skipped.
-- **Not deployed:** awaiting explicit go-ahead per standing rule.
+- **Deployed to production via isolated branch `deploy/portrait-entrance-v2`** (off the Atlas-fix base `8a5e9b9`, which includes the `/portrait/atlas` rewrite). Deployment ID `dpl_BF36xJNe6MAN1Tyc4NAZWmq5TChx`; live at https://pingu-tinkering.vercel.app. Anon checks green: GET / 200, /api/me {admin:false}, POST /api/chat 401, GET /portrait/atlas 200.
+- **Note:** first deploy attempt `dpl_AtRJm3px6JKuEjQkz2s1aAe7atrv` (branch `deploy/portrait-entrance` off `322b699`) regressed `/portrait/atlas` to 404 because it lacked the Atlas route rewrite; superseded by the second deploy.
 - **Previously built substrate probe remains:** `atlas-img2threejs-probe.html` (browser-native 2.5D depth parallax) parked as a time layer.
 
 ## 2026-07-27 (scroll-world substrate probed and abandoned)
