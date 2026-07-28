@@ -96,6 +96,40 @@ export default function LandingPage({
               onClick={handleClick}
               onLeave={handleLeave}
             />
+            <Link href="/portrait/atlas" className="portrait-tile" aria-label="Enter the portrait">
+              <div className="portrait-tile-thumb" aria-hidden="true">
+                <svg viewBox="0 0 132 96" preserveAspectRatio="none">
+                  <defs>
+                    <filter id="pt-paper">
+                      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"/>
+                      <feColorMatrix values="0 0 0 0 0.92  0 0 0 0 0.87  0 0 0 0 0.72  0 0 0 0.2 0"/>
+                    </filter>
+                    <filter id="pt-blur5"><feGaussianBlur stdDeviation="5"/></filter>
+                    <filter id="pt-blur7"><feGaussianBlur stdDeviation="7"/></filter>
+                    <filter id="pt-blur4"><feGaussianBlur stdDeviation="4"/></filter>
+                  </defs>
+                  <rect width="132" height="96" fill="#E8DCC0"/>
+                  <rect width="132" height="96" filter="url(#pt-paper)" opacity="0.5"/>
+                  <g opacity="0.6">
+                    <ellipse cx="42" cy="36" rx="36" ry="24" fill="#4A3C2E" filter="url(#pt-blur5)"/>
+                    <ellipse cx="96" cy="30" rx="40" ry="20" fill="#5E4D3A" filter="url(#pt-blur7)"/>
+                    <ellipse cx="122" cy="52" rx="20" ry="15" fill="#4A3C2E" filter="url(#pt-blur4)"/>
+                  </g>
+                  <path d="M0 84 Q36 70 66 82 T108 78 T132 88 V96 H0 Z" fill="#2B2118" opacity="0.32"/>
+                  <path d="M0 92 Q30 84 60 92 T120 90 T132 96 V96 H0 Z" fill="#4A3C2E" opacity="0.24"/>
+                  <g opacity="0.28">
+                    <path d="M10 76 Q22 62 32 76 T50 72" stroke="#4A7A6B" strokeWidth="2" fill="none" filter="url(#pt-blur4)"/>
+                    <path d="M98 64 Q110 50 122 64 T138 60" stroke="#2F5449" strokeWidth="1.5" fill="none" filter="url(#pt-blur4)"/>
+                  </g>
+                  <circle cx="106" cy="24" r="6" fill="#B08D3E" opacity="0.85"/>
+                  <circle cx="106" cy="24" r="10" stroke="#B08D3E" strokeWidth="1" fill="none" opacity="0.35"/>
+                </svg>
+              </div>
+              <div className="portrait-tile-text">
+                <span className="portrait-tile-label">Portrait</span>
+                <span className="portrait-tile-sub">現在 · 工坊</span>
+              </div>
+            </Link>
             <Runner frames={frames} />
           </div>
 
