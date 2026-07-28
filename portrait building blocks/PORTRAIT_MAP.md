@@ -2,7 +2,7 @@
 
 > **Living, not final.** Describe what exists; flag what's unknown; do NOT prescribe a finished architecture (the writing-module lesson: don't bake premature shape). Update whenever a module earns a new state or a relationship clarifies. Companion to `PORTRAIT_LOG.md` (append-only).
 >
-> Last updated: 2026-07-27.
+> Last updated: 2026-07-28.
 
 ## Shared doctrine (portrait-wide, observed across modules — NOT invented)
 
@@ -29,6 +29,8 @@ These recur across rooms; recorded as shared, not book-specific:
 - **Navigation:** eight original peer-room/site hotspots (VN 舊驛, 藏書台, 幕影亭, 浮色坡, 靜頁屋, 微光渡, 燈工房, 不題名之門) retained as percentage-positioned markers on the v2 scene; panel still links to `/portrait/vn` and `/portrait/books`.
 - **Character contract:** `visuals/pingu char v0.png` is the only image-generation identity source; `visuals/1ab4575b-e441-4276-9197-ddc9fa6ea08c.png` supplies four approved directional stills. The five-still kit is motion blocking, not a finished walk cycle. Repo-local skill: `/animating-pingusama-v0` in `.claude/skills/`, mirrored in `.agents/skills/`.
 - **Committed later layer:** the dedicated Present Workshop Room will be built as a lived-in interior — cluttered but ordered, unfinished but bright, DOMO-studio-inspired without literal computer-room copying. The current close-up is only a closer crop of the same Atlas v2 layer and does not satisfy the room commitment.
+- **Substrate experiments:** scroll-world / parallax was probed 2026-07-27 with two throwaway prototypes (`atlas-scroll-world-prototype.html` horizontal drag; `atlas-scroll-world-light.html` vertical scroll-scrub with section copy). Verdict: effect not strong enough; direction abandoned. A 2.5D depth shader probe (`atlas-img2threejs-probe.html`) was also built 2026-07-28 as a throwaway browser-native alternative to the full img2threejs agentic pipeline.
+- **Entrance / site topology:** production implementation in place (not deployed). Portrait removed from top nav (`Header.tsx`); added as a `portrait-tile` link inside the hero scene in `LandingPage.tsx`, beside the bench wagon, tool wheel, and runner. The tile carries a built-in SVG ink-wash thumbnail in the 天之痕 palette (aged paper, bronze frame, jade mist, pine-ink mountains, cinnabar seal, bronze corner studs). Responsive: desktop = vertical tile with label/sub; mobile ≤640px = horizontal row above the wheel with compact thumbnail and hidden subtitle. Hover/focus-visible lift + shadow. Verified build + full test suite (842 pass / 20 skip); awaiting explicit deploy go-ahead.
 - **Companion boundary:** the current character is visual-only. Turning it into a real site companion is a separate HEAVY security task covering public/admin auth, read-only tools, prompt injection, and durable-memory isolation.
 - **Book threshold:** the horizontal plaque is locked verbatim as 「若承其重，過必留痕」.
 - **Full living lock:** `PORTRAIT_ATLAS_WORKSHOP_LOCKS.md`.

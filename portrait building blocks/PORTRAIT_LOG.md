@@ -6,6 +6,36 @@
 
 ---
 
+## 2026-07-28 (portrait entrance / site topology pivot — throwaway prototypes built)
+
+- **Pivot from substrate to entrance.** The original task was to test `img2threejs` as an image-to-3D substrate for the Present Workshop Room. User redirected to a different question: the production landing page currently hides the portrait entrance, and portrait has grown important enough to deserve a more distinctive entrance.
+- **Installed `ui-ux-pro-max-skill`** into `.agents/skills/ui-ux-pro-max-skill/` (and mirrored to `.claude/skills/ui-ux-pro-max-skill/`).
+- **Built four throwaway entrance prototypes** in `my-app/public/portrait/`:
+  - `portrait-entrance-prototype-A.html` — ink-seal nav mark; keeps portrait in top nav as a peer to blog/tools/about.
+  - `portrait-entrance-prototype-B.html` — hero portal/doorway; removes portrait from top nav and gives it a distinctive arch entrance in the hero.
+  - `portrait-entrance-prototype-C.html` — footer red-thread signature; places portrait at the bottom as a discovered annex.
+  - `portrait-entrance-prototype-D.html` — about-section call-out card; surfaces portrait only after the author voice.
+  - `portrait-entrance-prototype-A1.html` — conservative refinement of A: seal hidden at rest, grows on hover/focus; matches current landing page colors/fonts/structure.
+  - `portrait-entrance-prototype-E.html` — threshold tile beside the tool wheel; portrait as a peer object in the hero scene, not only a nav item (responsive row on mobile).
+  - `portrait-entrance-prototype-E1.html` — E with a Chinese ink-wash thumbnail: textured paper, blurred ink mountains, warm workshop lamp, gold-terracotta seal bar, red-thread corner mark.
+  - `portrait-entrance-prototype-E2.html` — E with a Xuanyuan Sword: Scar of Sky / 天之痕 palette: aged yellowed paper, bronze scroll frame, jade mist strokes, deep pine-ink mountains, cinnabar seal bar.
+  - `portrait-entrance-prototype-F.html` — workshop threshold strip spanning the hero bottom; portrait not in nav at all, framed as a scroll/workbench surface you cross to enter the room.
+- **No production changes:** no edits to `Header.tsx`, `LandingPage.tsx`, `next.config.ts`, no deployment, no new tests.
+- **Production implementation:** E2 wired into the landing page. Removed `portrait` from `Header.tsx` nav; added a `portrait-tile` link inside the hero `.scene` in `LandingPage.tsx` (beside the tool wheel / bench wagon / runner) with a built-in SVG ink-wash thumbnail in the 天之痕 palette (aged paper, bronze frame, jade mist, pine-ink mountains, cinnabar seal). Responsive: desktop = vertical tile with label/sub; mobile ≤640px = horizontal row above the wheel with compact thumbnail and hidden subtitle. Hover/focus-visible lift + shadow. No external assets.
+- **Verification:** `npx tsc --noEmit` clean, `npm run build` green, `npx vitest run` 842 passed / 20 skipped.
+- **Not deployed:** awaiting explicit go-ahead per standing rule.
+- **Previously built substrate probe remains:** `atlas-img2threejs-probe.html` (browser-native 2.5D depth parallax) parked as a time layer.
+
+## 2026-07-27 (scroll-world substrate probed and abandoned)
+
+- **Installed `oso95/scroll-world` skill** into `C:/Users/robin/.claude/skills/scroll-world/` for reference.
+- **Built two throwaway scroll-world prototypes** in `my-app/public/portrait/`:
+  - `atlas-scroll-world-prototype.html` — horizontal drag/scroll parallax over a 340vw-wide world using the existing foundation and Pingusama v0 cutout.
+  - `atlas-scroll-world-light.html` — vertical scroll-scrub with four narrative sections, parallax depth layers, and route-rail navigation, inspired by the scroll-world engine but without video generation.
+- **Verdict: effect not strong enough for the Atlas portrait.** Both prototypes read more as layered pan than as a convincing Present Workshop Room. Direction abandoned.
+- **No production changes:** no edits to `atlas.html`, `next.config.ts`, no deployment, no new tests.
+- **Next substrate to test: img2threejs** — evaluate whether it can preserve the ink-wash atmosphere while giving the room spatial depth.
+
 ## 2026-07-27 (Atlas motion blocking ported into atlas.html)
 
 - **`my-app/public/portrait/atlas.html` now hosts the accepted v2 workshop scene.** It reuses the `atlas-motion-v1` foundation, actor layers, duplicate-foundation occlusion, `data-phase` state model, timing helpers, and semantic threshold control from the standalone prototype.
