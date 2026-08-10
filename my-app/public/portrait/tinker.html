@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>燈工房 — 靈氣 prompts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink-black: #071013;
+      --deep-ink: #142329;
+      --warm-ink: #1a2426;
+      --lamp-amber: #e7a44d;
+      --paper-gold: #f2d39a;
+      --paper: #ece3cf;
+      --paper-dim: #b8a98a;
+      --thread-red: #9c392b;
+      --bronze: #8a6a3a;
+      --jade: #4a7a8b;
+      --jade-soft: #6a9aa8;
+      --slip-bg: rgba(242, 211, 154, 0.045);
+      --slip-bg-hover: rgba(242, 211, 154, 0.07);
+      --slip-border: rgba(231, 164, 77, 0.30);
+      --rule: rgba(231, 164, 77, 0.18);
+      --shadow-lamp: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      color: var(--paper);
+      font-family: "Noto Serif TC", "PingFang TC", "Microsoft JhengHei", serif;
+      line-height: 1.75;
+      -webkit-font-smoothing: antialiased;
+      background:
+        radial-gradient(ellipse 85% 42% at 50% 0%, rgba(231, 164, 77, 0.17) 0%, transparent 60%),
+        radial-gradient(circle at 50% 26%, #1a2426 0%, #0c161a 46%, #071013 100%);
+      background-attachment: fixed;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.55;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.85  0 0 0 0 0.74  0 0 0 0 0.54  0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 28px 20px 100px;
+    }
+
+    .back {
+      display: inline-block;
+      font-family: "VT323", monospace;
+      font-size: 1.05rem;
+      letter-spacing: 0.04em;
+      color: var(--paper-dim);
+      text-decoration: none;
+    }
+    .back:hover { color: var(--lamp-amber); }
+
+    .workshop-head {
+      position: relative;
+      text-align: center;
+      padding: 56px 0 26px;
+      margin-bottom: 30px;
+    }
+
+    .lamp-glow {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      width: 300px;
+      height: 300px;
+      transform: translateX(-50%);
+      background: radial-gradient(circle at center, rgba(231, 164, 77, 0.42) 0%, rgba(216, 116, 38, 0.10) 45%, transparent 72%);
+      filter: blur(18px);
+      opacity: 0.5;
+      animation: lamp-breathe 4s ease-in-out infinite alternate;
+      pointer-events: none;
+      z-index: 0;
+    }
+    @keyframes lamp-breathe {
+      from { opacity: 0.36; transform: translateX(-50%) scale(0.95); }
+      to   { opacity: 0.64; transform: translateX(-50%) scale(1.06); }
+    }
+    .flame {
+      transform-box: fill-box;
+      transform-origin: center bottom;
+      animation: flame-flicker 3.2s ease-in-out infinite alternate;
+    }
+    .flame-inner { animation-duration: 2.4s; }
+    @keyframes flame-flicker {
+      from { opacity: 0.78; transform: scaleY(0.94); }
+      to   { opacity: 1;    transform: scaleY(1.06); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .lamp-glow, .flame { animation: none; }
+    }
+
+    .lantern {
+      position: relative;
+      z-index: 1;
+      width: 58px;
+      height: 78px;
+      margin: 0 auto -4px;
+      display: block;
+      filter: drop-shadow(0 0 10px rgba(231, 164, 77, 0.45));
+    }
+
+    .workshop-head h1 {
+      position: relative;
+      z-index: 1;
+      font-size: 1.95rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      margin: 6px 0 4px;
+      color: var(--paper-gold);
+      text-shadow: 0 0 18px rgba(231, 164, 77, 0.3);
+    }
+    .workshop-head .sub {
+      position: relative;
+      z-index: 1;
+      font-family: "VT323", monospace;
+      font-size: 1.15rem;
+      letter-spacing: 0.14em;
+      color: var(--lamp-amber);
+      margin: 0 0 8px;
+    }
+    .workshop-head .note {
+      position: relative;
+      z-index: 1;
+      font-size: 0.78rem;
+      color: var(--paper-dim);
+      margin: 0 auto;
+      max-width: 460px;
+      line-height: 1.6;
+    }
+
+    .entry {
+      position: relative;
+      background: var(--slip-bg);
+      border: 1px solid var(--slip-border);
+      border-radius: 4px;
+      padding: 24px 22px 14px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-lamp);
+      transition: background 0.3s ease;
+    }
+    .entry:hover { background: var(--slip-bg-hover); }
+    .entry::before,
+    .entry::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--bronze);
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+      opacity: 0.85;
+    }
+    .entry::before { top: 9px; left: 9px; }
+    .entry::after { top: 9px; right: 9px; }
+
+    .topic {
+      font-size: 1.18rem;
+      font-weight: 700;
+      color: var(--paper-gold);
+      margin: 0 0 12px;
+      line-height: 1.45;
+      padding-left: 14px;
+      border-left: 2px solid var(--thread-red);
+    }
+
+    .meta {
+      font-family: "VT323", monospace;
+      font-size: 1.02rem;
+      letter-spacing: 0.03em;
+      color: var(--paper-dim);
+      margin: 0 0 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px 18px;
+    }
+    .meta .label { color: var(--bronze); }
+
+    details {
+      margin: 10px 0;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      background: rgba(7, 16, 19, 0.5);
+      overflow: hidden;
+    }
+    details > summary {
+      cursor: pointer;
+      padding: 10px 14px;
+      font-family: "VT323", monospace;
+      font-size: 1.08rem;
+      letter-spacing: 0.04em;
+      color: var(--lamp-amber);
+      list-style: none;
+      user-select: none;
+    }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::before { content: "▸ "; color: var(--thread-red); }
+    details[open] > summary::before { content: "▾ "; }
+    details[open] > summary { border-bottom: 1px solid var(--rule); }
+
+    .prompt-body {
+      padding: 16px 18px;
+      margin: 0;
+      white-space: pre-wrap;
+      font-family: "Noto Serif TC", "PingFang TC", serif;
+      font-size: 0.97rem;
+      line-height: 1.95;
+      color: var(--paper);
+    }
+
+    /* the thinking is the cold pole — a warm slip holds cool thought */
+    details.prompt-details {
+      border-color: rgba(74, 122, 139, 0.30);
+      background: rgba(18, 32, 38, 0.55);
+    }
+    details.prompt-details > summary { color: var(--jade-soft); }
+    details.prompt-details > summary::before { color: var(--jade); }
+    details.prompt-details[open] > summary { border-bottom-color: rgba(74, 122, 139, 0.24); }
+    details.prompt-details[open] { box-shadow: inset 0 0 26px rgba(74, 122, 139, 0.10); }
+    details.prompt-details .prompt-body {
+      border-left: 2px solid var(--jade);
+      background: rgba(74, 122, 139, 0.07);
+      margin: 0 12px 6px;
+      border-radius: 0 3px 3px 0;
+    }
+
+    .doc-body {
+      padding: 14px 16px;
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--paper-dim);
+      line-height: 1.7;
+      word-break: break-word;
+    }
+    .doc-body code {
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 0.78rem;
+      color: var(--paper-gold);
+      background: rgba(231, 164, 77, 0.08);
+      padding: 1px 6px;
+      border-radius: 3px;
+    }
+    .src-link {
+      color: var(--paper-gold);
+      text-decoration: none;
+      border-bottom: 1px dashed var(--rule);
+    }
+    .src-link:hover {
+      color: var(--lamp-amber);
+      border-bottom-color: var(--lamp-amber);
+    }
+
+    .loading,
+    .load-err {
+      font-family: "VT323", monospace;
+      font-size: 1.05rem;
+      color: var(--paper-dim);
+      text-align: center;
+      padding: 28px 0;
+    }
+    .load-err { color: var(--thread-red); }
+
+    .legend {
+      font-family: "VT323", monospace;
+      font-size: 1rem;
+      color: var(--paper-dim);
+      text-align: center;
+      margin-top: 38px;
+      padding-top: 18px;
+      border-top: 1px dashed var(--rule);
+      line-height: 1.6;
+    }
+    .legend code {
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 0.9rem;
+      color: var(--lamp-amber);
+      background: none;
+    }
+
+    @media (max-width: 640px) {
+      .wrap { padding: 20px 16px 80px; }
+      .workshop-head { padding: 42px 0 20px; }
+      .workshop-head h1 { font-size: 1.5rem; letter-spacing: 0.14em; }
+      .lamp-glow { width: 230px; height: 230px; }
+      .lantern { width: 48px; height: 66px; }
+      .topic { font-size: 1.05rem; }
+      .entry { padding: 20px 16px 12px; }
+      .prompt-body { font-size: 0.92rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <a class="back" href="/">← 返回首頁</a>
+
+    <header class="workshop-head">
+      <div class="lamp-glow" aria-hidden="true"></div>
+      <svg class="lantern" viewBox="0 0 60 80" aria-hidden="true">
+        <line x1="30" y1="0" x2="30" y2="12" stroke="#8a6a3a" stroke-width="1.5"/>
+        <path d="M16 12 L44 12 L40 18 L20 18 Z" fill="#6a5230"/>
+        <path d="M18 18 Q30 15 42 18 L39 58 Q30 64 21 58 Z" fill="#e7a44d" opacity="0.92"/>
+        <path d="M18 18 Q30 15 42 18 L39 58 Q30 64 21 58 Z" fill="none" stroke="#9c392b" stroke-width="1.2"/>
+        <line x1="19" y1="30" x2="41" y2="30" stroke="#9c392b" stroke-width="0.8" opacity="0.6"/>
+        <line x1="20" y1="44" x2="40" y2="44" stroke="#9c392b" stroke-width="0.8" opacity="0.6"/>
+        <ellipse class="flame flame-outer" cx="30" cy="38" rx="5" ry="9" fill="#f2d39a" opacity="0.95"/>
+        <ellipse class="flame flame-inner" cx="30" cy="40" rx="2.5" ry="5" fill="#fff7e0" opacity="0.85"/>
+        <path d="M21 58 L39 58 L36 64 L24 64 Z" fill="#6a5230"/>
+        <line x1="30" y1="64" x2="30" y2="72" stroke="#8a6a3a" stroke-width="1.5"/>
+        <circle cx="30" cy="74" r="2" fill="#6a5230"/>
+      </svg>
+      <h1>燈工房</h1>
+      <p class="sub">靈氣 prompts · 吉光片羽</p>
+      <p class="note">工房 still collecting——靈氣 prompts 一路加。呢度收錄我自己最有價值嘅思考方向／prompt。</p>
+    </header>
+
+    <div id="entries">
+      <p class="loading">載入緊…</p>
+    </div>
+    <noscript><p class="load-err">entries 需要 JS 載入（同源 fetch <code>/api/tinker-entries</code>）。</p></noscript>
+
+    <p class="legend">燈工房係 portrait 地圖上嘅 present workshop（atlas id <code>tinker</code>），Pingu 行入去嗰度。呢個係佢第一個入得去嘅 room。</p>
+  </main>
+
+  <script>
+    (function () {
+      var ENTRIES_URL = "/api/tinker-entries";
+      var container = document.getElementById("entries");
+
+      function esc(str) {
+        return String(str == null ? "" : str).replace(/[&<>"']/g, function (m) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m];
+        });
+      }
+
+      function meta(e) {
+        var parts = [];
+        if (e.project) parts.push('<span><span class="label">項目：</span>' + esc(e.project) + "</span>");
+        if (e.harness) parts.push('<span><span class="label">model／harness：</span>' + esc(e.harness) + "</span>");
+        if (e.date) parts.push('<span><span class="label">日期：</span>' + esc(e.date) + "</span>");
+        return parts.join("");
+      }
+
+      function source(s) {
+        if (!s) return "";
+        var label;
+        if (s.url) {
+          label = '<a class="src-link" href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label || s.url) + "</a>";
+        } else if (s.path) {
+          label = "<code>" + esc(s.path) + "</code>";
+        } else if (s.label) {
+          label = esc(s.label);
+        } else {
+          return "";
+        }
+        var note = s.note ? "<br />" + esc(s.note) : "";
+        return '<details><summary>來源</summary><p class="doc-body">' + label + note + "</p></details>";
+      }
+
+      function entry(e) {
+        return '<article class="entry">' +
+          "<h2 class=\"topic\">" + esc(e.topic) + "</h2>" +
+          '<div class="meta">' + meta(e) + "</div>" +
+          '<details class="prompt-details"><summary>展開 prompt</summary><p class="prompt-body">' + esc(e.prompt) + "</p></details>" +
+          source(e.source) +
+          "</article>";
+      }
+
+      fetch(ENTRIES_URL, { cache: "no-store" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(function (data) {
+          var list = (data && data.entries) || [];
+          if (!list.length) {
+            container.innerHTML = '<p class="loading">工房未有 entry。</p>';
+            return;
+          }
+          container.innerHTML = list.map(entry).join("");
+        })
+        .catch(function (err) {
+          container.innerHTML = '<p class="load-err">entries 載入失敗：' + esc(err.message) + "</p>";
+        });
+    })();
+  </script>
+</body>
+</html>

@@ -360,3 +360,39 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_pending_source_choices_unresolved
   ON public.pending_source_choices (thread_id) WHERE resolved_at IS NULL;
 
 ALTER TABLE public.pending_source_choices ENABLE ROW LEVEL SECURITY;
+
+-- =====================================================
+-- 11. 燈工房 (tinker) — 靈氣 prompts trove. Mirrors posts:
+-- service-role writes (lib/db/tinker.ts), public reads published only.
+-- Source files (transcripts etc.) upload to the blog-assets bucket under a
+-- `tinker/` prefix (reuse bucket + auth policies, no new bucket); the public
+-- URL is stored in the `source` jsonb. Service-role only writes, like posts.
+-- =====================================================
+CREATE TABLE IF NOT EXISTS public.tinker_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug text UNIQUE NOT NULL,
+  topic text NOT NULL,
+  project text,
+  harness text,
+  prompt text NOT NULL,
+  source jsonb,
+  status text NOT NULL DEFAULT 'published',
+  sort_order int NOT NULL DEFAULT 0,
+  updated_at timestamptz DEFAULT now(),
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tinker_entries_status_sort
+  ON public.tinker_entries (status, sort_order, created_at DESC);
+
+ALTER TABLE public.tinker_entries ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read published tinker entries" ON public.tinker_entries;
+CREATE POLICY "Public read published tinker entries"
+  ON public.tinker_entries
+  FOR SELECT
+  TO anon, authenticated
+  USING (status = 'published');
+
+-- No INSERT/UPDATE/DELETE policies for anon/authenticated: writes are
+-- service-role only (same closure as posts).

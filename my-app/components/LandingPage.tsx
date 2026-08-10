@@ -130,6 +130,26 @@ export default function LandingPage({
                 <span className="portrait-tile-sub">現在 · 工坊</span>
               </div>
             </Link>
+            <Link href="/portrait/tinker" className="portrait-tile" aria-label="進入燈工房">
+              <div className="portrait-tile-thumb" aria-hidden="true">
+                <svg viewBox="0 0 132 96" preserveAspectRatio="none">
+                  <rect width="132" height="96" fill="#E8DCC0"/>
+                  <circle cx="66" cy="40" r="30" fill="#E9C46A" opacity="0.18"/>
+                  <circle cx="66" cy="40" r="20" fill="#E9C46A" opacity="0.32"/>
+                  <path d="M56 30 Q66 20 76 30 L73 50 Q66 55 59 50 Z" fill="#B08D3E" opacity="0.9"/>
+                  <rect x="62" y="16" width="8" height="8" rx="1" fill="#4A3C2E" opacity="0.7"/>
+                  <line x1="66" y1="50" x2="66" y2="58" stroke="#4A3C2E" stroke-width="2" opacity="0.6"/>
+                  <rect x="20" y="68" width="92" height="8" fill="#4A3C2E" opacity="0.45"/>
+                  <rect x="28" y="76" width="4" height="14" fill="#4A3C2E" opacity="0.45"/>
+                  <rect x="100" y="76" width="4" height="14" fill="#4A3C2E" opacity="0.45"/>
+                  <circle cx="110" cy="22" r="5" fill="#B3473E" opacity="0.85"/>
+                </svg>
+              </div>
+              <div className="portrait-tile-text">
+                <span className="portrait-tile-label">燈工房</span>
+                <span className="portrait-tile-sub">靈氣 prompts</span>
+              </div>
+            </Link>
             <Runner frames={frames} />
           </div>
 
