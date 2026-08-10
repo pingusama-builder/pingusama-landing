@@ -1,9 +1,11 @@
-# Generated runner artifacts (regenerable via make_runner.py; frames are
-# already embedded as base64 in index.html)
+# Runner source frames (regenerable via make_runner.py). The consumed
+# artifact my-app/public/runner.b64.txt IS committed — app/page.tsx reads it
+# at build time, so Vercel git auto-deploy needs it in the repo (without it
+# the build fails with ENOENT on readFileSync). Keeping it gitignored was the
+# real cause of the long-standing "auto-deploy broken" (misdiagnosed as a
+# Git-integration defect).
 runner_*.png
-runner.b64.txt
 my-app/data/
-my-app/runner.b64.txt
 
 # Verification screenshots (Playwright captures)
 hero-*.png
