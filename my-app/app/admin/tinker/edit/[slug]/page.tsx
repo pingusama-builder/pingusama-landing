@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation"
 import { requireAdmin } from "@/lib/auth"
-import { getAdminTinkerEntryBySlug } from "../../actions"
+import {
+  getAdminTinkerEntryBySlug,
+  getAdminTinkerEntries,
+} from "../../actions"
 import AdminHeader from "@/components/AdminHeader"
 import TinkerEditor from "@/components/TinkerEditor"
 import Footer from "@/components/Footer"
@@ -16,6 +19,15 @@ export default async function EditTinkerEntryPage({
 
   if (!entry) {
     notFound()
+  }
+
+  // List of existing entries drives the "Autofill from existing" picker so the
+  // admin can jump to another entry to edit without returning to the table.
+  let entries: Awaited<ReturnType<typeof getAdminTinkerEntries>> = []
+  try {
+    entries = await getAdminTinkerEntries({ limit: 100 })
+  } catch {
+    entries = []
   }
 
   return (
@@ -35,7 +47,7 @@ export default async function EditTinkerEntryPage({
             Edit 燈工房 entry
           </h1>
         </div>
-        <TinkerEditor entry={entry} />
+        <TinkerEditor key={entry.slug} entry={entry} entries={entries} />
       </main>
       <Footer />
     </>

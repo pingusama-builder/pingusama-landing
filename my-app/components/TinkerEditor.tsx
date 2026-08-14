@@ -7,7 +7,9 @@ import {
   TinkerEntryFormData,
   saveTinkerEntryAction,
 } from "@/app/admin/tinker/actions"
+import { previewTinkerSourceMarkdown } from "@/app/admin/tinker/preview"
 import { uploadTinkerSource } from "@/lib/supabase/storage"
+import PostBody from "@/components/PostBody"
 
 const EMPTY_FORM: TinkerEntryFormData = {
   slug: "",
@@ -33,13 +35,21 @@ function entryToFormData(entry: TinkerEntry): TinkerEntryFormData {
   }
 }
 
-export default function TinkerEditor({ entry }: { entry?: TinkerEntry }) {
+export default function TinkerEditor({
+  entry,
+  entries,
+}: {
+  entry?: TinkerEntry
+  entries?: TinkerEntry[]
+}) {
   const router = useRouter()
   const [form, setForm] = useState(entry ? entryToFormData(entry) : EMPTY_FORM)
   const [error, setError] = useState("")
   const [isPending, startTransition] = useTransition()
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [sourcePreviewHtml, setSourcePreviewHtml] = useState("")
+  const [showSourcePreview, setShowSourcePreview] = useState(false)
 
   function updateField<K extends keyof TinkerEntryFormData>(
     field: K,
@@ -85,6 +95,31 @@ export default function TinkerEditor({ entry }: { entry?: TinkerEntry }) {
     }))
   }
 
+  // "Autofill from existing" — picking an entry navigates to its edit page
+  // (so the URL is the source of truth for which entry a save will update);
+  // picking "New entry" navigates to the blank new page. If the one you want
+  // isn't in the list, just stay on New and type — 揀唔到就可以開新.
+  function handleLoadExisting(event: React.ChangeEvent<HTMLSelectElement>) {
+    const value = event.target.value
+    if (value === "__new__") {
+      router.replace("/admin/tinker/new")
+      return
+    }
+    const slug = entries?.find((en) => en.id === value)?.slug
+    if (slug) router.replace(`/admin/tinker/edit/${slug}`)
+  }
+
+  async function handleSourcePreview() {
+    const md = form.source.markdown?.trim() ?? ""
+    if (!md) {
+      setShowSourcePreview(false)
+      return
+    }
+    const html = await previewTinkerSourceMarkdown(md)
+    setSourcePreviewHtml(html)
+    setShowSourcePreview(true)
+  }
+
   function handleSubmit(statusOverride?: TinkerStatus) {
     startTransition(async () => {
       const data = { ...form, status: statusOverride ?? form.status }
@@ -113,6 +148,32 @@ export default function TinkerEditor({ entry }: { entry?: TinkerEntry }) {
           <p className="detail-desc" style={{ color: "var(--terracotta-d)" }}>
             {error}
           </p>
+        </div>
+      )}
+
+      {entries && entries.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <label htmlFor="load-existing" className="text-sm font-semibold">
+            Autofill from existing
+          </label>
+          <select
+            id="load-existing"
+            value={entry?.id ?? "__new__"}
+            onChange={handleLoadExisting}
+            className={inputCls}
+          >
+            <option value="__new__">— New entry (blank) —</option>
+            {entries.map((en) => (
+              <option key={en.id} value={en.id}>
+                {en.topic}
+                {en.status !== "published" ? ` (${en.status})` : ""}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-[var(--walnut-soft)]">
+            揀一個現有 entry 直接編輯；揀唔到就開新。Saving updates the picked
+            entry; “New entry” creates a fresh one.
+          </span>
         </div>
       )}
 
@@ -210,6 +271,41 @@ export default function TinkerEditor({ entry }: { entry?: TinkerEntry }) {
           <span className="text-xs text-[var(--walnut-soft)]">
             .md / .txt / .json / .csv — reuses the blog-assets bucket
           </span>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="src-markdown" className="text-xs font-semibold">
+            或直接貼 markdown 來源 <span className="text-[var(--walnut-soft)] font-normal">
+              (rendered like blog)
+            </span>
+          </label>
+          <textarea
+            id="src-markdown"
+            value={form.source.markdown ?? ""}
+            onChange={(e) => updateSource("markdown", e.target.value)}
+            rows={6}
+            placeholder="# Heading&#10;Paste a transcript / note in markdown — it renders in the public room like a blog post."
+            className={`${inputCls} font-mono text-sm`}
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSourcePreview}
+              disabled={isPending || !form.source.markdown?.trim()}
+              className="pill cursor-pointer"
+            >
+              Preview markdown
+            </button>
+            <span className="text-xs text-[var(--walnut-soft)]">
+              Save 時會轉成 sanitized HTML 存落 `source.markdown_html`。
+            </span>
+          </div>
+          {showSourcePreview && sourcePreviewHtml && (
+            <div className="detail" style={{ marginTop: 4 }}>
+              <p className="detail-eyebrow mb-2">Preview</p>
+              <PostBody html={sourcePreviewHtml} />
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

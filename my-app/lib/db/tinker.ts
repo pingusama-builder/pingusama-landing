@@ -12,6 +12,13 @@ export interface TinkerSource {
   url?: string
   path?: string
   note?: string
+  // Pasted markdown transcript (alternative to uploading a file). The raw
+  // markdown is the source of truth in the DB; `markdown_html` is a sanitized
+  // render cache produced at save time via the same rehype-sanitize pipeline
+  // the blog uses (lib/markdown.ts → parseMarkdown). The public API exposes
+  // only `markdown_html`, never the raw `markdown`.
+  markdown?: string
+  markdown_html?: string
 }
 
 export interface TinkerEntry {

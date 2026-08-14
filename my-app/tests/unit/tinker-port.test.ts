@@ -94,4 +94,71 @@ describe("燈工房 tinker port", () => {
     expect(script).toContain("ON CONFLICT (slug) DO NOTHING")
     expect(script).toContain("q7-unity-redesign")
   })
+
+  // ── Autofill-from-existing + markdown-text source (2026-08-14) ──
+
+  test("editor has an 'Autofill from existing' picker that navigates", () => {
+    const editor = read("components/TinkerEditor.tsx")
+    expect(editor).toContain("Autofill from existing")
+    expect(editor).toContain('value={entry?.id ?? "__new__"}')
+    // picking an existing entry navigates to its edit page (URL = source of
+    // truth for which entry a save updates); "New entry" → /admin/tinker/new
+    expect(editor).toContain('router.replace("/admin/tinker/new")')
+    expect(editor).toContain("router.replace(`/admin/tinker/edit/${slug}`)")
+  })
+
+  test("edit page keys the editor by slug so switching entries remounts", () => {
+    const edit = read("app/admin/tinker/edit/[slug]/page.tsx")
+    // Without the key, navigating /edit/a → /edit/b reuses the component
+    // instance and useState keeps a's form — a Next.js dynamic-route trap.
+    expect(edit).toContain("key={entry.slug}")
+    expect(edit).toContain("getAdminTinkerEntries")
+  })
+
+  test("new + edit pages pass the entries list to the editor", () => {
+    const next = read("app/admin/tinker/new/page.tsx")
+    expect(next).toContain("getAdminTinkerEntries")
+    expect(next).toContain('entries={entries}')
+  })
+
+  test("editor accepts pasted markdown 來源 with a live preview", () => {
+    const editor = read("components/TinkerEditor.tsx")
+    expect(editor).toContain('id="src-markdown"')
+    expect(editor).toContain("updateSource(\"markdown\"")
+    expect(editor).toContain("previewTinkerSourceMarkdown")
+  })
+
+  test("save action renders the markdown source to sanitized HTML at save time", () => {
+    const actions = read("app/admin/tinker/actions.ts")
+    // reuses the blog's rehype-sanitize pipeline (parseMarkdown), stores both
+    // the raw markdown (source of truth) and the sanitized html render cache.
+    expect(actions).toContain("parseMarkdown")
+    expect(actions).toContain("source.markdown =")
+    expect(actions).toContain("source.markdown_html = html")
+  })
+
+  test("preview action mirrors the blog editor's preview", () => {
+    expect(existsSync(join(root, "app/admin/tinker/preview.ts"))).toBe(true)
+    const preview = read("app/admin/tinker/preview.ts")
+    expect(preview).toContain("parseMarkdown")
+  })
+
+  test("public API strips raw markdown and exposes only markdown_html", () => {
+    const route = read("app/api/tinker-entries/route.ts")
+    expect(route).toContain("toPublicSource")
+    expect(route).toContain("markdown_html")
+    // the source is no longer passed through raw — it goes through the mapper
+    expect(route).toContain("source: toPublicSource(entry.source)")
+  })
+
+  test("tinker.html renders server-sanitized markdown_html in the 來源 block", () => {
+    // md-source CSS + the injection path exist; the safety comment records
+    // that markdown_html is rehype-sanitized admin content (not escaped).
+    expect(tinkerHtml).toContain(".md-source")
+    expect(tinkerHtml).toContain("md-source")
+    expect(tinkerHtml).toContain("markdown_html")
+    expect(tinkerHtml).toContain("rehype-sanitize")
+    // a markdown-only source (no label/url/path) still renders a 來源 block
+    expect(tinkerHtml).toContain("var md = s.markdown_html")
+  })
 })

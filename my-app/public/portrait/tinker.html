@@ -262,6 +262,55 @@
       padding: 1px 6px;
       border-radius: 3px;
     }
+
+    /* Rendered markdown 來源 — `source.markdown_html` is server-sanitized
+       (rehype-sanitize, same pipeline as the blog's content_html) admin-
+       authored content, so it is injected as HTML (not escaped). Styles mirror
+       the blog's prose, adapted to the dark workshop room. */
+    .md-source { margin-top: 12px; line-height: 1.8; }
+    .md-source > *:first-child { margin-top: 0; }
+    .md-source h1, .md-source h2, .md-source h3, .md-source h4 {
+      color: var(--paper-gold);
+      font-weight: 700;
+      margin: 16px 0 8px;
+      line-height: 1.4;
+    }
+    .md-source h1 { font-size: 1.08rem; }
+    .md-source h2 { font-size: 1rem; }
+    .md-source h3, .md-source h4 { font-size: 0.92rem; }
+    .md-source p { margin: 8px 0; }
+    .md-source ul, .md-source ol { margin: 8px 0; padding-left: 22px; }
+    .md-source li { margin: 3px 0; }
+    .md-source blockquote {
+      border-left: 2px solid var(--jade);
+      margin: 10px 0;
+      padding: 2px 14px;
+      color: var(--paper-dim);
+    }
+    .md-source a { color: var(--paper-gold); border-bottom: 1px dashed var(--rule); text-decoration: none; }
+    .md-source a:hover { color: var(--lamp-amber); border-bottom-color: var(--lamp-amber); }
+    .md-source pre {
+      background: rgba(7, 16, 19, 0.6);
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      margin: 10px 0;
+    }
+    .md-source pre code {
+      background: none;
+      padding: 0;
+      color: var(--paper-gold);
+      font-size: 0.8rem;
+    }
+    .md-source table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+    .md-source th, .md-source td {
+      border: 1px solid var(--rule);
+      padding: 6px 10px;
+      text-align: left;
+      font-size: 0.82rem;
+    }
+    .md-source th { color: var(--paper-gold); }
     .src-link {
       color: var(--paper-gold);
       text-decoration: none;
@@ -371,18 +420,22 @@
 
       function source(s) {
         if (!s) return "";
-        var label;
+        var label = "";
         if (s.url) {
           label = '<a class="src-link" href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label || s.url) + "</a>";
         } else if (s.path) {
           label = "<code>" + esc(s.path) + "</code>";
         } else if (s.label) {
           label = esc(s.label);
-        } else {
-          return "";
         }
         var note = s.note ? "<br />" + esc(s.note) : "";
-        return '<details><summary>來源</summary><p class="doc-body">' + label + note + "</p></details>";
+        // `markdown_html` is server-sanitized (rehype-sanitize, same pipeline
+        // as the blog's content_html) admin-authored content — injected as
+        // HTML, NOT escaped. Everything above stays escaped via esc().
+        var md = s.markdown_html ? '<div class="md-source">' + s.markdown_html + "</div>" : "";
+        if (!label && !s.note && !md) return "";
+        var head = label || s.note ? '<p class="doc-body">' + label + note + "</p>" : "";
+        return '<details><summary>來源</summary>' + head + md + "</details>";
       }
 
       function entry(e) {

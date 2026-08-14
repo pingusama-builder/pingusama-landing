@@ -12,6 +12,7 @@ import {
   type TinkerSource,
 } from "@/lib/db/tinker"
 import { sanitizeSlug } from "@/lib/slug"
+import { parseMarkdown } from "@/lib/markdown"
 
 export async function getAdminTinkerEntries(
   options: { status?: TinkerStatus; limit?: number } = {},
@@ -62,6 +63,16 @@ export async function saveTinkerEntryAction(
     if (src.url?.trim()) source.url = src.url.trim()
     if (src.path?.trim()) source.path = src.path.trim()
     if (src.note?.trim()) source.note = src.note.trim()
+    // Pasted markdown transcript → render to sanitized HTML at save time,
+    // mirroring the blog (rehype-sanitize via parseMarkdown). The raw markdown
+    // is kept as the source of truth so the editor can re-edit it; markdown_html
+    // is a render cache the public API exposes. Clearing the textarea drops
+    // both keys because `source` is rebuilt from scratch each save.
+    if (src.markdown?.trim()) {
+      source.markdown = src.markdown.trim()
+      const { html } = await parseMarkdown(src.markdown.trim())
+      source.markdown_html = html
+    }
     const sourceValue = Object.keys(source).length > 0 ? source : null
 
     const payload = {

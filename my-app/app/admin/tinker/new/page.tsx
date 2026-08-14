@@ -2,9 +2,20 @@ import { requireAdmin } from "@/lib/auth"
 import AdminHeader from "@/components/AdminHeader"
 import TinkerEditor from "@/components/TinkerEditor"
 import Footer from "@/components/Footer"
+import { getAdminTinkerEntries } from "../actions"
 
 export default async function NewTinkerEntryPage() {
   await requireAdmin()
+
+  // List of existing entries drives the "Autofill from existing" picker.
+  // Graceful degradation like the table page: a missing table just yields an
+  // empty list, so the picker hides and the editor still works for new entries.
+  let entries: Awaited<ReturnType<typeof getAdminTinkerEntries>> = []
+  try {
+    entries = await getAdminTinkerEntries({ limit: 100 })
+  } catch {
+    entries = []
+  }
 
   return (
     <>
@@ -23,7 +34,7 @@ export default async function NewTinkerEntryPage() {
             New 燈工房 entry
           </h1>
         </div>
-        <TinkerEditor />
+        <TinkerEditor entries={entries} />
       </main>
       <Footer />
     </>
