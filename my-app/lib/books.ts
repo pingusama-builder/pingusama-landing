@@ -119,6 +119,82 @@ export async function fetchBookByIsbn(isbn13: string): Promise<Book | null> {
   return { ...book, coverUrl: null, coverSource: null };
 }
 
+// Open Library data API — the metadata + cover fallback when Google Books is
+// unavailable (e.g. quota exhausted) or returns no match. Returns both the
+// Book and the cover-by-ID URL (more reliable than the ISBN-keyed endpoint).
+const OL_DATA_API = "https://openlibrary.org/api/books";
+
+interface OpenLibraryResult {
+  book: Book;
+  olCoverUrl: string | null;
+}
+
+interface OLVolume {
+  key?: string;
+  url?: string;
+  title?: string;
+  subtitle?: string;
+  authors?: Array<{ name: string }>;
+  publishers?: Array<{ name: string }>;
+  publish_date?: string;
+  number_of_pages?: number;
+  cover?: { small?: string; medium?: string; large?: string };
+  identifiers?: {
+    isbn_10?: string[];
+    isbn_13?: string[];
+  };
+}
+
+export async function fetchBookByOpenLibrary(
+  isbn13: string
+): Promise<OpenLibraryResult | null> {
+  const cleaned = normalizeIsbn13(isbn13);
+  if (!isValidIsbn13(cleaned)) return null;
+
+  const url = new URL(OL_DATA_API);
+  const bibkey = `ISBN:${cleaned}`;
+  url.searchParams.set("bibkeys", bibkey);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("jscmd", "data");
+
+  try {
+    const res = await fetch(url.toString(), { next: { revalidate: ONE_DAY } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Record<string, OLVolume>;
+    const vol = data[bibkey];
+    if (!vol) return null;
+
+    // The row is keyed by the queried ISBN (the shelf entry), NOT the ISBN Open
+    // Library reports — OL can return a variant edition's ISBN_13, which would
+    // orphan the row from its shelf entry. Keep `cleaned` as the key.
+    const olid = vol.key?.replace("/books/", "") ?? cleaned;
+    return {
+      book: {
+        googleBooksId: `ol:${olid}`,
+        title: vol.title ?? "Untitled",
+        subtitle: vol.subtitle ?? null,
+        authors: vol.authors?.map((a) => a.name) ?? [],
+        publisher: vol.publishers?.[0]?.name ?? null,
+        publishedDate: vol.publish_date ?? null,
+        pageCount: vol.number_of_pages ?? null,
+        infoLink: vol.url ?? null,
+        thumbnail: vol.cover?.small ?? vol.cover?.medium ?? null,
+        isbn13: cleaned,
+        isbn10: vol.identifiers?.isbn_10?.[0] ?? null,
+        coverUrl: null,
+        coverSource: null,
+      },
+      olCoverUrl: vol.cover?.large ?? vol.cover?.medium ?? null,
+    };
+  } catch (err) {
+    console.warn(
+      `Open Library fetch failed for ${cleaned}:`,
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
 async function parseBook(res: Response): Promise<Book | null> {
   const data = (await res.json()) as {
     items?: Array<{
@@ -206,19 +282,46 @@ export async function warmBook(
     }
   }
 
-  const book = await fetchBookByIsbn(cleaned);
+  let book = await fetchBookByIsbn(cleaned);
+  let olCoverUrl: string | null = null;
+
+  if (!book) {
+    // Google Books unavailable (e.g. quota exhausted) or no match — fall back
+    // to Open Library for metadata + a cover-by-ID URL.
+    const ol = await fetchBookByOpenLibrary(cleaned);
+    if (ol) {
+      book = ol.book;
+      olCoverUrl = ol.olCoverUrl;
+    }
+  }
+
   if (!book) {
     return {
       isbn13: cleaned,
       status: "error",
-      error: "Not found in Google Books",
+      error: "Not found in Google Books or Open Library",
     };
   }
 
-  const cover = await fetchCoverBytes({
+  let cover = await fetchCoverBytes({
     googleBooksId: book.googleBooksId,
     isbn13: book.isbn13,
+    olCoverUrl,
   });
+
+  // Google returned metadata but no usable cover, and we haven't queried Open
+  // Library yet. Its cover-by-ID endpoint is more reliable than the ISBN-keyed
+  // one the loop above already tried, so do one OL data lookup to rescue it.
+  if (!cover && !olCoverUrl) {
+    const ol = await fetchBookByOpenLibrary(cleaned);
+    if (ol?.olCoverUrl) {
+      cover = await fetchCoverBytes({
+        googleBooksId: "",
+        isbn13: book.isbn13,
+        olCoverUrl: ol.olCoverUrl,
+      });
+    }
+  }
 
   let coverUrl: string | null = null;
   let coverSource: "google" | "openlibrary" | null = null;

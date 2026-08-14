@@ -82,4 +82,32 @@ describe("fetchCoverBytes", () => {
     const result = await fetchCoverBytes(BOOK);
     expect(result).toBeNull();
   });
+
+  it("tries the Open Library cover-by-ID URL ahead of the ISBN-keyed URL", async () => {
+    const olIdUrl = "https://covers.openlibrary.org/b/id/14813663-L.jpg";
+    vi.mocked(fetch)
+      // google cover: not found
+      .mockResolvedValueOnce({ ok: false, status: 404, headers: { get: () => null } } as unknown as Response)
+      // OL cover-by-ID: real image
+      .mockResolvedValueOnce(imageResponse(Array.from({ length: 5000 }, () => 7), "image/jpeg"));
+
+    const result = await fetchCoverBytes({ ...BOOK, olCoverUrl: olIdUrl });
+    expect(result?.source).toBe("openlibrary");
+    const usedUrl = vi.mocked(fetch).mock.calls[1][0] as string;
+    expect(usedUrl).toBe(olIdUrl);
+    // ISBN-keyed URL never reached because the ID URL succeeded.
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not build a Google cover URL for an ol:-prefixed id", async () => {
+    const olIdUrl = "https://covers.openlibrary.org/b/id/8782784-L.jpg";
+    vi.mocked(fetch).mockResolvedValue(
+      imageResponse(Array.from({ length: 4000 }, () => 9), "image/jpeg")
+    );
+
+    await fetchCoverBytes({ googleBooksId: "ol:OL27311435M", isbn13: "9780143111610", olCoverUrl: olIdUrl });
+    const firstUrl = vi.mocked(fetch).mock.calls[0][0] as string;
+    expect(firstUrl).toBe(olIdUrl);
+    expect(firstUrl).not.toContain("books.google.com");
+  });
 });

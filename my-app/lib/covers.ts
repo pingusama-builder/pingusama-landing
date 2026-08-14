@@ -62,13 +62,24 @@ function openLibraryCoverUrl(isbn13: string): string {
   return `https://covers.openlibrary.org/b/isbn/${isbn13}/L.jpg`;
 }
 
+// Open Library's ISBN-keyed cover endpoint is unreliable — it often serves a
+// 43-byte not-found placeholder even when a cover exists. The data API
+// (`/api/books?jscmd=data`) returns a cover ID, and the ID-keyed endpoint
+// (`/b/id/{id}-L.jpg`) is far more reliable. Callers pass that URL here when
+// they have it (from fetchBookByOpenLibrary); it's tried ahead of the ISBN URL.
 function sourcesFor(book: {
   googleBooksId: string;
   isbn13: string | null;
+  olCoverUrl?: string | null;
 }): CoverSource[] {
   const sources: CoverSource[] = [];
-  if (book.googleBooksId) {
+  // `ol:`-prefixed ids are synthesized for Open-Library-sourced books and are
+  // not valid Google Books volume ids, so never build a Google cover URL from them.
+  if (book.googleBooksId && !book.googleBooksId.startsWith("ol:")) {
     sources.push({ url: googleCoverUrl(book.googleBooksId), source: "google" });
+  }
+  if (book.olCoverUrl) {
+    sources.push({ url: book.olCoverUrl, source: "openlibrary" });
   }
   if (book.isbn13) {
     sources.push({
@@ -104,6 +115,7 @@ async function fetchImage(url: string): Promise<CoverResult | null> {
 export async function fetchCoverBytes(book: {
   googleBooksId: string;
   isbn13: string | null;
+  olCoverUrl?: string | null;
 }): Promise<CoverResult | null> {
   for (const source of sourcesFor(book)) {
     const got = await fetchImage(source.url);
