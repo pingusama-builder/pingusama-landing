@@ -496,6 +496,7 @@ describe("warmBook", () => {
         json: async () => ({
           "ISBN:9780307473394": {
             key: "/books/OL1M",
+            identifiers: { isbn_13: ["9780307473394"] },
             title: "Running",
             cover: { large: "https://covers.openlibrary.org/b/id/42-L.jpg" },
           },

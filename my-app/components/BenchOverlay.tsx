@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
-import type { Book, ResolvedShelf, ShelfError, VaultData } from "@/lib/books";
+import { useEffect, useRef } from "react";
+import BookWagonView from "./BookWagonView";
+import type { ResolvedShelf, VaultData } from "@/lib/books";
 
 interface BenchOverlayProps {
   isOpen: boolean;
@@ -48,6 +48,7 @@ function useFocusTrap(
   useEffect(() => {
     if (!isOpen || !containerRef.current) return;
 
+    const previousFocus = document.activeElement as HTMLElement | null;
     const container = containerRef.current;
     const focusable = Array.from(
       container.querySelectorAll(
@@ -58,11 +59,13 @@ function useFocusTrap(
     if (focusable.length === 0) return;
 
     const first = focusable[0];
-    const last = focusable[focusable.length - 1];
     first.focus();
 
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
+      const current = Array.from(container.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]')).filter(el=>el.getClientRects().length>0);
+      const first = current[0]; const last = current[current.length-1];
+      if (!first || !last) return;
       if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
@@ -73,32 +76,8 @@ function useFocusTrap(
     };
 
     document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    return () => { document.removeEventListener("keydown", handler);previousFocus?.focus(); };
   }, [isOpen, containerRef]);
-}
-
-function Cover({ book, className }: { book: Book; className?: string }) {
-  return (
-    <a
-      href={book.infoLink ?? "#"}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={`bench-cover ${className ?? ""}`}
-      title={book.title}
-    >
-      {book.coverUrl ? (
-        <Image
-          src={book.coverUrl}
-          alt={book.title}
-          width={56}
-          height={84}
-          unoptimized
-        />
-      ) : (
-        <span className="bench-cover-placeholder">{book.title.slice(0, 2)}</span>
-      )}
-    </a>
-  );
 }
 
 function ClipRow({ clip }: { clip: Clip }) {
@@ -139,114 +118,6 @@ function ClipRow({ clip }: { clip: Clip }) {
   );
 }
 
-function ErrorList({ errors }: { errors: ShelfError[] }) {
-  if (errors.length === 0) return null;
-  return (
-    <div className="bench-errors">
-      <strong>Some books could not be loaded:</strong>
-      <ul className="bench-error-list">
-        {errors.map((e) => (
-          <li key={e.isbn13}>
-            {e.isbn13}
-            {e.note && <span className="bench-error-note"> — {e.note}</span>}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-interface BookNoteChipProps {
-  book: Book & { note: string };
-  isSelected: boolean;
-  onSelect: () => void;
-  onClose: () => void;
-}
-
-function BookNoteChip({
-  book,
-  isSelected,
-  onSelect,
-  onClose,
-}: BookNoteChipProps) {
-  const id = `note-${book.googleBooksId}`;
-  return (
-    <>
-      <button
-        type="button"
-        className={`bench-note-chip ${isSelected ? "selected" : ""}`}
-        onClick={onSelect}
-        aria-expanded={isSelected}
-        aria-controls={id}
-      >
-        {book.title}
-      </button>
-      {isSelected && (
-        <div id={id} className="bench-note-panel-row">
-          <div className="bench-note-panel">
-            <div className="bench-note-head">
-              <strong>{book.title}</strong>
-              <button
-                type="button"
-                onClick={onClose}
-                className="bench-note-close"
-                aria-label="Close note"
-              >
-                ×
-              </button>
-            </div>
-            {book.note ? (
-              <p className="bench-note-body">{book.note}</p>
-            ) : (
-              <p className="bench-note-empty">
-                No note yet. Add one in the admin bench editor.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-interface BookNoteGroupProps {
-  title: string;
-  count: number;
-  books: (Book & { note: string })[];
-  selectedBookId: string | null;
-  onSelect: (id: string) => void;
-  onClose: () => void;
-}
-
-function BookNoteGroup({
-  title,
-  count,
-  books,
-  selectedBookId,
-  onSelect,
-  onClose,
-}: BookNoteGroupProps) {
-  if (books.length === 0) return null;
-  return (
-    <div className="bench-note-group-block">
-      <h5 className="bench-note-group-title">
-        {title} <span className="bench-count">· {count}</span>
-      </h5>
-      <div className="bench-note-chips">
-        {books.map((book) => (
-          <BookNoteChip
-            key={book.googleBooksId}
-            book={book}
-            isSelected={selectedBookId === book.googleBooksId}
-            onSelect={() => onSelect(book.googleBooksId)}
-            onClose={onClose}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function BenchOverlay({
   isOpen,
   onClose,
@@ -256,21 +127,18 @@ export default function BenchOverlay({
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const clips: Clip[] = vault.clips;
-  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
 
   useLockBodyScroll(isOpen);
   useEscapeKey(onClose, isOpen);
   useFocusTrap(panelRef, isOpen);
 
-  const openCount = shelf.currentlyReading.length;
-  const waitingCount = shelf.tbr.length;
-  const hasBooks = openCount > 0 || waitingCount > 0;
-  const hasErrors = shelf.errors.length > 0;
 
   return (
     <div
       ref={panelRef}
       className={`bench-overlay ${isOpen ? "open" : ""}`}
+      inert={!isOpen}
+      aria-hidden={!isOpen}
       role="dialog"
       aria-modal="true"
       aria-labelledby="bench-title"
@@ -278,7 +146,7 @@ export default function BenchOverlay({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bench-card">
+      <div className="bench-card" style={{maxWidth:1120}}>
         <h2 id="bench-title" className="visually-hidden">
           The bench — shelf and vault
         </h2>
@@ -292,68 +160,8 @@ export default function BenchOverlay({
           ×
         </button>
 
-        <div className="bench-grid">
-          <div className="bench-section">
-            <div className="bench-section-head">
-              <h4 id="bench-shelf-title">On the bench</h4>
-              <span className="bench-count">
-                {openCount} open · {waitingCount} waiting
-              </span>
-            </div>
-
-            {hasBooks ? (
-              <>
-                {(openCount > 0 || waitingCount > 0) && (
-                  <div
-                    className="bench-cover-row"
-                    aria-labelledby="bench-shelf-title"
-                  >
-                    {[...shelf.currentlyReading, ...shelf.tbr].map((book, i, arr) => {
-                      let className = "lift";
-                      const total = arr.length;
-                      if (total > 1) {
-                        if (i === 0) className = "tilt-l";
-                        else if (i === total - 1) className = "tilt-r";
-                      }
-                      return (
-                        <Cover
-                          key={book.googleBooksId}
-                          book={book}
-                          className={className}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-                <div className="bench-shelf-divider" />
-                <div className="bench-shelf-notes">
-                  <BookNoteGroup
-                    title="Currently reading"
-                    count={openCount}
-                    books={shelf.currentlyReading}
-                    selectedBookId={selectedBookId}
-                    onSelect={setSelectedBookId}
-                    onClose={() => setSelectedBookId(null)}
-                  />
-                  <BookNoteGroup
-                    title="Waiting"
-                    count={waitingCount}
-                    books={shelf.tbr}
-                    selectedBookId={selectedBookId}
-                    onSelect={setSelectedBookId}
-                    onClose={() => setSelectedBookId(null)}
-                  />
-                </div>
-                {hasErrors && <ErrorList errors={shelf.errors} />}
-              </>
-            ) : (
-              <div className="bench-empty-block">
-                <p className="bench-empty">The bench is empty right now.</p>
-                {hasErrors && <ErrorList errors={shelf.errors} />}
-              </div>
-            )}
-          </div>
-
+        <div className="bench-grid" style={{display:"block"}}>
+          <BookWagonView shelf={shelf}/>
           <div className="bench-section">
             <div className="bench-section-head">
               <h4 id="bench-vault-title">Things worth keeping</h4>

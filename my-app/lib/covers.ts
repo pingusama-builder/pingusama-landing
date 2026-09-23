@@ -1,11 +1,18 @@
-export interface CoverResult {
+import { traceBench } from "./bench-trace";
+import sharp from "sharp";
+
+export interface CoverImage {
   bytes: Buffer;
   mimeType: string;
-  source: "google" | "openlibrary";
+  sourceUrl?: string;
+  width?: number;
+  height?: number;
 }
+export interface CoverResult extends CoverImage { source: "google" | "openlibrary"; }
 
 const MIN_VALID_BYTES = 1000; // Open Library serves an ~800-byte 1x1 placeholder
 const FETCH_TIMEOUT_MS = 8000;
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
 // Google Books returns a generic "image not available" placeholder as a
 // 575x750 8-bit grayscale PNG. Detect it by parsing the PNG IHDR chunk so we
@@ -75,10 +82,10 @@ function sourcesFor(book: {
   const sources: CoverSource[] = [];
   // `ol:`-prefixed ids are synthesized for Open-Library-sourced books and are
   // not valid Google Books volume ids, so never build a Google cover URL from them.
-  if (book.googleBooksId && !book.googleBooksId.startsWith("ol:")) {
+  if (/^[\w-]+$/.test(book.googleBooksId)) {
     sources.push({ url: googleCoverUrl(book.googleBooksId), source: "google" });
   }
-  if (book.olCoverUrl) {
+  if (book.olCoverUrl && /^https:\/\/covers\.openlibrary\.org\/b\/id\/\d+-[SML]\.jpg(?:\?.*)?$/.test(book.olCoverUrl)) {
     sources.push({ url: book.olCoverUrl, source: "openlibrary" });
   }
   if (book.isbn13) {
@@ -90,22 +97,51 @@ function sourcesFor(book: {
   return sources;
 }
 
-async function fetchImage(url: string): Promise<CoverResult | null> {
+export async function decodeCoverBytes(bytes: Buffer, mimeType: string): Promise<CoverImage | null> {
+  if (bytes.length < MIN_VALID_BYTES || bytes.length > MAX_IMAGE_BYTES || (mimeType !== "" && !/^image\/(jpeg|png|webp)(?:;|$)/i.test(mimeType)) || isGooglePlaceholder(bytes)) return null;
+  try {
+    const decoder = sharp(bytes, {limitInputPixels:16_000_000,failOn:"warning"});
+    const metadata = await decoder.metadata();
+    if (!metadata.width || !metadata.height || metadata.width < 60 || metadata.height < 90 || (metadata.pages ?? 1) > 1) return null;
+    const detectedMime = {jpeg:"image/jpeg",png:"image/png",webp:"image/webp"}[metadata.format as "jpeg"|"png"|"webp"];
+    if (!detectedMime) return null;
+    await decoder.stats();
+    return {bytes,mimeType:detectedMime,width:metadata.width,height:metadata.height};
+  } catch { return null; }
+}
+
+export async function fetchVerifiedCoverImage(url: string): Promise<CoverImage | null> {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port || !["books.google.com","covers.openlibrary.org","cdnec.sanmin.com.tw","cdn.kingstone.com.tw"].includes(parsed.hostname)) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
+      redirect: "error",
       next: { revalidate: 0 },
     });
+    traceBench("cover.http",res.ok?"received":"failed",{provider:parsed.hostname,httpStatus:res.status});
     if (!res.ok) return null;
     const mimeType = res.headers.get("content-type") ?? "";
-    if (!mimeType.startsWith("image/")) return null;
-    const ab = await res.arrayBuffer();
-    const bytes = Buffer.from(ab);
-    if (bytes.length < MIN_VALID_BYTES) return null;
-    return { bytes, mimeType, source: "" as "google" | "openlibrary" };
+    if ((mimeType !== "" && !/^image\/(jpeg|png|webp)(?:;|$)/i.test(mimeType))) return null;
+    if (Number(res.headers.get("content-length")) > MAX_IMAGE_BYTES || !res.body) return null;
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    while (true) {
+      const {done,value} = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_IMAGE_BYTES) { await reader.cancel(); return null; }
+      chunks.push(value);
+    }
+    const bytes = Buffer.concat(chunks);
+    const image = await decodeCoverBytes(bytes,mimeType);
+    traceBench("cover.decode",image?"accepted":"rejected",{provider:parsed.hostname,code:isGooglePlaceholder(bytes)?"placeholder":image?"valid":"invalid_image",bytes:bytes.length,width:image?.width,height:image?.height});
+    return image ? {...image,sourceUrl:url} : null;
   } catch {
+    traceBench("cover.http","failed",{provider:parsed.hostname,code:"network_timeout_or_redirect"});
     return null;
   } finally {
     clearTimeout(timer);
@@ -118,7 +154,7 @@ export async function fetchCoverBytes(book: {
   olCoverUrl?: string | null;
 }): Promise<CoverResult | null> {
   for (const source of sourcesFor(book)) {
-    const got = await fetchImage(source.url);
+    const got = await fetchVerifiedCoverImage(source.url);
     if (!got) continue;
     if (source.source === "google" && isGooglePlaceholder(got.bytes)) continue;
     return { ...got, source: source.source };

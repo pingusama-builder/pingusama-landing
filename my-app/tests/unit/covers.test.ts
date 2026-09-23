@@ -1,5 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import { fetchCoverBytes } from "@/lib/covers";
+
+import sharp from "sharp";
+let validBytes: number[];
+beforeAll(async()=>{ validBytes=[...await sharp(Buffer.from(Array.from({length:120*180*3},(_,i)=>(i*37)%251)),{raw:{width:120,height:180,channels:3}}).jpeg({quality:90}).toBuffer()]; });
 
 const BOOK = { googleBooksId: "yoHbJ78JZCYC", isbn13: "9780307473394" };
 
@@ -10,16 +14,7 @@ describe("fetchCoverBytes", () => {
   afterEach(() => vi.restoreAllMocks());
 
   function imageResponse(bytes: number[], mimeType = "image/jpeg", status = 200) {
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      headers: {
-        get: (name: string) =>
-          name.toLowerCase() === "content-type" ? mimeType : null,
-      },
-      arrayBuffer: async () => Uint8Array.from(bytes).buffer,
-      bytes: async () => Uint8Array.from(bytes),
-    } as unknown as Response;
+    return new Response(Uint8Array.from(bytes), {status,headers:{"content-type":mimeType}});
   }
 
   function pngHeader(width: number, height: number, colorType: number, bitDepth = 8) {
@@ -34,7 +29,7 @@ describe("fetchCoverBytes", () => {
   }
 
   it("tries the Google zoom=0 https URL first and returns its bytes", async () => {
-    const fakeBytes = Array.from({ length: 4000 }, (_, i) => i % 256);
+    const fakeBytes = validBytes;
     vi.mocked(fetch).mockResolvedValue(imageResponse(fakeBytes, "image/jpeg"));
 
     const result = await fetchCoverBytes(BOOK);
@@ -49,7 +44,7 @@ describe("fetchCoverBytes", () => {
   it("falls back to Open Library when Google returns a non-image / 404", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce({ ok: false, status: 404, headers: { get: () => null } } as unknown as Response)
-      .mockResolvedValueOnce(imageResponse(Array.from({ length: 5000 }, () => 1), "image/jpeg"));
+      .mockResolvedValueOnce(imageResponse(validBytes, "image/jpeg"));
 
     const result = await fetchCoverBytes(BOOK);
     expect(result?.source).toBe("openlibrary");
@@ -68,10 +63,10 @@ describe("fetchCoverBytes", () => {
   });
 
   it("rejects the Google Books 575x750 grayscale placeholder and falls back to Open Library", async () => {
-    const placeholder = pngHeader(575, 750, 0);
+    const placeholder = [...pngHeader(575, 750, 0), ...Array(1500).fill(0)];
     vi.mocked(fetch)
       .mockResolvedValueOnce(imageResponse(placeholder, "image/png"))
-      .mockResolvedValueOnce(imageResponse(Array.from({ length: 5000 }, () => 1), "image/jpeg"));
+      .mockResolvedValueOnce(imageResponse(validBytes, "image/jpeg"));
 
     const result = await fetchCoverBytes(BOOK);
     expect(result?.source).toBe("openlibrary");
@@ -89,7 +84,7 @@ describe("fetchCoverBytes", () => {
       // google cover: not found
       .mockResolvedValueOnce({ ok: false, status: 404, headers: { get: () => null } } as unknown as Response)
       // OL cover-by-ID: real image
-      .mockResolvedValueOnce(imageResponse(Array.from({ length: 5000 }, () => 7), "image/jpeg"));
+      .mockResolvedValueOnce(imageResponse(validBytes, "image/jpeg"));
 
     const result = await fetchCoverBytes({ ...BOOK, olCoverUrl: olIdUrl });
     expect(result?.source).toBe("openlibrary");
@@ -102,7 +97,7 @@ describe("fetchCoverBytes", () => {
   it("does not build a Google cover URL for an ol:-prefixed id", async () => {
     const olIdUrl = "https://covers.openlibrary.org/b/id/8782784-L.jpg";
     vi.mocked(fetch).mockResolvedValue(
-      imageResponse(Array.from({ length: 4000 }, () => 9), "image/jpeg")
+      imageResponse(validBytes, "image/jpeg")
     );
 
     await fetchCoverBytes({ googleBooksId: "ol:OL27311435M", isbn13: "9780143111610", olCoverUrl: olIdUrl });
@@ -110,4 +105,21 @@ describe("fetchCoverBytes", () => {
     expect(firstUrl).toBe(olIdUrl);
     expect(firstUrl).not.toContain("books.google.com");
   });
+});
+it("rejects bytes that claim to be an image but cannot decode",async()=>{
+ vi.stubGlobal("fetch",vi.fn().mockImplementation(async()=>new Response(new Uint8Array(2000),{headers:{"content-type":"image/jpeg"}})));
+ expect(await fetchCoverBytes(BOOK)).toBeNull();vi.unstubAllGlobals();
+});
+it("does not fetch a client supplied non-provider URL or synthetic Google id",async()=>{
+ vi.stubGlobal("fetch",vi.fn());
+ expect(await fetchCoverBytes({googleBooksId:"web:9780307473394",isbn13:null,olCoverUrl:"http://127.0.0.1/private"})).toBeNull();
+ expect(fetch).not.toHaveBeenCalled();vi.unstubAllGlobals();
+});
+it("rejects oversized images before reading the payload",async()=>{
+ vi.stubGlobal("fetch",vi.fn().mockImplementation(async()=>new Response(new Uint8Array(100),{headers:{"content-type":"image/jpeg","content-length":"4000000"}})));
+ expect(await fetchCoverBytes(BOOK)).toBeNull();vi.unstubAllGlobals();
+});
+it("decodes an allowlisted image even when its CDN omits content-type",async()=>{
+ vi.stubGlobal("fetch",vi.fn().mockImplementation(async()=>new Response(Uint8Array.from(validBytes))));
+ const image=await fetchCoverBytes(BOOK);expect(image).toMatchObject({mimeType:"image/jpeg",width:120,height:180});vi.unstubAllGlobals();
 });

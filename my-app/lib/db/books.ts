@@ -60,7 +60,7 @@ export async function upsertBook(row: BookRow): Promise<void> {
 }
 
 function extForMimeType(mimeType: string): string {
-  return mimeType.includes("png") ? "png" : "jpg";
+  return mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : "jpg";
 }
 
 export async function mirrorCover(

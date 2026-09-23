@@ -1,7 +1,12 @@
 "use client";
+import { diagnoseBench, recordBenchEvent } from "@/lib/bench-diagnostics";
 
 import { useState, useTransition } from "react";
 import Image from "next/image";
+import BenchDiagnostics from "./BenchDiagnostics";
+import BookFinder from "./BookFinder";
+import BookCoverEditor from "./BookCoverEditor";
+import type { BookCandidate } from "@/lib/book-search";
 import type { ShelfData, VaultData, Book } from "@/lib/books";
 import type { BookStatus } from "@/app/admin/bench/actions";
 import { isValidIsbn13, normalizeIsbn13 } from "@/lib/isbn";
@@ -13,19 +18,17 @@ interface BenchEditorProps {
   initialBookStatuses: BookStatus[];
   saveShelf: (
     shelf: ShelfData
-  ) => Promise<{ success: true } | { success: false; error: string }>;
+  ) => Promise<{ success: true; shelf?: ShelfData } | { success: false; error: string }>;
   saveVault: (
     vault: VaultData
   ) => Promise<{ success: true } | { success: false; error: string }>;
   warmBooks: (
     opts?: { force?: boolean }
   ) => Promise<
-    | { success: true; results: { isbn13: string; status: string; error?: string }[]; statuses: BookStatus[] }
+    | { success: true; results: { isbn13: string; status: string; error?: string }[]; statuses: BookStatus[]; shelf?: ShelfData }
     | { success: false; error: string }
   >;
-  previewBook: (
-    isbn13: string
-  ) => Promise<{ success: true; book: Book } | { success: false; error: string }>;
+
 }
 
 type SectionKey = "currentlyReading" | "tbr";
@@ -111,7 +114,6 @@ export default function BenchEditor({
   saveShelf,
   saveVault,
   warmBooks,
-  previewBook,
 }: BenchEditorProps) {
   const [tab, setTab] = useState<"shelf" | "vault">("shelf");
   const [shelf, setShelf] = useState<ShelfData>(initialShelf);
@@ -131,12 +133,13 @@ export default function BenchEditor({
   function handleWarmBooks(force: boolean) {
     startTransition(async () => {
       setError("");
-      const result = await warmBooks({ force });
+      const result = await diagnoseBench("shelf.refresh",()=>warmBooks({ force }));
       if (!result.success) {
         setError(result.error);
         return;
       }
       setBookStatuses(result.statuses);
+      if (result.shelf) setShelf(result.shelf);
       const warmed = result.results.filter((r) => r.status === "warmed").length;
       const errors = result.results.filter((r) => r.status === "error").length;
       showMessage(`Warmed ${warmed} book(s)${errors ? `, ${errors} error(s)` : ""}.`);
@@ -160,9 +163,16 @@ export default function BenchEditor({
   ) {
     setShelf((prev) => {
       const next = { ...prev, [section]: [...prev[section]] };
-      next[section][index] = { ...next[section][index], [field]: value };
+      next[section][index] = { ...next[section][index], [field]: value, ...(field === "isbn13" ? {selection:undefined,requestedIsbn:undefined} : {}) };
       return next;
     });
+  }
+
+  function selectBook(section: SectionKey, index: number, selection: BookCandidate, requestedIsbn: string) {
+    recordBenchEvent("edition.select","selected",{isbn:selection.book.isbn13,provider:selection.source,code:selection.match});
+    setShelf(prev=>({...prev,[section]:prev[section].map((entry,i)=>i===index?{...entry,isbn13:selection.book.isbn13??"",selection,requestedIsbn}:entry)}));
+    setPreviews(prev=>({...prev,[previewKey(section,index)]:{status:"ok",book:selection.book}}));
+    showMessage("已選擇版本；按 Save shelf 儲存。");
   }
 
   function addBook(section: SectionKey) {
@@ -248,12 +258,13 @@ export default function BenchEditor({
   function handleSaveShelf() {
     startTransition(async () => {
       setError("");
-      const result = await saveShelf(shelf);
+      const result = await diagnoseBench("shelf.save",()=>saveShelf(shelf));
       if (!result.success) {
         setError(result.error);
         return;
       }
-      showMessage("Shelf saved.");
+      if (result.shelf) setShelf(result.shelf);
+      showMessage("書架已保存；封面狀態見各書目。");
     });
   }
 
@@ -266,34 +277,6 @@ export default function BenchEditor({
         return;
       }
       showMessage("Vault saved.");
-    });
-  }
-
-  function handlePreview(section: SectionKey, index: number) {
-    const isbn = normalizeIsbn13(shelf[section][index].isbn13);
-    const key = previewKey(section, index);
-    setTouched((prev) => ({ ...prev, [key]: true }));
-    if (!isValidIsbn13(isbn)) {
-      setPreviews((prev) => ({
-        ...prev,
-        [key]: { status: "error", error: "Enter a valid ISBN-13 first" },
-      }));
-      return;
-    }
-    setPreviews((prev) => ({ ...prev, [key]: { status: "loading" } }));
-    startTransition(async () => {
-      const result = await previewBook(isbn);
-      if (!result.success) {
-        setPreviews((prev) => ({
-          ...prev,
-          [key]: { status: "error", error: result.error },
-        }));
-        return;
-      }
-      setPreviews((prev) => ({
-        ...prev,
-        [key]: { status: "ok", book: result.book },
-      }));
     });
   }
 
@@ -399,6 +382,7 @@ export default function BenchEditor({
         </div>
       )}
 
+      <BenchDiagnostics />
       {message && (
         <div className="detail mb-4" style={{ borderColor: "var(--sage)" }}>
           <p className="detail-desc" style={{ color: "var(--sage-deep)" }}>
@@ -493,24 +477,18 @@ export default function BenchEditor({
                       </div>
 
                       <div className="md:col-span-3">
-                        <button
-                          type="button"
-                          onClick={() => handlePreview(section, i)}
-                          disabled={isPending}
-                          className="pill cursor-pointer"
-                        >
-                          {isPending && previews[key]?.status === "loading"
-                            ? "Previewing…"
-                            : "Preview book"}
-                        </button>
-                        <BookPreview state={previews[key] ?? { status: "idle" }} />
+                        {book.selection&&<p className="mb-2 text-sm">已選：{book.selection.book.title} · {book.selection.book.authors.join("、")} · {book.selection.book.publisher || "出版社未提供"}{book.requestedIsbn&&book.requestedIsbn!==book.isbn13?`（原搜尋 ISBN：${book.requestedIsbn}）`:""}</p>}
+                        <details><summary className="cursor-pointer text-sm font-semibold">搵書／更換版本</summary><BookFinder key={`${section}-${i}-${book.isbn13}`} initialIsbn={book.isbn13} onSelect={(candidate,requested)=>selectBook(section,i,candidate,requested)}/></details>
+                        <BookPreview state={book.selection ? { status: "ok", book: book.selection.book } : previews[key] ?? { status: "idle" }} />
                       </div>
 
                       <div className="md:col-span-3">
-                        <BookStatusBadge
+                        {book.selection && <p className="text-xs" role="status">{book.selection.book.coverAsset?.status === "available" ? (book.selection.book.coverAsset.refreshStatus ? "✓ 保留已保存封面；今次更新未成功" : "✓ 封面已保存") : book.selection.book.coverAsset?.status === "failed" ? "封面取得／保存失敗；可按 Warm book covers 重試" : book.selection.book.coverAsset?.status === "missing" ? "書目已保存 · 未取得封面" : book.selection.book.coverAsset?.status === "pending" ? "書目已保存 · 封面待處理，按 Warm book covers 繼續" : "封面待驗證，儲存時處理"}</p>}
+                        {book.selection && <BookCoverEditor entry={book} disabled={isPending} onSaved={asset=>setShelf(prev=>({...prev,[section]:prev[section].map((e,index)=>index===i && e.selection && (e.isbn13?`isbn:${e.isbn13}`:`manual:${e.selection.book.googleBooksId}`)===asset.editionKey ? {...e,selection:{...e.selection,book:{...e.selection.book,coverAsset:asset,coverUrl:asset.url??null,thumbnail:null}}}:e)}))}/>}
+                        {!book.selection && <BookStatusBadge
                           isbn13={book.isbn13}
                           status={statusFor(book.isbn13)}
-                        />
+                        />}
                       </div>
                     </div>
                   );

@@ -7,7 +7,6 @@ import {
   saveShelfAction,
   saveVaultAction,
   warmBooksAction,
-  previewBookAction,
   listBookStatusesAction,
 } from "./actions"
 
@@ -32,8 +31,8 @@ export default async function AdminBenchPage() {
             The bench
           </h1>
           <p className="detail-desc mt-2">
-            Edit the shelf (ISBNs + notes) and the vault (clipped links). Save
-            each tab separately. Warm book covers after changing ISBNs.
+            搵書、選擇版本，再儲存書架。搜尋支援繁中、簡中及英文；搵唔到亦可手動加入。
+            Shelf 同 Vault 分開儲存。
           </p>
         </div>
 
@@ -47,7 +46,6 @@ export default async function AdminBenchPage() {
           saveShelf={saveShelfAction}
           saveVault={saveVaultAction}
           warmBooks={warmBooksAction}
-          previewBook={previewBookAction}
         />
       </main>
       <Footer />

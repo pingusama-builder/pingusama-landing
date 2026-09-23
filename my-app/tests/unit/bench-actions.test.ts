@@ -25,6 +25,12 @@ vi.mock("@/lib/books", () => ({
   fetchBookByIsbn: vi.fn(),
 }));
 
+vi.mock("@/lib/book-search", () => ({ searchBooks: vi.fn() }));
+vi.mock("@/lib/shelf-covers", () => ({ prepareShelfCovers: vi.fn() }));
+import { prepareShelfCovers } from "@/lib/shelf-covers";
+import { requireAdmin } from "@/lib/auth";
+import { searchBooks } from "@/lib/book-search";
+
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
@@ -73,6 +79,26 @@ describe("bench admin actions", () => {
     const result = await saveShelfAction({ currentlyReading: [], tbr: [] });
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error).toBe("DB unavailable");
+  });
+
+  it("persists the server-prepared selected cover and returns it to the editor", async () => {
+    const book = {googleBooksId:"g1",title:"Selected",authors:["Author"],isbn13:"9780307473394",isbn10:null,subtitle:null,publisher:null,publishedDate:null,pageCount:null,infoLink:null,thumbnail:null,coverUrl:null,coverSource:null};
+    const shelf = {currentlyReading:[{isbn13:"9780307473394",note:"note",selection:{book,source:"google" as const,match:"exact" as const,language:"en" as const}}],tbr:[]};
+    const prepared = structuredClone(shelf);
+    const previous = {currentlyReading:[],tbr:[]};
+    vi.mocked(bench.loadShelf).mockResolvedValue(previous);
+    vi.mocked(prepareShelfCovers).mockResolvedValue(prepared);
+    vi.mocked(bench.saveShelf).mockResolvedValue(undefined);
+    expect(await saveShelfAction(shelf)).toEqual({success:true,shelf:prepared});
+    expect(prepareShelfCovers).toHaveBeenCalledWith(shelf,previous);
+    expect(bench.saveShelf).toHaveBeenCalledWith(prepared);
+  });
+
+  it("does not acquire or persist covers when admin authentication fails", async () => {
+    vi.mocked(requireAdmin).mockRejectedValueOnce(new Error("Unauthorized"));
+    expect(await saveShelfAction({currentlyReading:[],tbr:[]})).toEqual({success:false,error:"Unauthorized"});
+    expect(prepareShelfCovers).not.toHaveBeenCalled();
+    expect(bench.saveShelf).not.toHaveBeenCalled();
   });
 
   it("saveVaultAction persists vault and revalidates", async () => {
@@ -133,67 +159,19 @@ describe("bench admin actions", () => {
     expect(result.error).toBe("no shelf");
   });
 
-  it("previewBookAction warms and returns the book for a valid ISBN", async () => {
-    vi.mocked(books.warmBook).mockResolvedValue({ isbn13: "9780307473394", status: "warmed" });
-    vi.mocked(dbBooks.bookRowToBook).mockImplementation((row) => ({
-      googleBooksId: row.google_books_id ?? row.isbn13,
-      title: row.title,
-      subtitle: row.subtitle,
-      authors: row.authors ?? [],
-      publisher: row.publisher,
-      publishedDate: row.published_date,
-      pageCount: row.page_count,
-      infoLink: row.info_link,
-      thumbnail: null,
-      isbn13: row.isbn13,
-      isbn10: row.isbn10,
-      coverUrl: row.cover_url,
-      coverSource: row.cover_source,
-    }));
-    vi.mocked(dbBooks.getBooksByIsbns).mockResolvedValue(
-      new Map([
-        [
-          "9780307473394",
-          {
-            isbn13: "9780307473394",
-            google_books_id: "g1",
-            title: "Preview Book",
-            subtitle: null,
-            authors: [],
-            publisher: null,
-            published_date: null,
-            page_count: null,
-            info_link: null,
-            isbn10: null,
-            cover_url: "https://supabase.example/covers/9780307473394.jpg",
-            cover_source: "google",
-            has_cover: true,
-            last_fetched_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ],
-      ])
-    );
-
+  it("previewBookAction returns a read-only preview without warming or writing", async () => {
+    const book = { googleBooksId: "g1", title: "Preview Book", authors: [], publisher: null, publishedDate: null, pageCount: null, infoLink: null, thumbnail: null, isbn13: "9780307473394", isbn10: null, subtitle: null, coverUrl: null, coverSource: null };
+    vi.mocked(searchBooks).mockResolvedValue({ candidates: [{book,source:"google",language:"en",match:"exact"}],leads:[],warnings:[] });
     const result = await previewBookAction("9780307473394");
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.book.title).toBe("Preview Book");
-    expect(result.book.coverUrl).toBe("https://supabase.example/covers/9780307473394.jpg");
-    expect(books.warmBook).toHaveBeenCalledWith("9780307473394");
-    expect(books.fetchBookByIsbn).not.toHaveBeenCalled();
+    expect(result).toEqual({success:true,book});
+    expect(books.warmBook).not.toHaveBeenCalled();
+    expect(bench.saveShelf).not.toHaveBeenCalled();
+    expect(dbBooks.getBooksByIsbns).not.toHaveBeenCalled();
   });
 
-  it("previewBookAction returns an error when warming fails", async () => {
-    vi.mocked(books.warmBook).mockResolvedValue({
-      isbn13: "9780307473394",
-      status: "error",
-      error: "Not found in Google Books",
-    });
-    const result = await previewBookAction("9780307473394");
-    expect(result.success).toBe(false);
-    if (result.success) return;
-    expect(result.error).toContain("No book found");
+  it("previewBookAction preserves provider errors instead of claiming a book is missing", async () => {
+    vi.mocked(searchBooks).mockResolvedValue({candidates:[],leads:[],warnings:["Provider temporarily unavailable"]});
+    expect(await previewBookAction("9780307473394")).toEqual({success:false,error:"Provider temporarily unavailable"});
   });
 
   it("listBookStatusesAction maps rows to statuses", async () => {

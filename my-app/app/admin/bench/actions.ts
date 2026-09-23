@@ -1,4 +1,5 @@
 "use server";
+import { collectBenchTrace } from "@/lib/bench-trace";
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
@@ -10,10 +11,12 @@ import {
   WarmResult,
 } from "@/lib/books";
 import { isValidIsbn13, normalizeIsbn13 } from "@/lib/isbn";
+import { searchBooks, type BookSearchInput, type BookSearchResult } from "@/lib/book-search";
+import { validateShelf } from "@/lib/book-selection";
+import { prepareShelfCovers } from "@/lib/shelf-covers";
 import { loadShelf, loadVault, saveShelf, saveVault } from "@/lib/db/bench";
 import {
   getBooksByIsbns,
-  bookRowToBook,
   isStale,
   type BookRow,
 } from "@/lib/db/books";
@@ -36,15 +39,18 @@ export async function loadBenchData(): Promise<{
   return { shelf, vault };
 }
 
-export async function saveShelfAction(
+async function saveShelfActionInternal(
   shelf: ShelfData
-): Promise<{ success: true } | { success: false; error: string }> {
+): Promise<{ success: true; shelf?: ShelfData } | { success: false; error: string }> {
   try {
     await requireAdmin();
-    await saveShelf(shelf);
+    const validated = validateShelf(shelf);
+    const hasSelections = [...validated.currentlyReading, ...validated.tbr].some(e => e.selection);
+    const prepared = hasSelections ? await prepareShelfCovers(validated, await loadShelf()) : validated;
+    await saveShelf(prepared);
     revalidatePath("/");
     revalidatePath("/admin/bench");
-    return { success: true };
+    return hasSelections ? { success: true, shelf: prepared } : { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to save shelf";
     return { success: false, error: message };
@@ -71,6 +77,7 @@ function uniqueValidIsbns(shelf: ShelfData): { isbns: string[]; invalid: string[
   const isbns: string[] = [];
   const invalid: string[] = [];
   for (const entry of [...shelf.currentlyReading, ...shelf.tbr]) {
+    if (entry.selection) continue;
     const cleaned = normalizeIsbn13(entry.isbn13);
     if (!isValidIsbn13(cleaned)) {
       invalid.push(entry.isbn13 || "(empty)");
@@ -84,10 +91,10 @@ function uniqueValidIsbns(shelf: ShelfData): { isbns: string[]; invalid: string[
   return { isbns, invalid };
 }
 
-export async function warmBooksAction(
+async function warmBooksActionInternal(
   opts: { force?: boolean } = {}
 ): Promise<
-  | { success: true; results: WarmResult[]; statuses: BookStatus[] }
+  | { success: true; results: WarmResult[]; statuses: BookStatus[]; shelf?: ShelfData }
   | { success: false; error: string }
 > {
   try {
@@ -106,10 +113,13 @@ export async function warmBooksAction(
       results.push({ isbn13: bad, status: "error", error: "Invalid ISBN-13" });
     }
 
+    const hasSelections = [...shelf.currentlyReading, ...shelf.tbr].some(e => e.selection);
+    const prepared = hasSelections ? await prepareShelfCovers(shelf, shelf, opts.force) : shelf;
+    if (hasSelections) await saveShelf(prepared);
     const statuses = await listBookStatusesAction(isbns);
     revalidatePath("/");
     revalidatePath("/admin/bench");
-    return { success: true, results, statuses };
+    return { success: true, results, statuses, ...(hasSelections ? { shelf: prepared } : {}) };
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to warm books";
@@ -122,28 +132,22 @@ export async function previewBookAction(
 ): Promise<{ success: true; book: Book } | { success: false; error: string }> {
   try {
     await requireAdmin();
-    const warm = await warmBook(isbn13);
-    if (warm.status === "error") {
-      return {
-        success: false,
-        error: warm.error?.includes("Invalid")
-          ? "Enter a valid ISBN-13 first"
-          : "No book found. Check the ISBN-13 and API key.",
-      };
-    }
-    // After warming, read the row back and build the Book from it — no second Google fetch.
-    const normalized = normalizeIsbn13(isbn13);
-    const rows = await getBooksByIsbns([normalized]);
-    const row = rows.get(normalized);
-    if (!row) {
-      return { success: false, error: "No book found. Check the ISBN-13 and API key." };
-    }
-    return { success: true, book: bookRowToBook(row) };
+    const result = await searchBooks({ isbn: isbn13 });
+    const exact = result.candidates.find(c => c.match === "exact");
+    if (!exact) return { success: false, error: result.warnings.join(" ") || "No book found. 可用書名及作者搜尋其他版本。" };
+    return { success: true, book: exact.book };
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to preview book";
     return { success: false, error: message };
   }
+}
+
+async function searchBooksActionInternal(input: BookSearchInput): Promise<{success:true;result:BookSearchResult}|{success:false;error:string}> {
+  try {
+    await requireAdmin();
+    return {success:true,result:await searchBooks(input)};
+  } catch (e) { return {success:false,error:e instanceof Error ? e.message : "搜尋失敗，請稍後重試。"}; }
 }
 
 function rowToStatus(isbn13: string, row: BookRow | undefined): BookStatus {
@@ -167,3 +171,9 @@ export async function listBookStatusesAction(
   const rows = await getBooksByIsbns(valid);
   return valid.map((isbn) => rowToStatus(isbn, rows.get(isbn)));
 }
+
+export async function saveShelfAction(shelf: ShelfData){return collectBenchTrace(()=>saveShelfActionInternal(shelf));}
+
+export async function warmBooksAction(opts: {force?:boolean} = {}){return collectBenchTrace(()=>warmBooksActionInternal(opts));}
+
+export async function searchBooksAction(input: BookSearchInput){return collectBenchTrace(()=>searchBooksActionInternal(input));}

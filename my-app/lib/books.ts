@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isValidIsbn13, normalizeIsbn13 } from "./isbn";
+import { isValidIsbn13, normalizeIsbn13, canonicalIsbn } from "./isbn";
+import type { BookCandidate } from "./book-search";
+import type { BookCoverAsset } from "./book-cover-types";
 import {
   getBooksByIsbns,
   upsertBook,
@@ -14,6 +16,7 @@ import { fetchCoverBytes } from "./covers";
 export { isValidIsbn13, normalizeIsbn13 } from "./isbn";
 
 export interface Book {
+  coverAsset?: BookCoverAsset;
   googleBooksId: string;
   title: string;
   subtitle: string | null;
@@ -32,6 +35,8 @@ export interface Book {
 export interface ShelfEntry {
   isbn13: string;
   note: string;
+  requestedIsbn?: string;
+  selection?: BookCandidate;
 }
 
 export interface ShelfData {
@@ -78,7 +83,8 @@ function getApiKey(): string | undefined {
 async function fetchByIsbn(
   isbn13: string,
   apiKey: string,
-  retries = 2
+  retries = 2,
+  reportErrors = false
 ): Promise<Book | null> {
   const q = `isbn:${isbn13.replace(/-/g, "")}`;
   const url = new URL(API);
@@ -88,9 +94,9 @@ async function fetchByIsbn(
 
   let attempt = 0;
   while (true) {
-    const res = await fetch(url.toString(), { next: { revalidate: ONE_DAY } });
+    const res = await fetch(url.toString(), { next: { revalidate: ONE_DAY }, signal: AbortSignal.timeout(7000) });
     if (res.ok) {
-      return parseBook(res);
+      return parseBook(res, isbn13);
     }
 
     const isRetryable = res.status >= 500 || res.status === 429;
@@ -105,18 +111,27 @@ async function fetchByIsbn(
     }
 
     console.error(`Google Books fetch failed for ${isbn13}: HTTP ${res.status}`);
+    if (reportErrors) throw new Error("Google Books 暫時無法查詢，請稍後重試。");
     return null;
   }
 }
 
-export async function fetchBookByIsbn(isbn13: string): Promise<Book | null> {
+export async function fetchBookByIsbn(isbn13: string, reportErrors = false): Promise<Book | null> {
   const cleaned = normalizeIsbn13(isbn13);
   if (!isValidIsbn13(cleaned)) return null;
   const apiKey = getApiKey();
-  if (!apiKey) return null;
-  const book = await fetchByIsbn(cleaned, apiKey);
-  if (!book) return null;
-  return { ...book, coverUrl: null, coverSource: null };
+  if (!apiKey) {
+    if (reportErrors) throw new Error("Google Books API key 未設定。");
+    return null;
+  }
+  try {
+    const book = await fetchByIsbn(cleaned, apiKey, reportErrors ? 0 : 2, reportErrors);
+    if (!book) return null;
+    return { ...book, coverUrl: null, coverSource: null };
+  } catch {
+    if (reportErrors) throw new Error("Google Books 暫時無法查詢，請稍後重試。");
+    return null;
+  }
 }
 
 // Open Library data API — the metadata + cover fallback when Google Books is
@@ -146,7 +161,8 @@ interface OLVolume {
 }
 
 export async function fetchBookByOpenLibrary(
-  isbn13: string
+  isbn13: string,
+  reportErrors = false
 ): Promise<OpenLibraryResult | null> {
   const cleaned = normalizeIsbn13(isbn13);
   if (!isValidIsbn13(cleaned)) return null;
@@ -158,15 +174,14 @@ export async function fetchBookByOpenLibrary(
   url.searchParams.set("jscmd", "data");
 
   try {
-    const res = await fetch(url.toString(), { next: { revalidate: ONE_DAY } });
-    if (!res.ok) return null;
+    const res = await fetch(url.toString(), { next: { revalidate: ONE_DAY }, signal: AbortSignal.timeout(7000) });
+    if (!res.ok) throw new Error("Open Library 暫時無法查詢，請稍後重試。");
     const data = (await res.json()) as Record<string, OLVolume>;
     const vol = data[bibkey];
     if (!vol) return null;
 
-    // The row is keyed by the queried ISBN (the shelf entry), NOT the ISBN Open
-    // Library reports — OL can return a variant edition's ISBN_13, which would
-    // orphan the row from its shelf entry. Keep `cleaned` as the key.
+    const identifiers = [...(vol.identifiers?.isbn_13 ?? []), ...(vol.identifiers?.isbn_10 ?? [])];
+    if (!identifiers.some((id) => canonicalIsbn(id) === cleaned)) return null;
     const olid = vol.key?.replace("/books/", "") ?? cleaned;
     return {
       book: {
@@ -187,6 +202,7 @@ export async function fetchBookByOpenLibrary(
       olCoverUrl: vol.cover?.large ?? vol.cover?.medium ?? null,
     };
   } catch (err) {
+    if (reportErrors) throw new Error("Open Library 暫時無法查詢，請稍後重試。");
     console.warn(
       `Open Library fetch failed for ${cleaned}:`,
       err instanceof Error ? err.message : err
@@ -195,7 +211,7 @@ export async function fetchBookByOpenLibrary(
   }
 }
 
-async function parseBook(res: Response): Promise<Book | null> {
+async function parseBook(res: Response, requestedIsbn: string): Promise<Book | null> {
   const data = (await res.json()) as {
     items?: Array<{
       id: string;
@@ -213,7 +229,7 @@ async function parseBook(res: Response): Promise<Book | null> {
     }>;
   };
 
-  const item = data.items?.[0];
+  const item = data.items?.find((item) => item.volumeInfo?.industryIdentifiers?.some((id) => canonicalIsbn(id.identifier) === requestedIsbn));
   if (!item) return null;
 
   const v = item.volumeInfo || {};
@@ -228,9 +244,7 @@ async function parseBook(res: Response): Promise<Book | null> {
     infoLink: v.infoLink ?? null,
     thumbnail:
       v.imageLinks?.thumbnail ?? v.imageLinks?.smallThumbnail ?? null,
-    isbn13:
-      v.industryIdentifiers?.find((x) => x.type === "ISBN_13")?.identifier ??
-      null,
+    isbn13: requestedIsbn,
     isbn10:
       v.industryIdentifiers?.find((x) => x.type === "ISBN_10")?.identifier ??
       null,
@@ -351,10 +365,11 @@ export async function warmBook(
 
 export async function resolveShelf(shelf: ShelfData): Promise<ResolvedShelf> {
   const allEntries = [...shelf.currentlyReading, ...shelf.tbr];
-  const isbns = allEntries.map((e) => normalizeIsbn13(e.isbn13));
+  const isbns = allEntries.filter(e => !e.selection).map((e) => normalizeIsbn13(e.isbn13));
   const rows = await getBooksByIsbns(isbns);
 
   const toBook = (entry: ShelfEntry, isbn13: string): Book & { note: string } => {
+    if (entry.selection) return { ...entry.selection.book, note: entry.note };
     const row = rows.get(isbn13);
     if (row) {
       return { ...bookRowToBook(row), note: entry.note };
@@ -381,7 +396,7 @@ export async function resolveShelf(shelf: ShelfData): Promise<ResolvedShelf> {
   const errors: ShelfError[] = [];
   for (const entry of allEntries) {
     const isbn13 = normalizeIsbn13(entry.isbn13);
-    if (!rows.has(isbn13)) {
+    if (!entry.selection && !rows.has(isbn13)) {
       errors.push({
         isbn13,
         note: entry.note,

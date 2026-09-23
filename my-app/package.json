@@ -18,6 +18,7 @@
     "@supabase/supabase-js": "^2.108.2",
     "gray-matter": "^4.0.3",
     "next": "16.2.9",
+    "opencc-js": "^1.4.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
@@ -26,7 +27,8 @@
     "remark": "^15.0.1",
     "remark-gfm": "^4.0.1",
     "remark-html": "^16.0.1",
-    "remark-rehype": "^11.1.2"
+    "remark-rehype": "^11.1.2",
+    "sharp": "0.34.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

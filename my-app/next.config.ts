@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   images: { unoptimized: true },
+  experimental: { serverActions: { bodySizeLimit: "4mb" } },
   async rewrites() {
     return [
       { source: "/portrait/atlas", destination: "/portrait/atlas.html" },
