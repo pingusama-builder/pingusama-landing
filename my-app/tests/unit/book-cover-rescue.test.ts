@@ -38,3 +38,13 @@ describe("publisher cover verification",()=>{
   expect(publisherEditionPage(card("9781738401567","one")+card("9781738401567","two"),"9781738401567")).toBeNull();
  });
 });
+
+it("validates NeoDB and iMusic edition artwork without assuming its visual format",()=>{
+ const n="https://neodb.social/book/ABC";const ni="https://neodb.social/m/item/book/2026/cover.jpg";
+ expect(editionCoverFromHtml(html("9789865580704",n,ni),n,"9789865580704")).toBe(ni);
+ const p="https://imusic.co/books/9781738401567/2025-indie";const image="https://imusic.b-cdn.net/images/item/original/567/9781738401567.jpg";
+ const record={"@type":"Product",gtin13:"9781738401567",offers:{url:p},image};
+ const markup=(r:unknown)=>`<script type="application/ld+json">${JSON.stringify({"@graph":[r]})}</script>`;
+ expect(editionCoverFromHtml(markup(record),p,"9781738401567")).toBe(image);
+ expect(editionCoverFromHtml(markup({...record,image:image.replace("9781738401567.jpg","9789865580704.jpg")}),p,"9781738401567")).toBeNull();
+});

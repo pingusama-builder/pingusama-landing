@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { loadShelf, saveShelf } from "@/lib/db/bench";
 import { validateShelf } from "@/lib/book-selection";
+import { rescueEditionCover } from "@/lib/book-cover-rescue";
 import { decodeCoverBytes } from "@/lib/covers";
 import { editionKey, storeCoverAsset, prepareShelfCovers } from "@/lib/shelf-covers";
 import type { ShelfEntry } from "@/lib/books";
@@ -41,7 +42,7 @@ async function updateBookCoverActionInternal(input:ShelfEntry,form:FormData):Pro
 
 export async function updateBookCoverAction(input:ShelfEntry,form:FormData){return collectBenchTrace(()=>updateBookCoverActionInternal(input,form));}
 
-export async function retryBookCoverAction(input:ShelfEntry){
+export async function retryBookCoverAction(input:ShelfEntry,sourcePage?:string){
  return collectBenchTrace(async()=>{
   try {
    await requireAdmin();
@@ -50,9 +51,17 @@ export async function retryBookCoverAction(input:ShelfEntry){
    const shelf=await loadShelf();
    const saved=[...shelf.currentlyReading,...shelf.tbr].find(e=>e.selection && editionKey(e)===editionKey(entry));
    if(!saved?.selection)throw new Error("請先儲存呢個版本，再搵封面。");
-   const single={currentlyReading:[saved],tbr:[]};
-   const prepared=await prepareShelfCovers(single,single,true);
-   const asset=prepared.currentlyReading[0].selection!.book.coverAsset!;
+   if(sourcePage && sourcePage.length>2000)throw new Error("來源網址過長。");
+   let asset:BookCoverAsset;
+   if(sourcePage){
+    const image=await rescueEditionCover(sourcePage,saved.isbn13);
+    if(!image)throw new Error("來源未能核實同一 ISBN 嘅圖片；原封面保留。");
+    asset=await storeCoverAsset(saved,image,"web","unreviewed",image.sourcePage);
+   }else{
+    const single={currentlyReading:[saved],tbr:[]};
+    const prepared=await prepareShelfCovers(single,single,true);
+    asset=prepared.currentlyReading[0].selection!.book.coverAsset!;
+   }
    // Re-read after network requests, preserving notes/order edited meanwhile.
    const latest=await loadShelf();let found=false;
    for(const section of ["currentlyReading","tbr"] as const)latest[section]=latest[section].map(e=>{

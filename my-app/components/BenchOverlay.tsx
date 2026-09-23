@@ -34,6 +34,7 @@ function useEscapeKey(onClose: () => void, isOpen: boolean) {
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof Element && e.target.closest("dialog")) return;
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", handler);
@@ -62,6 +63,7 @@ function useFocusTrap(
     first.focus();
 
     const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof Element && e.target.closest("dialog")) return;
       if (e.key !== "Tab") return;
       const current = Array.from(container.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]')).filter(el=>el.getClientRects().length>0);
       const first = current[0]; const last = current[current.length-1];

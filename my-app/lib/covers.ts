@@ -112,8 +112,10 @@ export async function decodeCoverBytes(bytes: Buffer, mimeType: string): Promise
 
 export async function fetchVerifiedCoverImage(url: string): Promise<CoverImage | null> {
   const parsed = new URL(url);
-  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port || !["books.google.com","covers.openlibrary.org","cdnec.sanmin.com.tw","cdn.kingstone.com.tw","www.bitmapbooks.com"].includes(parsed.hostname)) return null;
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port || !["books.google.com","covers.openlibrary.org","cdnec.sanmin.com.tw","cdn.kingstone.com.tw","www.bitmapbooks.com","neodb.social","imusic.b-cdn.net"].includes(parsed.hostname)) return null;
   if (parsed.hostname === "www.bitmapbooks.com" && !/^\/cdn\/shop\/(files|products)\//.test(parsed.pathname)) return null;
+  if (parsed.hostname === "neodb.social" && !/^\/m\/item\/book\//.test(parsed.pathname)) return null;
+  if (parsed.hostname === "imusic.b-cdn.net" && !/^\/images\/item\/original\/\d+\/\d{13}\.jpg$/.test(parsed.pathname)) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {

@@ -3,6 +3,8 @@ import { canonicalIsbn } from "./isbn";
 import { fetchVerifiedCoverImage, type CoverImage } from "./covers";
 
 const sources = {
+  "neodb.social": {path:/^\/book\/[A-Za-z0-9]+\/?$/,imageHost:"neodb.social",imagePath:/^\/m\/item\/book\//},
+  "imusic.co": {path:/^\/books\/\d{13}\/[a-z0-9-]+\/?$/,imageHost:"imusic.b-cdn.net",imagePath:/^\/images\/item\/original\/\d+\/\d{13}\.jpg$/},
   "www.bitmapbooks.com": {path:/^\/products\/[a-z0-9-]+\/?$/,imageHost:"www.bitmapbooks.com",imagePath:/^\/cdn\/shop\/(files|products)\//},
   "www.sanmin.com.tw": {path:/^\/product\/index\/\d+\/?$/,imageHost:"cdnec.sanmin.com.tw",imagePath:/^\/product_images\//},
   "www.kingstone.com.tw": {path:/^\/basic\/\d+\/?$/,imageHost:"cdn.kingstone.com.tw",imagePath:/^\/book\/images\/product\//},
@@ -29,11 +31,11 @@ export function editionCoverFromHtml(html:string,page:string,isbn:string): strin
   const matching=records.filter(record=>{
     const types=Array.isArray(record["@type"])?record["@type"]:[record["@type"]];
     // Bitmap publishes the book ISBN as Product.mpn, not as a work-level identifier.
-    const isbnValue=record.isbn ?? (supported.url.hostname==="www.bitmapbooks.com" ? record.mpn : undefined);
+    const isbnValue=record.isbn ?? (supported.url.hostname==="www.bitmapbooks.com" ? record.mpn : supported.url.hostname==="imusic.co" ? record.gtin13 : undefined);
     if (!types.some(t=>t==="Book" || t==="Product") || typeof isbnValue!=="string" || canonicalIsbn(isbnValue)!==expected) return false;
     const offer=record.offers && !Array.isArray(record.offers) && typeof record.offers==="object" ? record.offers as Record<string,unknown> : null;
     const identity=record.url ?? record["@id"] ?? offer?.url;
-    if (supported.url.hostname==="www.bitmapbooks.com" && !identity) return false;
+    if (["www.bitmapbooks.com","imusic.co","neodb.social"].includes(supported.url.hostname) && !identity) return false;
     if (identity) { try { const url=new URL(String(identity));if(url.hostname!==supported.url.hostname || url.pathname.replace(/\/$/,"")!==supported.url.pathname.replace(/\/$/,"")) return false; } catch { return false; } }
     return true;
   });
@@ -46,6 +48,7 @@ export function editionCoverFromHtml(html:string,page:string,isbn:string): strin
   if (typeof image!=="string") image=html.match(/<meta\b[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
   try {
     const url=new URL(String(image).replace(/&amp;/g,"&"));
+    if(supported.url.hostname==="imusic.co" && !url.pathname.endsWith(`/${expected}.jpg`))return null;
     return url.protocol==="https:" && !url.username && !url.password && !url.port && url.hostname===supported.source.imageHost && supported.source.imagePath.test(url.pathname) ? url.toString() : null;
   } catch { return null; }
 }

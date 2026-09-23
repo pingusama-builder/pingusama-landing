@@ -1,5 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ShelfData } from "@/lib/books";
+vi.mock("@/lib/book-cover-rescue",()=>({rescueEditionCover:vi.fn()}));
+import {rescueEditionCover} from "@/lib/book-cover-rescue";
 vi.mock("@/lib/auth",()=>({requireAdmin:vi.fn().mockResolvedValue({id:"admin"})}));
 vi.mock("@/lib/db/bench",()=>({loadShelf:vi.fn(),saveShelf:vi.fn()}));
 vi.mock("@/lib/covers",()=>({decodeCoverBytes:vi.fn()}));
@@ -45,4 +47,16 @@ it("does not restore an edition removed while the request was running",async()=>
  vi.mocked(loadShelf).mockResolvedValueOnce(structuredClone(shelf)).mockResolvedValueOnce({currentlyReading:[],tbr:[]});
  vi.mocked(prepareShelfCovers).mockResolvedValue(structuredClone(shelf));
  expect(await retryBookCoverAction(shelf.currentlyReading[0])).toMatchObject({success:false});expect(saveShelf).not.toHaveBeenCalled();
+});
+
+it("verifies an explicit alternative source directly, rather than reusing the Google image",async()=>{
+ const page="https://neodb.social/book/ABC";
+ vi.mocked(rescueEditionCover).mockResolvedValueOnce({bytes:Buffer.from("valid"),mimeType:"image/jpeg",source:"web",sourcePage:page});
+ vi.mocked(storeCoverAsset).mockResolvedValueOnce({...asset,source:"web",sourcePage:page});
+ expect(await retryBookCoverAction(shelf.currentlyReading[0],page)).toMatchObject({success:true,asset:{sourcePage:page}});
+ expect(rescueEditionCover).toHaveBeenCalledWith(page,"9789865580704");expect(prepareShelfCovers).not.toHaveBeenCalled();
+});
+it("retains the saved image if an alternative page cannot prove the edition",async()=>{
+ vi.mocked(rescueEditionCover).mockResolvedValueOnce(null);
+ expect(await retryBookCoverAction(shelf.currentlyReading[0],"https://neodb.social/book/wrong")).toMatchObject({success:false});expect(saveShelf).not.toHaveBeenCalled();
 });
