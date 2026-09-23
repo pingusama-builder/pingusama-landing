@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { fetchBookByIsbn, fetchBookByOpenLibrary, type Book, type ShelfData, type ShelfEntry } from "./books";
 import type { BookCoverAsset } from "./book-cover-types";
 import { fetchCoverBytes, type CoverImage } from "./covers";
-import { rescueEditionCover } from "./book-cover-rescue";
+import { findEditionCover } from "./book-cover-rescue";
 import { mirrorCover } from "./db/books";
 
 export function editionKey(entry: ShelfEntry): string {
@@ -35,7 +35,7 @@ export async function prepareShelfCovers(shelf: ShelfData, previous: ShelfData, 
       asset = {editionKey:key,status:"missing",format:"unreviewed",checkedAt:new Date().toISOString()};
       if (entry.isbn13) {
         // Keep one save bounded; subsequent saves/retries advance remaining books.
-        if (acquisitions >= 3) asset.status = "pending";
+        if (acquisitions >= 3) { if(old?.status === "available" && old.url) asset=old; else asset.status = "pending"; }
         else {
           acquisitions++;
           try {
@@ -50,7 +50,7 @@ export async function prepareShelfCovers(shelf: ShelfData, previous: ShelfData, 
             }
             if (image) asset = await storeCoverAsset(entry,image,image.source,"unreviewed");
             else {
-              const rescued=await rescueEditionCover(book.infoLink,entry.isbn13);
+              const rescued=await findEditionCover(book.infoLink,entry.isbn13);
               if (rescued) asset=await storeCoverAsset(entry,rescued,"web","unreviewed",rescued.sourcePage);
               else if (providerFailed) asset.status="failed";
             }

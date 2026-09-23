@@ -3,6 +3,7 @@ import { prepareShelfCovers } from "@/lib/shelf-covers";
 import { fetchCoverBytes } from "@/lib/covers";
 import { fetchBookByIsbn, fetchBookByOpenLibrary, type Book, type ShelfData } from "@/lib/books";
 import { mirrorCover } from "@/lib/db/books";
+vi.mock("@/lib/book-cover-rescue",()=>({findEditionCover:vi.fn().mockResolvedValue(null)}));
 vi.mock("@/lib/covers",()=>({fetchCoverBytes:vi.fn()}));
 vi.mock("@/lib/books",()=>({fetchBookByIsbn:vi.fn(),fetchBookByOpenLibrary:vi.fn()}));
 vi.mock("@/lib/db/books",()=>({mirrorCover:vi.fn()}));
@@ -45,4 +46,13 @@ describe("selected edition cover persistence",()=>{
   const saved=await prepareShelfCovers(makeShelf(),{currentlyReading:[],tbr:[]});vi.mocked(fetchCoverBytes).mockResolvedValue(null);
   const result=await prepareShelfCovers(makeShelf(),saved,true);expect(result.currentlyReading[0].selection?.book.coverAsset).toMatchObject({status:"available",refreshStatus:"missing",url:saved.currentlyReading[0].selection?.book.coverUrl});
  });
+});
+
+it("keeps a good cover when a forced batch defers it",async()=>{
+ const saved=await prepareShelfCovers(makeShelf(),{currentlyReading:[],tbr:[]});
+ const original=saved.currentlyReading[0];
+ const entries=["9789865580704","9781455586691","9787020114115"].map(isbn=>({...original,isbn13:isbn,selection:{...original.selection!,book:{...original.selection!.book,isbn13:isbn,coverAsset:undefined}}}));
+ const previous={currentlyReading:[...entries,original],tbr:[]};
+ const result=await prepareShelfCovers(previous,previous,true);
+ expect(result.currentlyReading[3].selection?.book.coverAsset).toEqual(original.selection?.book.coverAsset);
 });

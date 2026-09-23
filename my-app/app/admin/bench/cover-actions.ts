@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { loadShelf, saveShelf } from "@/lib/db/bench";
 import { validateShelf } from "@/lib/book-selection";
 import { decodeCoverBytes } from "@/lib/covers";
-import { editionKey, storeCoverAsset } from "@/lib/shelf-covers";
+import { editionKey, storeCoverAsset, prepareShelfCovers } from "@/lib/shelf-covers";
 import type { ShelfEntry } from "@/lib/books";
 import type { BookCoverAsset } from "@/lib/book-cover-types";
 
@@ -40,3 +40,28 @@ async function updateBookCoverActionInternal(input:ShelfEntry,form:FormData):Pro
 }
 
 export async function updateBookCoverAction(input:ShelfEntry,form:FormData){return collectBenchTrace(()=>updateBookCoverActionInternal(input,form));}
+
+export async function retryBookCoverAction(input:ShelfEntry){
+ return collectBenchTrace(async()=>{
+  try {
+   await requireAdmin();
+   const entry=validateShelf({currentlyReading:[input],tbr:[]}).currentlyReading[0];
+   if(!entry.selection)throw new Error("請先選定版本並儲存書架。");
+   const shelf=await loadShelf();
+   const saved=[...shelf.currentlyReading,...shelf.tbr].find(e=>e.selection && editionKey(e)===editionKey(entry));
+   if(!saved?.selection)throw new Error("請先儲存呢個版本，再搵封面。");
+   const single={currentlyReading:[saved],tbr:[]};
+   const prepared=await prepareShelfCovers(single,single,true);
+   const asset=prepared.currentlyReading[0].selection!.book.coverAsset!;
+   // Re-read after network requests, preserving notes/order edited meanwhile.
+   const latest=await loadShelf();let found=false;
+   for(const section of ["currentlyReading","tbr"] as const)latest[section]=latest[section].map(e=>{
+    if(!e.selection || editionKey(e)!==editionKey(entry))return e;
+    found=true;return {...e,selection:{...e.selection,book:{...e.selection.book,coverAsset:asset,coverUrl:asset.url??null,thumbnail:null}}};
+   });
+   if(!found)throw new Error("呢個版本已移除，請重新載入。");
+   await saveShelf(latest);revalidatePath("/");revalidatePath("/admin/bench");
+   return {success:true as const,asset};
+  }catch(error){return {success:false as const,error:error instanceof Error?error.message:"自動搵封面失敗。"};}
+ });
+}
