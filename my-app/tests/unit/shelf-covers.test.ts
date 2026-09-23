@@ -15,7 +15,7 @@ describe("selected edition cover persistence",()=>{
  it("preserves selected and requested ISBNs while saving a validated asset",async()=>{
   const result=await prepareShelfCovers(makeShelf(),{currentlyReading:[],tbr:[]});const entry=result.currentlyReading[0];
   expect(entry.isbn13).toBe(book.isbn13);expect(entry.requestedIsbn).toBe("9789865580704");expect(entry.note).toBe("My note");
-  expect(entry.selection?.book.publisher).toBe("Selected publisher");expect(entry.selection?.book.coverAsset).toMatchObject({status:"available",source:"google",width:400,height:600,format:"unreviewed"});
+  expect(entry.selection?.book.publisher).toBe("Selected publisher");expect(entry.selection?.book.coverAsset).toMatchObject({status:"available",source:"google",width:400,height:600,format:"flat-front"});
   expect(entry.selection?.book.thumbnail).toBeNull();expect(entry.selection?.book.coverUrl).toBe("https://storage.example/covers/edition-hash.jpg");
   expect(vi.mocked(mirrorCover).mock.calls[0][0]).toMatch(/^edition-[a-f0-9]{24}-[a-f0-9]{64}$/);
  });

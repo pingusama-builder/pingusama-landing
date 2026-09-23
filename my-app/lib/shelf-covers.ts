@@ -48,7 +48,7 @@ export async function prepareShelfCovers(shelf: ShelfData, previous: ShelfData, 
               const ol = await fetchBookByOpenLibrary(entry.isbn13, true).catch(()=>{providerFailed=true;return null;});
               image = await fetchCoverBytes({googleBooksId:"",isbn13:entry.isbn13,olCoverUrl:ol?.olCoverUrl});
             }
-            if (image) asset = await storeCoverAsset(entry,image,image.source,"unreviewed");
+            if (image) asset = await storeCoverAsset(entry,image,image.source,"flat-front");
             else {
               const rescued=await findEditionCover(book.infoLink,entry.isbn13);
               if (rescued) asset=await storeCoverAsset(entry,rescued,"web","unreviewed",rescued.sourcePage);
