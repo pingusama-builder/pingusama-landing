@@ -23,7 +23,7 @@ DECLARE r public.chalk_calendar%ROWTYPE; v bigint;
 BEGIN
  SELECT * INTO r FROM public.chalk_calendar WHERE id=1 FOR UPDATE;
  IF r.key_hash IS NULL OR p_key_hash IS DISTINCT FROM r.key_hash THEN RETURN jsonb_build_object('status',401); END IF;
- IF p_snapshot->>'schema'<>'1' OR p_snapshot->>'year'<>'2026' OR p_snapshot ? 'notes' OR jsonb_typeof(p_snapshot->'published')<>'boolean' OR jsonb_typeof(p_snapshot->'habits')<>'array' OR jsonb_typeof(p_snapshot->'rows')<>'array' THEN RETURN jsonb_build_object('status',400); END IF;
+ IF COALESCE(p_snapshot->>'schema','') NOT IN ('1','2') OR p_snapshot->>'year'<>'2026' OR p_snapshot ? 'notes' OR jsonb_typeof(p_snapshot->'published')<>'boolean' OR jsonb_typeof(p_snapshot->'habits')<>'array' OR jsonb_typeof(p_snapshot->'rows')<>'array' THEN RETURN jsonb_build_object('status',400); END IF;
  v=(p_snapshot->>'revision')::bigint;
  IF v IS NULL OR v<0 OR v>9007199254740991 OR p_snapshot->>'device_id' IS NULL THEN RETURN jsonb_build_object('status',400); END IF;
  IF r.device_id IS NOT NULL AND r.device_id IS DISTINCT FROM p_snapshot->>'device_id' THEN RETURN jsonb_build_object('status',409); END IF;
