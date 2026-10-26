@@ -3,15 +3,31 @@ import { prepareShelfCovers } from "@/lib/shelf-covers";
 import { fetchCoverBytes } from "@/lib/covers";
 import { fetchBookByIsbn, fetchBookByOpenLibrary, type Book, type ShelfData } from "@/lib/books";
 import { mirrorCover } from "@/lib/db/books";
-vi.mock("@/lib/book-cover-rescue",()=>({findEditionCover:vi.fn().mockResolvedValue(null)}));
+import { findEditionCover } from "@/lib/book-cover-rescue";
+import { coverDisplay } from "@/lib/book-cover-display";
+vi.mock("@/lib/book-cover-rescue",()=>({findEditionCover:vi.fn().mockResolvedValue({image:null,failureReason:"no-verified-cover"})}));
 vi.mock("@/lib/covers",()=>({fetchCoverBytes:vi.fn()}));
 vi.mock("@/lib/books",()=>({fetchBookByIsbn:vi.fn(),fetchBookByOpenLibrary:vi.fn()}));
 vi.mock("@/lib/db/books",()=>({mirrorCover:vi.fn()}));
 const book:Book={googleBooksId:"google-one",title:"Selected edition",authors:["Author"],isbn13:"9780307473394",isbn10:null,subtitle:null,publisher:"Selected publisher",publishedDate:"2011",pageCount:320,infoLink:null,thumbnail:"https://books.google.com/unverified",coverUrl:"https://books.google.com/unverified",coverSource:"google"};
 const makeShelf=():ShelfData=>({currentlyReading:[{isbn13:book.isbn13!,requestedIsbn:"9789865580704",note:"My note",selection:{book:{...book},source:"google",language:"en",match:"same-work"}}],tbr:[]});
 const image={bytes:Buffer.from("validated-image"),mimeType:"image/jpeg",source:"google" as const,sourceUrl:"https://books.google.com/books/content?id=google-one",width:400,height:600};
-beforeEach(()=>{vi.resetAllMocks();vi.mocked(fetchBookByIsbn).mockResolvedValue(book);vi.mocked(fetchBookByOpenLibrary).mockResolvedValue(null);vi.mocked(fetchCoverBytes).mockResolvedValue(image);vi.mocked(mirrorCover).mockResolvedValue("https://storage.example/covers/edition-hash.jpg");});
+beforeEach(()=>{vi.resetAllMocks();vi.mocked(findEditionCover).mockResolvedValue({image:null,failureReason:"no-verified-cover"});vi.mocked(fetchBookByIsbn).mockResolvedValue(book);vi.mocked(fetchBookByOpenLibrary).mockResolvedValue(null);vi.mocked(fetchCoverBytes).mockResolvedValue(image);vi.mocked(mirrorCover).mockResolvedValue("https://storage.example/covers/edition-hash.jpg");});
 describe("selected edition cover persistence",()=>{
+ it("displays a rescued cover after saving and reloading without reclassification",async()=>{
+  vi.mocked(fetchCoverBytes).mockResolvedValue(null);
+  vi.mocked(findEditionCover).mockResolvedValue({image:{...image,source:"web",sourcePage:"https://www.bitmapbooks.com/products/selected"}});
+  const saved=await prepareShelfCovers(makeShelf(),{currentlyReading:[],tbr:[]});
+  const reloaded=JSON.parse(JSON.stringify(saved)) as ShelfData;
+  vi.clearAllMocks();
+  const result=await prepareShelfCovers(makeShelf(),reloaded);
+  const book=result.currentlyReading[0].selection!.book;
+  expect(book.coverAsset).toMatchObject({status:"available",source:"web",format:"unreviewed"});
+  expect(book.coverUrl).toBe("https://storage.example/covers/edition-hash.jpg");
+  expect(coverDisplay(book.coverUrl,book.coverAsset)).toMatchObject({image:"https://storage.example/covers/edition-hash.jpg",texture:null,ratio:2/3});
+  expect(fetchCoverBytes).not.toHaveBeenCalled();
+  expect(mirrorCover).not.toHaveBeenCalled();
+ });
  it("preserves selected and requested ISBNs while saving a validated asset",async()=>{
   const result=await prepareShelfCovers(makeShelf(),{currentlyReading:[],tbr:[]});const entry=result.currentlyReading[0];
   expect(entry.isbn13).toBe(book.isbn13);expect(entry.requestedIsbn).toBe("9789865580704");expect(entry.note).toBe("My note");
@@ -30,6 +46,17 @@ describe("selected edition cover persistence",()=>{
  it("preserves metadata with a missing cover and permits retry",async()=>{
   vi.mocked(fetchCoverBytes).mockResolvedValue(null);const saved=await prepareShelfCovers(makeShelf(),{currentlyReading:[],tbr:[]});expect(saved.currentlyReading[0].selection?.book).toMatchObject({title:book.title,coverUrl:null,thumbnail:null,coverAsset:{status:"missing"}});
   vi.mocked(fetchCoverBytes).mockResolvedValue(image);const retried=await prepareShelfCovers(makeShelf(),saved);expect(retried.currentlyReading[0].selection?.book.coverAsset?.status).toBe("available");
+ });
+ it("provides the saved title, author and publisher to automatic cover discovery",async()=>{
+  vi.mocked(fetchCoverBytes).mockResolvedValue(null);
+  await prepareShelfCovers(makeShelf(),{currentlyReading:[],tbr:[]},true);
+  expect(vi.mocked(findEditionCover).mock.calls[0]).toEqual([null,"9780307473394",{title:"Selected edition",authors:["Author"],publisher:"Selected publisher"}]);
+ });
+ it("distinguishes an unavailable search service from a completed search with no verified cover",async()=>{
+  vi.mocked(fetchCoverBytes).mockResolvedValue(null);
+  vi.mocked(findEditionCover).mockResolvedValue({image:null,failureReason:"search-not-configured"});
+  const result=await prepareShelfCovers(makeShelf(),{currentlyReading:[],tbr:[]});
+  expect(result.currentlyReading[0].selection!.book.coverAsset).toMatchObject({status:"failed",failureReason:"search-not-configured"});
  });
  it("records storage failure separately without dropping the book",async()=>{
   vi.mocked(mirrorCover).mockRejectedValue(new Error("storage offline"));const saved=await prepareShelfCovers(makeShelf(),{currentlyReading:[],tbr:[]});expect(saved.currentlyReading[0].selection?.book).toMatchObject({title:book.title,coverUrl:null,coverAsset:{status:"failed"}});

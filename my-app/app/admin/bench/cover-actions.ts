@@ -54,7 +54,8 @@ export async function retryBookCoverAction(input:ShelfEntry,sourcePage?:string){
    if(sourcePage && sourcePage.length>2000)throw new Error("來源網址過長。");
    let asset:BookCoverAsset;
    if(sourcePage){
-    const image=await rescueEditionCover(sourcePage,saved.isbn13);
+    const book=saved.selection.book;
+    const image=await rescueEditionCover(sourcePage,saved.isbn13,{title:book.title,authors:book.authors,publisher:book.publisher});
     if(!image)throw new Error("來源未能核實同一 ISBN 嘅圖片；原封面保留。");
     asset=await storeCoverAsset(saved,image,"web","unreviewed",image.sourcePage);
    }else{

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
-import { fetchCoverBytes } from "@/lib/covers";
+import { fetchCoverBytes, fetchVerifiedCoverImage } from "@/lib/covers";
 
 import sharp from "sharp";
 let validBytes: number[];
@@ -122,4 +122,35 @@ it("rejects oversized images before reading the payload",async()=>{
 it("decodes an allowlisted image even when its CDN omits content-type",async()=>{
  vi.stubGlobal("fetch",vi.fn().mockImplementation(async()=>new Response(Uint8Array.from(validBytes))));
  const image=await fetchCoverBytes(BOOK);expect(image).toMatchObject({mimeType:"image/jpeg",width:120,height:180});vi.unstubAllGlobals();
+});
+
+describe("verified publisher image destinations",()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ const url="https://images.penguinrandomhouse.com/cover/9780593321461";
+ it("follows a publisher CDN redirect for the same ISBN and decodes its bytes",async()=>{
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValueOnce(new Response(null,{status:302,headers:{location:"https://images4.penguinrandomhouse.com/cover/9780593321461"}})).mockResolvedValueOnce(new Response(Uint8Array.from(validBytes),{headers:{"content-type":"image/jpeg"}})));
+  expect(await fetchVerifiedCoverImage(url,"9780593321461")).toMatchObject({width:120,height:180,sourceUrl:"https://images4.penguinrandomhouse.com/cover/9780593321461"});
+ });
+ it.each(["https://127.0.0.1/cover.jpg","https://images4.penguinrandomhouse.com/cover/9780593321478","https://attacker.example/9780593321461.jpg"])("rejects an unsafe or wrong-edition image redirect: %s",async location=>{
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(null,{status:302,headers:{location}})));
+  expect(await fetchVerifiedCoverImage(url,"9780593321461")).toBeNull();expect(fetch).toHaveBeenCalledOnce();
+ });
+ it("requests a supported image format from the publisher's ImageKit namespace",async()=>{
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(Uint8Array.from(validBytes),{headers:{"content-type":"image/jpeg"}})));
+  expect(await fetchVerifiedCoverImage("https://ik.imagekit.io/panmac/tr:f-auto,w-1200/edition/9781035081288.jpg","9781035081288")).toMatchObject({mimeType:"image/jpeg"});
+  expect(vi.mocked(fetch).mock.calls[0][0]).toBe("https://ik.imagekit.io/panmac/tr:f-jpg,w-1200/edition/9781035081288.jpg");
+ });
+ it("rejects another ImageKit tenant before any network request",async()=>{
+  vi.stubGlobal("fetch",vi.fn());expect(await fetchVerifiedCoverImage("https://ik.imagekit.io/other/9781035081288.jpg","9781035081288")).toBeNull();expect(fetch).not.toHaveBeenCalled();
+ });
+});
+
+it("accepts only matching ISBN-bound Penguin UK and Waterstones jacket images",async()=>{
+ const urls=["https://cdn.penguin.co.uk/dam-assets/books/9780241968628/9780241968628-jacket-medium.jpg","https://cdn.waterstones.com/bookjackets/large/9780/9780241968628.jpg"];
+ vi.stubGlobal("fetch",vi.fn().mockImplementation(async()=>new Response(Uint8Array.from(validBytes),{headers:{"content-type":"image/jpeg"}})));
+ for(const url of urls)expect(await fetchVerifiedCoverImage(url,"9780241968628")).toMatchObject({width:120,height:180});
+ vi.mocked(fetch).mockClear();
+ for(const url of urls)expect(await fetchVerifiedCoverImage(url,"9780241969809")).toBeNull();
+ expect(await fetchVerifiedCoverImage("https://cdn.penguin.co.uk/dam-assets/books/9780241969809/9780241968628-jacket-large.jpg","9780241968628")).toBeNull();
+ expect(fetch).not.toHaveBeenCalled();vi.unstubAllGlobals();
 });

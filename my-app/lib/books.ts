@@ -11,7 +11,9 @@ import {
   isStale,
   type BookRow,
 } from "./db/books";
-import { fetchCoverBytes } from "./covers";
+import { fetchCoverBytes, type CoverImage } from "./covers";
+import {findEditionCover} from "./book-cover-rescue";
+import {traceBench} from "./bench-trace";
 
 export { isValidIsbn13, normalizeIsbn13 } from "./isbn";
 
@@ -84,7 +86,8 @@ async function fetchByIsbn(
   isbn13: string,
   apiKey: string,
   retries = 2,
-  reportErrors = false
+  reportErrors = false,
+  fresh = false
 ): Promise<Book | null> {
   const q = `isbn:${isbn13.replace(/-/g, "")}`;
   const url = new URL(API);
@@ -94,7 +97,7 @@ async function fetchByIsbn(
 
   let attempt = 0;
   while (true) {
-    const res = await fetch(url.toString(), { next: { revalidate: ONE_DAY }, signal: AbortSignal.timeout(7000) });
+    const res = await fetch(url.toString(), { next: { revalidate: fresh ? 0 : ONE_DAY }, signal: AbortSignal.timeout(7000) });
     if (res.ok) {
       return parseBook(res, isbn13);
     }
@@ -116,7 +119,7 @@ async function fetchByIsbn(
   }
 }
 
-export async function fetchBookByIsbn(isbn13: string, reportErrors = false): Promise<Book | null> {
+export async function fetchBookByIsbn(isbn13: string, reportErrors = false, fresh = false): Promise<Book | null> {
   const cleaned = normalizeIsbn13(isbn13);
   if (!isValidIsbn13(cleaned)) return null;
   const apiKey = getApiKey();
@@ -125,7 +128,7 @@ export async function fetchBookByIsbn(isbn13: string, reportErrors = false): Pro
     return null;
   }
   try {
-    const book = await fetchByIsbn(cleaned, apiKey, reportErrors ? 0 : 2, reportErrors);
+    const book = await fetchByIsbn(cleaned, apiKey, reportErrors ? 0 : 2, reportErrors, fresh);
     if (!book) return null;
     return { ...book, coverUrl: null, coverSource: null };
   } catch {
@@ -162,7 +165,8 @@ interface OLVolume {
 
 export async function fetchBookByOpenLibrary(
   isbn13: string,
-  reportErrors = false
+  reportErrors = false,
+  fresh = false
 ): Promise<OpenLibraryResult | null> {
   const cleaned = normalizeIsbn13(isbn13);
   if (!isValidIsbn13(cleaned)) return null;
@@ -174,7 +178,7 @@ export async function fetchBookByOpenLibrary(
   url.searchParams.set("jscmd", "data");
 
   try {
-    const res = await fetch(url.toString(), { next: { revalidate: ONE_DAY }, signal: AbortSignal.timeout(7000) });
+    const res = await fetch(url.toString(), { next: { revalidate: fresh ? 0 : ONE_DAY }, signal: AbortSignal.timeout(7000) });
     if (!res.ok) throw new Error("Open Library 暫時無法查詢，請稍後重試。");
     const data = (await res.json()) as Record<string, OLVolume>;
     const vol = data[bibkey];
@@ -317,7 +321,7 @@ export async function warmBook(
     };
   }
 
-  let cover = await fetchCoverBytes({
+  let cover:(CoverImage&{source:"google"|"openlibrary"|"web"})|null = await fetchCoverBytes({
     googleBooksId: book.googleBooksId,
     isbn13: book.isbn13,
     olCoverUrl,
@@ -337,13 +341,19 @@ export async function warmBook(
     }
   }
 
+  if(!cover){
+    const discovery=await findEditionCover(book.infoLink,cleaned,{title:book.title,authors:book.authors,publisher:book.publisher});
+    cover=discovery.image;
+  }
+
   let coverUrl: string | null = null;
   let coverSource: "google" | "openlibrary" | null = null;
   let hasCover = false;
   if (cover) {
     try {
       coverUrl = await mirrorCover(cleaned, cover.bytes, cover.mimeType);
-      coverSource = cover.source;
+      coverSource = cover.source==="web"?null:cover.source;
+      traceBench("cover.store","saved",{isbn:cleaned,provider:cover.source,width:cover.width,height:cover.height});
       hasCover = true;
     } catch (err) {
       console.warn(

@@ -31,8 +31,8 @@ export default async function AdminBenchPage() {
             The bench
           </h1>
           <p className="detail-desc mt-2">
-            搵書、選擇版本，再儲存書架。搜尋支援繁中、簡中及英文；搵唔到亦可手動加入。
-            Shelf 同 Vault 分開儲存。
+            搵書、選擇版本，再按確認 Add book 核對資料及封面，即時保存呢一本。搜尋支援繁中、簡中及英文；搵唔到亦可手動加入。
+            Save shelf 可保存書架其他修改；Shelf 同 Vault 分開儲存。
           </p>
         </div>
 

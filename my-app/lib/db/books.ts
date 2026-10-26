@@ -100,5 +100,8 @@ export function bookRowToBook(
     isbn10: row.isbn10,
     coverUrl: row.cover_url,
     coverSource: row.cover_source,
+    // Publisher covers use the existing nullable source column; keep them visible
+    // without claiming a Google/Open Library origin or an approved flat texture.
+    ...(row.has_cover&&row.cover_url&&!row.cover_source?{coverAsset:{editionKey:"isbn:"+row.isbn13,status:"available" as const,format:"unreviewed" as const,checkedAt:row.last_fetched_at??row.updated_at,url:row.cover_url}}:{}),
   };
 }

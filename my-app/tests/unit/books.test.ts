@@ -18,6 +18,8 @@ import {
   type BookRow,
 } from "@/lib/db/books";
 import { fetchCoverBytes } from "@/lib/covers";
+import {findEditionCover} from "@/lib/book-cover-rescue";
+vi.mock("@/lib/book-cover-rescue",()=>({findEditionCover:vi.fn().mockResolvedValue({image:null,failureReason:"no-verified-cover"})}));
 
 vi.mock("@/lib/db/books", () => ({
   getBooksByIsbns: vi.fn(),
@@ -78,6 +80,11 @@ describe("fetchBookByIsbn", () => {
     const book = await fetchBookByIsbn("not-an-isbn")
     expect(book).toBeNull()
     expect(fetch).not.toHaveBeenCalled()
+  })
+  it("re-queries a previously missed ISBN when cover acquisition requests fresh metadata",async()=>{
+    vi.mocked(fetch).mockResolvedValue(Response.json({items:[]}));
+    await fetchBookByIsbn("9780307473394",true,true);
+    expect(vi.mocked(fetch).mock.calls[0][1]).toMatchObject({next:{revalidate:0}});
   })
 
   it("returns null when the API key is missing", async () => {
@@ -296,6 +303,7 @@ describe("resolveShelf", () => {
 describe("warmBook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(findEditionCover).mockResolvedValue({image:null,failureReason:"no-verified-cover"});
     process.env.GOOGLE_BOOKS_API_KEY = "test-key";
     globalThis.fetch = vi.fn();
   });
@@ -397,6 +405,18 @@ describe("warmBook", () => {
     const row = vi.mocked(upsertBook).mock.calls[0][0];
     expect(row.cover_url).toBe("https://supabase.example/covers/9780307473394.jpg");
     expect(row.has_cover).toBe(true);
+  });
+
+  it("uses the shared regional fallback when both primary providers have no cover",async()=>{
+    vi.mocked(getBooksByIsbns).mockResolvedValue(new Map());
+    vi.mocked(fetch).mockResolvedValue(googleBooksResponse(fullBook));
+    vi.mocked(fetchCoverBytes).mockResolvedValue(null);
+    vi.mocked(findEditionCover).mockResolvedValue({image:{bytes:Buffer.from([1,2,3]),mimeType:"image/jpeg",width:326,height:500,source:"web",sourcePage:"https://www.penguin.co.uk/books/1/running/9780307473394"}});
+    vi.mocked(mirrorCover).mockResolvedValue("https://storage.example/cover.jpg");
+    vi.mocked(upsertBook).mockResolvedValue(undefined);
+    expect(await warmBook(fullBook.isbn13!)).toMatchObject({status:"warmed"});
+    expect(findEditionCover).toHaveBeenCalledWith(fullBook.infoLink,fullBook.isbn13,{title:fullBook.title,authors:fullBook.authors,publisher:fullBook.publisher});
+    expect(upsertBook).toHaveBeenCalledWith(expect.objectContaining({has_cover:true,cover_source:null,cover_url:"https://storage.example/cover.jpg"}));
   });
 
   it("returns no-cover when neither source yields a cover", async () => {

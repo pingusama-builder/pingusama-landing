@@ -110,25 +110,54 @@ export async function decodeCoverBytes(bytes: Buffer, mimeType: string): Promise
   } catch { return null; }
 }
 
-export async function fetchVerifiedCoverImage(url: string): Promise<CoverImage | null> {
-  const parsed = new URL(url);
-  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port || !["books.google.com","covers.openlibrary.org","cdnec.sanmin.com.tw","cdn.kingstone.com.tw","www.bitmapbooks.com","neodb.social","imusic.b-cdn.net"].includes(parsed.hostname)) return null;
-  if (parsed.hostname === "www.bitmapbooks.com" && !/^\/cdn\/shop\/(files|products)\//.test(parsed.pathname)) return null;
-  if (parsed.hostname === "neodb.social" && !/^\/m\/item\/book\//.test(parsed.pathname)) return null;
-  if (parsed.hostname === "imusic.b-cdn.net" && !/^\/images\/item\/original\/\d+\/\d{13}\.jpg$/.test(parsed.pathname)) return null;
+export function verifiedCoverSourceUrl(value:string,isbn?:string):string|null {
+  try {
+    const url=new URL(value);
+    if(url.protocol!=="https:"||url.username||url.password||url.port)return null;
+    if(/^images[1-6]?\.penguinrandomhouse\.com$/.test(url.hostname)) {
+      if(!/^\/cover\/\d{13}$/.test(url.pathname)||(isbn&&url.pathname!==`/cover/${isbn}`))return null;
+    } else if(url.hostname==="cdn.penguin.co.uk") {
+      const match=url.pathname.match(/^\/dam-assets\/books\/(\d{13})\/(\d{13})-jacket-(?:large|medium|hsize)\.jpg$/);
+      if(!match||match[1]!==match[2]||(isbn&&match[1]!==isbn))return null;
+      url.pathname=url.pathname.replace(/-jacket-(?:medium|hsize)\.jpg$/,"-jacket-large.jpg");
+    } else if(url.hostname==="cdn.waterstones.com") {
+      const match=url.pathname.match(/^\/bookjackets\/(?:large|medium)\/(\d{4})\/(\d{13})\.jpg$/);
+      if(!match||match[1]!==match[2].slice(0,4)||(isbn&&match[2]!==isbn))return null;
+      url.pathname=url.pathname.replace("/medium/","/large/");
+    } else if(url.hostname==="ik.imagekit.io") {
+      if(!/^\/panmac\/(?:tr:[\w,.:\-]+\/)?edition\/\d{13}\.jpg$/.test(url.pathname)||(isbn&&!url.pathname.endsWith(`/${isbn}.jpg`)))return null;
+      url.pathname=url.pathname.replace(/\/tr:f-auto(?=,|\/)/,"/tr:f-jpg");
+    } else {
+      if(!["books.google.com","covers.openlibrary.org","cdnec.sanmin.com.tw","cdn.kingstone.com.tw","www.bitmapbooks.com","neodb.social","imusic.b-cdn.net"].includes(url.hostname))return null;
+      if(url.hostname==="www.bitmapbooks.com"&&!/^\/cdn\/shop\/(files|products)\//.test(url.pathname))return null;
+      if(url.hostname==="neodb.social"&&!/^\/m\/item\/book\//.test(url.pathname))return null;
+      if(url.hostname==="imusic.b-cdn.net"&&(!/^\/images\/item\/original\/\d+\/\d{13}\.jpg$/.test(url.pathname)||(isbn&&!url.pathname.endsWith(`/${isbn}.jpg`))))return null;
+    }
+    return url.toString();
+  }catch{return null;}
+}
+
+export async function fetchVerifiedCoverImage(url: string,isbn?:string,overall?:AbortSignal): Promise<CoverImage | null> {
+  let target=verifiedCoverSourceUrl(url,isbn);
+  const reject=(code:string)=>{traceBench("cover.image","rejected",{isbn,imageUrl:target??url,code});return null;};
+  if(!target)return reject("image_not_allowlisted");
+  const parsed = new URL(target);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      redirect: "error",
-      next: { revalidate: 0 },
-    });
-    traceBench("cover.http",res.ok?"received":"failed",{provider:parsed.hostname,httpStatus:res.status});
-    if (!res.ok) return null;
+    let res:Response;
+    for(let redirects=0;;redirects++) {
+      res=await fetch(target,{signal:overall?AbortSignal.any([overall,controller.signal]):controller.signal,redirect:"manual",next:{revalidate:0},headers:{Accept:"image/jpeg,image/png,image/webp"}});
+      if(![301,302,303,307,308].includes(res.status))break;
+      const location=res.headers.get("location");await res.body?.cancel();
+      if(!location||redirects>=2)return reject("redirect_limit");
+      target=verifiedCoverSourceUrl(new URL(location,target).toString(),isbn);if(!target)return reject("unsafe_or_wrong_edition_redirect");
+    }
+    traceBench("cover.http",res.ok?"received":"failed",{isbn,provider:parsed.hostname,imageUrl:target,httpStatus:res.status});
+    if (!res.ok) return reject("http_error");
     const mimeType = res.headers.get("content-type") ?? "";
-    if ((mimeType !== "" && !/^image\/(jpeg|png|webp)(?:;|$)/i.test(mimeType))) return null;
-    if (Number(res.headers.get("content-length")) > MAX_IMAGE_BYTES || !res.body) return null;
+    if ((mimeType !== "" && !/^image\/(jpeg|png|webp)(?:;|$)/i.test(mimeType))) return reject("unsupported_image_type");
+    if (Number(res.headers.get("content-length")) > MAX_IMAGE_BYTES || !res.body) return reject("oversized_or_empty_payload");
     const reader = res.body.getReader();
     const chunks: Uint8Array[] = [];
     let size = 0;
@@ -136,15 +165,15 @@ export async function fetchVerifiedCoverImage(url: string): Promise<CoverImage |
       const {done,value} = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > MAX_IMAGE_BYTES) { await reader.cancel(); return null; }
+      if (size > MAX_IMAGE_BYTES) { await reader.cancel(); return reject("oversized_payload"); }
       chunks.push(value);
     }
     const bytes = Buffer.concat(chunks);
     const image = await decodeCoverBytes(bytes,mimeType);
-    traceBench("cover.decode",image?"accepted":"rejected",{provider:parsed.hostname,code:isGooglePlaceholder(bytes)?"placeholder":image?"valid":"invalid_image",bytes:bytes.length,width:image?.width,height:image?.height});
-    return image ? {...image,sourceUrl:url} : null;
+    traceBench("cover.decode",image?"accepted":"rejected",{isbn,provider:parsed.hostname,imageUrl:target,code:isGooglePlaceholder(bytes)?"placeholder":image?"valid":"invalid_image",bytes:bytes.length,width:image?.width,height:image?.height});
+    return image ? {...image,sourceUrl:target} : null;
   } catch {
-    traceBench("cover.http","failed",{provider:parsed.hostname,code:"network_timeout_or_redirect"});
+    traceBench("cover.http","failed",{isbn,provider:parsed.hostname,imageUrl:target,code:overall?.aborted?"discovery_timeout":"network_timeout_or_redirect"});
     return null;
   } finally {
     clearTimeout(timer);

@@ -6,6 +6,7 @@ import Image from "next/image";
 import BenchDiagnostics from "./BenchDiagnostics";
 import BookFinder from "./BookFinder";
 import BookCoverEditor from "./BookCoverEditor";
+import BookAddProgress from "./BookAddProgress";
 import type { BookCandidate } from "@/lib/book-search";
 import type { ShelfData, VaultData, Book } from "@/lib/books";
 import type { BookStatus } from "@/app/admin/bench/actions";
@@ -121,6 +122,7 @@ export default function BenchEditor({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [isAdding, setIsAdding] = useState(false);
   const [previews, setPreviews] = useState<Record<string, PreviewState>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
@@ -172,7 +174,7 @@ export default function BenchEditor({
     recordBenchEvent("edition.select","selected",{isbn:selection.book.isbn13,provider:selection.source,code:selection.match});
     setShelf(prev=>({...prev,[section]:prev[section].map((entry,i)=>i===index?{...entry,isbn13:selection.book.isbn13??"",selection,requestedIsbn}:entry)}));
     setPreviews(prev=>({...prev,[previewKey(section,index)]:{status:"ok",book:selection.book}}));
-    showMessage("已選擇版本；按 Save shelf 儲存。");
+    showMessage("已選擇版本；按確認 Add book 核對及加入，或用 Save shelf 儲存整個書架。");
   }
 
   function addBook(section: SectionKey) {
@@ -343,6 +345,7 @@ export default function BenchEditor({
         <button
           type="button"
           onClick={() => setTab("shelf")}
+          disabled={isAdding}
           className={`pill cursor-pointer ${tab === "shelf" ? "live" : ""}`}
         >
           Shelf
@@ -350,6 +353,7 @@ export default function BenchEditor({
         <button
           type="button"
           onClick={() => setTab("vault")}
+          disabled={isAdding}
           className={`pill cursor-pointer ${tab === "vault" ? "live" : ""}`}
         >
           Vault
@@ -358,7 +362,7 @@ export default function BenchEditor({
           <button
             type="button"
             onClick={() => handleWarmBooks(false)}
-            disabled={isPending}
+            disabled={isPending || isAdding}
             className="pill live cursor-pointer"
           >
             {isPending ? "Warming…" : "Warm book covers"}
@@ -366,7 +370,7 @@ export default function BenchEditor({
           <button
             type="button"
             onClick={() => handleWarmBooks(true)}
-            disabled={isPending}
+            disabled={isPending || isAdding}
             className="pill cursor-pointer"
           >
             Re-warm all
@@ -392,7 +396,7 @@ export default function BenchEditor({
       )}
 
       {tab === "shelf" ? (
-        <div className="flex flex-col gap-6">
+        <fieldset disabled={isPending || isAdding} className="flex min-w-0 flex-col gap-6">
           {(["currentlyReading", "tbr"] as SectionKey[]).map((section) => (
             <section key={section} className="detail">
               <h3 className="detail-title" style={{ fontSize: "22px" }}>
@@ -479,12 +483,13 @@ export default function BenchEditor({
                       <div className="md:col-span-3">
                         {book.selection&&<p className="mb-2 text-sm">已選：{book.selection.book.title} · {book.selection.book.authors.join("、")} · {book.selection.book.publisher || "出版社未提供"}{book.requestedIsbn&&book.requestedIsbn!==book.isbn13?`（原搜尋 ISBN：${book.requestedIsbn}）`:""}</p>}
                         <details><summary className="cursor-pointer text-sm font-semibold">搵書／更換版本</summary><BookFinder key={`${section}-${i}-${book.isbn13}`} initialIsbn={book.isbn13} onSelect={(candidate,requested)=>selectBook(section,i,candidate,requested)}/></details>
+                        <BookAddProgress key={key+"-"+(book.isbn13||book.selection?.book.googleBooksId||"new")} section={section} entry={book} disabled={isPending || isAdding} onRunningChange={setIsAdding} onConfirmed={saved=>setShelf(previous=>({...previous,[section]:previous[section].map((entry,index)=>index===i?{...saved,note:entry.note}:entry)}))}/>
                         <BookPreview state={book.selection ? { status: "ok", book: book.selection.book } : previews[key] ?? { status: "idle" }} />
                       </div>
 
                       <div className="md:col-span-3">
                         {book.selection && <p className="text-xs" role="status">{book.selection.book.coverAsset?.status === "available" ? (book.selection.book.coverAsset.refreshStatus ? "✓ 保留已保存封面；今次更新未成功" : "✓ 封面已保存") : book.selection.book.coverAsset?.status === "failed" ? "封面取得／保存失敗；可按 Warm book covers 重試" : book.selection.book.coverAsset?.status === "missing" ? "書目已保存 · 未取得封面" : book.selection.book.coverAsset?.status === "pending" ? "書目已保存 · 封面待處理，按 Warm book covers 繼續" : "封面待驗證，儲存時處理"}</p>}
-                        {book.selection && <BookCoverEditor entry={book} disabled={isPending} onSaved={asset=>setShelf(prev=>({...prev,[section]:prev[section].map((e,index)=>index===i && e.selection && (e.isbn13?`isbn:${e.isbn13}`:`manual:${e.selection.book.googleBooksId}`)===asset.editionKey ? {...e,selection:{...e.selection,book:{...e.selection.book,coverAsset:asset,coverUrl:asset.url??null,thumbnail:null}}}:e)}))}/>}
+                        {book.selection && <BookCoverEditor entry={book} disabled={isPending || isAdding} onSaved={asset=>setShelf(prev=>({...prev,[section]:prev[section].map((e,index)=>index===i && e.selection && (e.isbn13?`isbn:${e.isbn13}`:`manual:${e.selection.book.googleBooksId}`)===asset.editionKey ? {...e,selection:{...e.selection,book:{...e.selection.book,coverAsset:asset,coverUrl:asset.url??null,thumbnail:null}}}:e)}))}/>}
                         {!book.selection && <BookStatusBadge
                           isbn13={book.isbn13}
                           status={statusFor(book.isbn13)}
@@ -500,7 +505,7 @@ export default function BenchEditor({
                 onClick={() => addBook(section)}
                 className="pill cursor-pointer mt-4"
               >
-                + Add book
+                + 新增書目
               </button>
             </section>
           ))}
@@ -509,13 +514,13 @@ export default function BenchEditor({
             <button
               type="button"
               onClick={handleSaveShelf}
-              disabled={isPending}
+              disabled={isPending || isAdding}
               className="pill live cursor-pointer"
             >
               {isPending ? "Saving…" : "Save shelf"}
             </button>
           </div>
-        </div>
+        </fieldset>
       ) : (
         <div className="flex flex-col gap-4">
           {vault.clips.map((clip, i) => (
@@ -620,7 +625,7 @@ export default function BenchEditor({
             <button
               type="button"
               onClick={handleSaveVault}
-              disabled={isPending}
+              disabled={isPending || isAdding}
               className="pill live cursor-pointer"
             >
               {isPending ? "Saving…" : "Save vault"}

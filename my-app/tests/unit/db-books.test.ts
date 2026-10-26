@@ -205,3 +205,8 @@ describe("isStale", () => {
     expect(isStale(new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString())).toBe(true);
   });
 });
+
+it("keeps a mirrored publisher cover visible without inventing a provider or flat-front approval",()=>{
+ const row:BookRow={isbn13:"9780241968628",google_books_id:"g1",title:"Chronicle",subtitle:null,authors:[],publisher:"Penguin",published_date:null,page_count:null,info_link:null,isbn10:null,cover_url:"https://storage.example/cover.jpg",cover_source:null,has_cover:true,last_fetched_at:"2026-10-27",updated_at:"2026-10-27"};
+ const book=bookRowToBook(row);expect(book.coverSource).toBeNull();expect(book.coverAsset).toMatchObject({editionKey:"isbn:9780241968628",status:"available",format:"unreviewed",url:row.cover_url});expect(book.coverAsset?.source).toBeUndefined();
+});

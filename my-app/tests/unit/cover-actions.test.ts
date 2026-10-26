@@ -54,7 +54,7 @@ it("verifies an explicit alternative source directly, rather than reusing the Go
  vi.mocked(rescueEditionCover).mockResolvedValueOnce({bytes:Buffer.from("valid"),mimeType:"image/jpeg",source:"web",sourcePage:page});
  vi.mocked(storeCoverAsset).mockResolvedValueOnce({...asset,source:"web",sourcePage:page});
  expect(await retryBookCoverAction(shelf.currentlyReading[0],page)).toMatchObject({success:true,asset:{sourcePage:page}});
- expect(rescueEditionCover).toHaveBeenCalledWith(page,"9789865580704");expect(prepareShelfCovers).not.toHaveBeenCalled();
+ expect(rescueEditionCover).toHaveBeenCalledWith(page,"9789865580704",{title:"ZOO",authors:["乙一"],publisher:null});expect(prepareShelfCovers).not.toHaveBeenCalled();
 });
 it("retains the saved image if an alternative page cannot prove the edition",async()=>{
  vi.mocked(rescueEditionCover).mockResolvedValueOnce(null);

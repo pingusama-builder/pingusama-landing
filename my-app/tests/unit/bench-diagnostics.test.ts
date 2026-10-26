@@ -7,10 +7,10 @@ describe("bounded export diagnostics",()=>{
   const event=safeEvent("cover.http","failed",{isbn:"9789865580704",provider:"google",error:"secret",url:"https://example.com/?token=secret",code:"message with secret",note:"private"});
   expect(event.data).toEqual({isbn:"9789865580704",provider:"google"});
  });
- it("keeps only 200 events and survives reading session storage",()=>{
+ it("keeps only 500 events and survives reading session storage",()=>{
   const storage=new Map<string,string>();vi.stubGlobal("sessionStorage",{getItem:(k:string)=>storage.get(k),setItem:(k:string,v:string)=>storage.set(k,v),removeItem:(k:string)=>storage.delete(k)});
-  for(let i=0;i<205;i++)recordBenchEvent("test","ok",{count:i});
-  expect(readBenchEvents()).toHaveLength(200);expect(readBenchEvents()[0].data.count).toBe(5);
+  for(let i=0;i<505;i++)recordBenchEvent("test","ok",{count:i});
+  expect(readBenchEvents()).toHaveLength(500);expect(readBenchEvents()[0].data.count).toBe(5);
   clearBenchEvents();expect(readBenchEvents()).toEqual([]);
  });
  it("records transport failure without raw thrown text",async()=>{
@@ -23,3 +23,6 @@ describe("bounded export diagnostics",()=>{
   expect(a.diagnostics?.map(e=>e.data.count)).toEqual([1]);expect(b.diagnostics?.map(e=>e.data.count)).toEqual([2]);
  });
 });
+
+it("exports regional evidence while stripping tracking credentials and private fields",()=>{const event=safeEvent("cover.candidate","selected",{isbn:"9780241968628",market:"uk",kind:"publisher",rank:5,score:440,runId:"run-1",sourcePage:"https://www.penguin.co.uk/books/1/title/9780241968628?token=secret#private",query:'"9780241968628" UK book cover publisher',note:"private note",Authorization:"Bearer secret"});expect(event.data).toMatchObject({market:"uk",kind:"publisher",rank:5,sourcePage:"https://www.penguin.co.uk/books/1/title/9780241968628"});expect(JSON.stringify(event)).not.toContain("secret");expect(JSON.stringify(event)).not.toContain("private");});
+it("gives simultaneous server runs separate correlation identifiers",async()=>{const run=()=>collectBenchTrace(async()=>{traceBench("cover.route","started");return{success:true};});const[a,b]=await Promise.all([run(),run()]);expect(a.diagnostics?.[0].data.runId).toBeTruthy();expect(a.diagnostics?.[0].data.runId).not.toBe(b.diagnostics?.[0].data.runId);});

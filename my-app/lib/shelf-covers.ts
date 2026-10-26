@@ -14,7 +14,11 @@ export async function storeCoverAsset(entry:ShelfEntry,image:CoverImage,source:N
   const key=editionKey(entry);
   const sha256=createHash("sha256").update(image.bytes).digest("hex");
   const identityHash=createHash("sha256").update(key).digest("hex").slice(0,24);
-  const url=await mirrorCover(`edition-${identityHash}-${sha256}`,image.bytes,image.mimeType);
+  traceBench("cover.store","started",{isbn:entry.isbn13,provider:source,imageUrl:image.sourceUrl,bytes:image.bytes.length});
+  let url:string;
+  try{url=await mirrorCover("edition-"+identityHash+"-"+sha256,image.bytes,image.mimeType);}
+  catch(error){traceBench("cover.store","failed",{isbn:entry.isbn13,code:"storage_failed"});throw error;}
+  traceBench("cover.store","saved",{isbn:entry.isbn13,provider:source,width:image.width,height:image.height});
   return {editionKey:key,status:"available",format,checkedAt:new Date().toISOString(),url,source,sourceUrl:image.sourceUrl,sourcePage,sha256,width:image.width,height:image.height};
 }
 
@@ -38,32 +42,40 @@ export async function prepareShelfCovers(shelf: ShelfData, previous: ShelfData, 
         if (acquisitions >= 3) { if(old?.status === "available" && old.url) asset=old; else asset.status = "pending"; }
         else {
           acquisitions++;
+          let imageLocated=false;
           try {
             // Fresh exact-ISBN metadata binds the provider's image to this edition.
             // It is used for cover acquisition only; selected bibliographic data stays intact.
             let providerFailed = false;
-            const google = await fetchBookByIsbn(entry.isbn13, true).catch(()=>{providerFailed=true;return null;});
+            traceBench("cover.lookup","started",{isbn:entry.isbn13,provider:"google"});
+            const google = await fetchBookByIsbn(entry.isbn13, true, true).catch(()=>{providerFailed=true;return null;});
             let image = google ? await fetchCoverBytes({googleBooksId:google.googleBooksId,isbn13:null}) : null;
             if (!image) {
-              const ol = await fetchBookByOpenLibrary(entry.isbn13, true).catch(()=>{providerFailed=true;return null;});
+              traceBench("cover.lookup","started",{isbn:entry.isbn13,provider:"openlibrary"});
+              const ol = await fetchBookByOpenLibrary(entry.isbn13, true, true).catch(()=>{providerFailed=true;return null;});
               image = await fetchCoverBytes({googleBooksId:"",isbn13:entry.isbn13,olCoverUrl:ol?.olCoverUrl});
             }
-            if (image) asset = await storeCoverAsset(entry,image,image.source,"flat-front");
+            if (image) {imageLocated=true;asset = await storeCoverAsset(entry,image,image.source,"flat-front");}
             else {
-              const rescued=await findEditionCover(book.infoLink,entry.isbn13);
-              if (rescued) asset=await storeCoverAsset(entry,rescued,"web","unreviewed",rescued.sourcePage);
-              else if (providerFailed) asset.status="failed";
+              const discovery=await findEditionCover(book.infoLink,entry.isbn13,{title:book.title,authors:book.authors,publisher:book.publisher});
+              if (discovery.image) {imageLocated=true;asset=await storeCoverAsset(entry,discovery.image,"web","unreviewed",discovery.image.sourcePage);}
+              else {
+                asset.failureReason=discovery.failureReason??"no-verified-cover";
+                if(asset.failureReason!=="no-verified-cover"&&asset.failureReason!=="isbn-required")asset.status="failed";
+                else if(providerFailed){asset.status="failed";asset.failureReason="source-unavailable";}
+              }
             }
           } catch {
             asset.status = "failed";
+            asset.failureReason=imageLocated?"storage-failed":"source-unavailable";
           }
         }
-      }
-      if (old?.status === "available" && old.url && (asset.status === "missing" || asset.status === "failed")) asset={...old,refreshStatus:asset.status};
+      }else asset.failureReason="isbn-required";
+      if (old?.status === "available" && old.url && (asset.status === "missing" || asset.status === "failed")) asset={...old,refreshStatus:asset.status,failureReason:asset.failureReason};
       else if (old?.sha256 && old.sha256 === asset.sha256) asset.format=old.format;
       resolved.set(key,asset);
     }
-    traceBench("cover.prepare",asset.status,{isbn:entry.isbn13,provider:asset.source,code:asset.refreshStatus??"complete",format:asset.format,width:asset.width,height:asset.height});
+    traceBench("cover.prepare",asset.status,{isbn:entry.isbn13,provider:asset.source,code:asset.failureReason??asset.refreshStatus??"complete",format:asset.format,width:asset.width,height:asset.height});
     book.coverAsset = asset;
     if (asset.status === "available") {
       book.coverUrl = asset.url ?? null;
