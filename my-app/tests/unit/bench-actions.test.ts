@@ -5,6 +5,8 @@ vi.mock("@/lib/auth", () => ({
     id: "admin-1",
     email: "admin@example.com",
   }),
+  getCurrentUser: vi.fn(),
+  isAdmin: vi.fn(),
 }));
 
 vi.mock("@/lib/db/bench", () => ({
@@ -12,6 +14,8 @@ vi.mock("@/lib/db/bench", () => ({
   loadVault: vi.fn(),
   saveShelf: vi.fn(),
   saveVault: vi.fn(),
+  readShelfSnapshot: vi.fn(),
+  saveShelfIfUnchanged: vi.fn(),
 }));
 
 vi.mock("@/lib/db/books", () => ({
@@ -42,8 +46,10 @@ import {
   warmBooksAction,
   previewBookAction,
   listBookStatusesAction,
+  moveTbrBookToReadingAction,
 } from "@/app/admin/bench/actions";
 import * as bench from "@/lib/db/bench";
+import type { ShelfData } from "@/lib/books";
 import * as dbBooks from "@/lib/db/books";
 import * as books from "@/lib/books";
 import { revalidatePath } from "next/cache";
@@ -206,5 +212,83 @@ describe("bench admin actions", () => {
     expect(statuses).toHaveLength(1);
     expect(statuses[0].status).toBe("warmed");
     expect(statuses[0].hasCover).toBe(true);
+  });
+});
+
+describe("move a TBR book to Reading", () => {
+  const entry: ShelfData["tbr"][number] = {
+    isbn13: "9780307473394",
+    requestedIsbn: "9789865580704",
+    note: "Keep my note",
+    selection: {
+      source: "google", language: "en", match: "same-work",
+      book: {
+        googleBooksId: "book-1", title: "Selected edition", authors: ["Author"],
+        isbn13: "9780307473394", isbn10: null, subtitle: null, publisher: "Publisher",
+        publishedDate: "2024", pageCount: 300, infoLink: null, thumbnail: null,
+        coverUrl: "https://example.com/cover.jpg", coverSource: "google",
+        coverAsset: { editionKey: "isbn:9780307473394", status: "available", format: "flat-front", checkedAt: "2026-10-01", url: "https://example.com/cover.jpg" },
+      },
+    },
+  };
+  const target = { index: 1, key: "isbn:9780307473394", note: "Keep my note" };
+  const snapshot = (): ShelfData => ({
+    currentlyReading: [{ isbn13: "9780307473394", note: "Existing Reading note" }],
+    tbr: [{ isbn13: "9780593321461", note: "Another book" }, structuredClone(entry)],
+  });
+  const move = (input = target) => moveTbrBookToReadingAction(input);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(requireAdmin).mockResolvedValue({ id: "admin-1", email: "admin@example.com" });
+    vi.mocked(bench.readShelfSnapshot).mockResolvedValue({ shelf: snapshot(), updatedAt: "2026-10-28T00:00:00.000Z" });
+    vi.mocked(bench.saveShelfIfUnchanged).mockResolvedValue(true);
+  });
+
+  it("moves exactly the selected entry, preserving its edition, cover and note and all other books", async () => {
+    expect(await move()).toMatchObject({ success: true });
+    expect(bench.saveShelfIfUnchanged).toHaveBeenCalledWith({
+      currentlyReading: [{ isbn13: "9780307473394", note: "Existing Reading note" }, entry],
+      tbr: [{ isbn13: "9780593321461", note: "Another book" }],
+    }, "2026-10-28T00:00:00.000Z");
+    expect(revalidatePath).toHaveBeenCalledWith("/");
+    expect(revalidatePath).toHaveBeenCalledWith("/admin/bench");
+  });
+
+  it("supports a manual book with no ISBN", async () => {
+    const manual = structuredClone(entry);
+    manual.isbn13 = "";
+    manual.selection!.book.isbn13 = null;
+    manual.selection!.book.googleBooksId = "manual-book";
+    vi.mocked(bench.readShelfSnapshot).mockResolvedValue({ shelf: { currentlyReading: [], tbr: [manual] }, updatedAt: null });
+    expect(await move({ index: 0, key: "manual:manual-book", note: manual.note })).toMatchObject({ success: true });
+    expect(bench.saveShelfIfUnchanged).toHaveBeenCalledWith({ currentlyReading: [manual], tbr: [] }, null);
+  });
+
+  it("does not move a stale or different entry", async () => {
+    expect(await move({ ...target, note: "outdated note" })).toMatchObject({ success: false });
+    expect(bench.saveShelfIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it("does not read or write the shelf when the user is not an administrator", async () => {
+    vi.mocked(requireAdmin).mockRejectedValueOnce(new Error("Unauthorized"));
+    expect(await move()).toMatchObject({ success: false });
+    expect(bench.readShelfSnapshot).not.toHaveBeenCalled();
+    expect(bench.saveShelfIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it("reports a conflict instead of overwriting a concurrent shelf change", async () => {
+    vi.mocked(bench.saveShelfIfUnchanged).mockResolvedValueOnce(false);
+    expect(await move()).toMatchObject({ success: false });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("does not report success when the authoritative shelf cannot be read or saved", async () => {
+    vi.mocked(bench.readShelfSnapshot).mockRejectedValueOnce(new Error("offline"));
+    expect(await move()).toMatchObject({ success: false });
+    expect(bench.saveShelfIfUnchanged).not.toHaveBeenCalled();
+    vi.mocked(bench.saveShelfIfUnchanged).mockRejectedValueOnce(new Error("offline"));
+    expect(await move()).toMatchObject({ success: false });
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

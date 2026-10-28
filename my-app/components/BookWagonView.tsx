@@ -5,12 +5,23 @@ import BenchDiagnostics from "./BenchDiagnostics";
 import { recordBenchEvent } from "@/lib/bench-diagnostics";
 import { useEffect, useRef, useId, useState, type CSSProperties } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { canMoveTbrBooksAction, moveTbrBookToReadingAction } from "@/app/admin/bench/actions";
+import { normalizeIsbn13 } from "@/lib/isbn";
 import type { ResolvedShelf } from "@/lib/books";
 import styles from "./BookWagonView.module.css";
 
-export default function BookWagonView({shelf}:{shelf:ResolvedShelf}) {
-  useEffect(()=>{recordBenchEvent("wagon.load","loaded",{count:shelf.currentlyReading.length+shelf.tbr.length,warnings:shelf.errors.length});},[shelf]);
-  const books=[...shelf.currentlyReading.map((book,index)=>({...book,key:`reading-${book.isbn13||book.googleBooksId||index}`,group:"reading"})),...shelf.tbr.map((book,index)=>({...book,key:`waiting-${book.isbn13||book.googleBooksId||index}`,group:"waiting"}))];
+export default function BookWagonView({shelf,isOpen=true}:{shelf:ResolvedShelf;isOpen?:boolean}) {
+  const router=useRouter();
+  const [updated,setUpdated]=useState<{base:ResolvedShelf;value:ResolvedShelf}|null>(null);
+  const visibleShelf=updated?.base===shelf?updated.value:shelf;
+  const [canMove,setCanMove]=useState(false);
+  const [moving,setMoving]=useState<string|null>(null);
+  const movingRef=useRef(false);
+  const [moveMessage,setMoveMessage]=useState("");
+  useEffect(()=>{if(!isOpen)return;let active=true;void canMoveTbrBooksAction().then(value=>{if(active)setCanMove(value);}).catch(()=>{if(active)setCanMove(false);});return()=>{active=false;};},[isOpen]);
+  useEffect(()=>{recordBenchEvent("wagon.load","loaded",{count:visibleShelf.currentlyReading.length+visibleShelf.tbr.length,warnings:visibleShelf.errors.length});},[visibleShelf]);
+  const books=[...visibleShelf.currentlyReading.map((book,index)=>({...book,index,key:`reading-${book.isbn13||book.googleBooksId||index}-${index}`,group:"reading"})),...visibleShelf.tbr.map((book,index)=>({...book,index,key:`waiting-${book.isbn13||book.googleBooksId||index}-${index}`,group:"waiting"}))];
   const [selected,setSelected]=useState<string|null>(books[0]?.key??null);
   const [page,setPage]=useState(0);
   const dialog=useRef<HTMLDialogElement>(null);
@@ -19,7 +30,7 @@ export default function BookWagonView({shelf}:{shelf:ResolvedShelf}) {
   const [collectionOpen,setCollectionOpen]=useState(false);
   const [collectionKey,setCollectionKey]=useState<string|null>(null);
   useEffect(()=>{if(!collectionOpen)return;const before=document.body.style.overflow;document.body.style.overflow="hidden";return()=>{document.body.style.overflow=before;};},[collectionOpen]);
-  function openCollection(){dialog.current?.showModal();setCollectionOpen(true);recordBenchEvent("wagon.tbr","opened",{count:shelf.tbr.length});}
+  function openCollection(){dialog.current?.showModal();setCollectionOpen(true);recordBenchEvent("wagon.tbr","opened",{count:visibleShelf.tbr.length});}
   const [angle,setAngle]=useState(-13);const [still,setStill]=useState(false);
   const [broken,setBroken]=useState<Record<string,boolean>>({});
   const reading=books.filter(book=>book.group==="reading");const waiting=books.filter(book=>book.group==="waiting");
@@ -27,6 +38,26 @@ export default function BookWagonView({shelf}:{shelf:ResolvedShelf}) {
   const visible=reading.slice(currentPage*3,currentPage*3+3);const active=books.find(book=>book.key===selected);
   const activeDisplay=active?coverDisplay(active.coverUrl,active.coverAsset,!!active.coverUrl&&broken[active.coverUrl],active.coverSource):null;
   function choose(key:string){recordBenchEvent("wagon.select","selected",{isbn:books.find(b=>b.key===key)?.isbn13});setSelected(key);const index=reading.findIndex(book=>book.key===key);if(index>=0)setPage(Math.floor(index/3));}
+  async function moveToReading(book:(typeof books)[number]){
+    if(movingRef.current)return;
+    movingRef.current=true;setMoving(book.key);setMoveMessage("");
+    try{
+      const key=book.isbn13?`isbn:${normalizeIsbn13(book.isbn13)}`:`manual:${book.googleBooksId}`;
+      const result=await moveTbrBookToReadingAction({index:book.index,key,note:book.note});
+      if(!result.success){setMoveMessage(result.error);return;}
+      const moved=visibleShelf.tbr[book.index];
+      const newIndex=visibleShelf.currentlyReading.length;
+      setUpdated({base:shelf,value:{...visibleShelf,currentlyReading:[...visibleShelf.currentlyReading,moved],tbr:visibleShelf.tbr.filter((_,index)=>index!==book.index)}});
+      setSelected(`reading-${moved.isbn13||moved.googleBooksId||newIndex}-${newIndex}`);
+      setPage(Math.floor(newIndex/3));setCollectionKey(null);dialog.current?.close();
+      setMoveMessage(result.warning||`已將《${book.title}》移到 Reading。`);
+      try{router.refresh();}catch{setMoveMessage("已保存，但畫面未能更新；請重新整理。");}
+    }catch{setMoveMessage("未能確認保存，請重新整理書架後再試。");}
+    finally{movingRef.current=false;setMoving(null);}
+  }
+  function moveButton(book:(typeof books)[number]){
+    return canMove&&book.group==="waiting"?<button type="button" className={styles.moveToReading} disabled={moving!==null} aria-label={`將 ${book.title} 移到 Reading`} onClick={()=>void moveToReading(book)}>{moving===book.key?"保存中…":"移到 Reading →"}</button>:null;
+  }
   function renderBook(book:(typeof books)[number],index:number,crate=false){
           const display=coverDisplay(book.coverUrl,book.coverAsset,!!book.coverUrl&&broken[book.coverUrl],book.coverSource);const ratio=display.ratio;
           const width=Math.min(crate?120:148,(crate?190:200+index*8)*ratio);const height=width/ratio;
@@ -60,15 +91,17 @@ export default function BookWagonView({shelf}:{shelf:ResolvedShelf}) {
       <div className={styles.status}>{active.group==="reading"?"閱讀中 / ON THE WAY":"待讀 / NEXT STOP"}</div><h4>{active.title}</h4><div className={styles.author}>{active.authors.join("、")||"作者資料未提供"}</div><p className={styles.note}>{active.note||"未有筆記。"}</p><div className={styles.edition}>{[active.publisher,active.publishedDate].filter(Boolean).join(" · ")||"版本資料未提供"}</div><div className={styles.edition}>{active.isbn13?`ISBN ${active.isbn13}`:"未有 ISBN"}</div>
       {active.infoLink&&<a className={styles.source} href={active.infoLink} target="_blank" rel="noopener noreferrer">查看版本來源 ↗</a>}
       {activeDisplay?.preview&&<figure className={styles.sourcePreview}><Image src={activeDisplay.preview} alt={`${active.title} 版本來源圖片`} width={240} height={180} unoptimized onError={()=>setBroken(prev=>({...prev,[activeDisplay.preview!]:true}))}/><figcaption>版本來源圖片</figcaption></figure>}
-      <p className={styles.assetNote}>{!activeDisplay?.image?"暫未有可顯示封面":activeDisplay.texture?"原版封面 · 書脊及厚度為示意":active.coverAsset?.format==="product-photo"?"版本商品照":"版本封面"}</p><button type="button" className={styles.putback} onClick={()=>setSelected(null)}>{active.group==="waiting"?"放返待讀木箱":"放返 Reading 書車"}</button>
+      <p className={styles.assetNote}>{!activeDisplay?.image?"暫未有可顯示封面":activeDisplay.texture?"原版封面 · 書脊及厚度為示意":active.coverAsset?.format==="product-photo"?"版本商品照":"版本封面"}</p>{moveButton(active)}<button type="button" className={styles.putback} onClick={()=>setSelected(null)}>{active.group==="waiting"?"放返待讀木箱":"放返 Reading 書車"}</button>
     </>:<><div className={styles.status}>THE BOOK WAGON</div><h4>{books.length?"下一本，想讀邊本？":"書車暫時未有書。"}</h4><p className={styles.note}>{books.length?"點一下封面，睇版本資料同筆記。":"有書想讀嘅時候，再放上嚟。"}</p></>}</aside></div>
+    {!collectionOpen&&moveMessage&&<p className={styles.moveMessage} role="status">{moveMessage}</p>}
     <details className={styles.list}><summary>Reading 書目列表（{reading.length}）</summary>{reading.map(book=><button type="button" key={book.key} onClick={()=>choose(book.key)}>{book.title} · {book.authors.join("、")}</button>)}</details>
-    {shelf.errors.length>0&&<p className={styles.assetNote}>部分書目資料未載入：{shelf.errors.map(error=>error.isbn13).join("、")}</p>}
+    {visibleShelf.errors.length>0&&<p className={styles.assetNote}>部分書目資料未載入：{visibleShelf.errors.map(error=>error.isbn13).join("、")}</p>}
     <dialog ref={dialog} className={styles.collection} aria-labelledby={dialogTitle} onClose={()=>{setCollectionOpen(false);recordBenchEvent("wagon.tbr","closed");}} onKeyDown={event=>{if(event.key==="Escape"||event.key==="Tab")event.stopPropagation();}}>
       <div className={styles.collectionHeader}><div><p className={styles.eyebrow}>THE NEXT CHAPTER</p><h4 id={dialogTitle}>待讀木箱 <small>／{waiting.length} 本</small></h4></div><button type="button" aria-label="關閉待讀清單" onClick={()=>dialog.current?.close()}>關閉 ×</button></div>
       <p className={styles.collectionIntro}>按待讀次序排列。揀一本，睇下下一站。</p>
+      {moveMessage&&<p className={styles.moveMessage} role="status">{moveMessage}</p>}
       {(()=>{const book=waiting.find(b=>b.key===collectionKey);if(!book)return null;const display=coverDisplay(book.coverUrl,book.coverAsset,!!book.coverUrl&&broken[book.coverUrl],book.coverSource);return <section className={styles.collectionDetail} aria-labelledby={detailTitle}><h5 id={detailTitle} ref={collectionHeading} tabIndex={-1}>{book.title}</h5><p>{book.authors.join("、")||"作者資料未提供"} · {[book.publisher,book.publishedDate].filter(Boolean).join(" · ")||"版本資料未提供"}</p><p>{book.isbn13?`ISBN ${book.isbn13}`:"未有 ISBN"}</p><p className={styles.note}>{book.note||"未有筆記。"}</p>{book.infoLink&&<a className={styles.source} href={book.infoLink} target="_blank" rel="noopener noreferrer">查看版本來源 ↗</a>}{display.preview&&<figure className={styles.sourcePreview}><Image src={display.preview} alt={`${book.title} 來源圖片`} width={240} height={180} unoptimized onError={()=>setBroken(prev=>({...prev,[display.preview!]:true}))}/><figcaption>版本來源圖片</figcaption></figure>}</section>;})()}
-      {waiting.length===0?<p className={styles.emptyCollection}>木箱暫時空住。留個位，等下一本想讀嘅書。</p>:<div className={styles.collectionGrid}>{waiting.map((book,index)=>{const display=coverDisplay(book.coverUrl,book.coverAsset,!!book.coverUrl&&broken[book.coverUrl],book.coverSource);return <button type="button" key={book.key} data-tbr-book aria-label={`查看 ${book.title}`} aria-pressed={collectionKey===book.key} className={styles.collectionCard} onClick={()=>{setCollectionKey(book.key);recordBenchEvent("wagon.tbr.select","selected",{isbn:book.isbn13});requestAnimationFrame(()=>{dialog.current?.scrollTo(0,0);collectionHeading.current?.focus({preventScroll:true});});}}><span className={styles.collectionCover} aria-hidden="true">{display.image?<Image src={display.image} alt="" width={160} height={Math.round(160/display.ratio)} unoptimized onError={()=>{recordBenchEvent("wagon.image","failed",{isbn:book.isbn13,code:"browser_image_error"});setBroken(prev=>({...prev,[display.image!]:true}));}}/>:<span className={styles.placeholder}><strong>{book.title}</strong><small>暫未有封面</small></span>}</span><strong>{book.title}</strong><small>{String(index+1).padStart(2,"0")} / {book.authors.join("、")||"作者資料未提供"}</small></button>;})}</div>}
+      {waiting.length===0?<p className={styles.emptyCollection}>木箱暫時空住。留個位，等下一本想讀嘅書。</p>:<div className={styles.collectionGrid}>{waiting.map((book,index)=>{const display=coverDisplay(book.coverUrl,book.coverAsset,!!book.coverUrl&&broken[book.coverUrl],book.coverSource);return <div key={book.key} className={styles.collectionItem}><button type="button" data-tbr-book aria-label={`查看 ${book.title}`} aria-pressed={collectionKey===book.key} className={styles.collectionCard} onClick={()=>{setCollectionKey(book.key);recordBenchEvent("wagon.tbr.select","selected",{isbn:book.isbn13});requestAnimationFrame(()=>{dialog.current?.scrollTo(0,0);collectionHeading.current?.focus({preventScroll:true});});}}><span className={styles.collectionCover} aria-hidden="true">{display.image?<Image src={display.image} alt="" width={160} height={Math.round(160/display.ratio)} unoptimized onError={()=>{recordBenchEvent("wagon.image","failed",{isbn:book.isbn13,code:"browser_image_error"});setBroken(prev=>({...prev,[display.image!]:true}));}}/>:<span className={styles.placeholder}><strong>{book.title}</strong><small>暫未有封面</small></span>}</span><strong>{book.title}</strong><small>{String(index+1).padStart(2,"0")} / {book.authors.join("、")||"作者資料未提供"}</small></button>{moveButton(book)}</div>;})}</div>}
     </dialog>
     <BenchDiagnostics />
   </section>;

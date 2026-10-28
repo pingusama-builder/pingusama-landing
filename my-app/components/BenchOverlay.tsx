@@ -163,7 +163,7 @@ export default function BenchOverlay({
         </button>
 
         <div className="bench-grid" style={{display:"block"}}>
-          <BookWagonView shelf={shelf}/>
+          <BookWagonView shelf={shelf} isOpen={isOpen}/>
           <div className="bench-section">
             <div className="bench-section-head">
               <h4 id="bench-vault-title">Things worth keeping</h4>

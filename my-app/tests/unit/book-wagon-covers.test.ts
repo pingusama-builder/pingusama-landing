@@ -1,6 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("@/app/admin/bench/actions", () => ({ canMoveTbrBooksAction: vi.fn(), moveTbrBookToReadingAction: vi.fn() }));
 import BookWagonView from "@/components/BookWagonView";
 import type { ResolvedShelf } from "@/lib/books";
 import type { BookCoverAsset } from "@/lib/book-cover-types";

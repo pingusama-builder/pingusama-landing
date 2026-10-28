@@ -18,6 +18,24 @@ export async function saveShelf(shelf: ShelfData): Promise<void> {
   await saveToSupabase("shelf", shelf);
 }
 
+export async function readShelfSnapshot(): Promise<{ shelf: ShelfData; updatedAt: string | null }> {
+  const { data, error } = await createServiceClient()
+    .from("bench").select("data, updated_at").eq("key", "shelf").single();
+  if (error || !data) throw new Error("Unable to read the saved shelf");
+  return { shelf: data.data as ShelfData, updatedAt: data.updated_at as string | null };
+}
+
+export async function saveShelfIfUnchanged(shelf: ShelfData, updatedAt: string | null): Promise<boolean> {
+  const previousTime = updatedAt === null ? 0 : Date.parse(updatedAt);
+  if (!Number.isFinite(previousTime)) throw new Error("Invalid shelf timestamp");
+  const query = createServiceClient().from("bench")
+    .update({ data: shelf, updated_at: new Date(Math.max(Date.now(), previousTime + 1)).toISOString() }).eq("key", "shelf");
+  const match = updatedAt === null ? query.is("updated_at", null) : query.eq("updated_at", updatedAt);
+  const { data, error } = await match.select("key").maybeSingle();
+  if (error) throw new Error("Unable to save the shelf");
+  return data !== null;
+}
+
 export async function saveVault(vault: VaultData): Promise<void> {
   await saveToSupabase("vault", vault);
 }

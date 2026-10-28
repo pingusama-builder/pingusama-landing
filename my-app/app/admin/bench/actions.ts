@@ -2,7 +2,7 @@
 import { collectBenchTrace } from "@/lib/bench-trace";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { getCurrentUser, isAdmin, requireAdmin } from "@/lib/auth";
 import {
   ShelfData,
   VaultData,
@@ -14,7 +14,7 @@ import { isValidIsbn13, normalizeIsbn13 } from "@/lib/isbn";
 import { searchBooks, type BookSearchInput, type BookSearchResult } from "@/lib/book-search";
 import { validateShelf } from "@/lib/book-selection";
 import { prepareShelfCovers } from "@/lib/shelf-covers";
-import { loadShelf, loadVault, saveShelf, saveVault } from "@/lib/db/bench";
+import { loadShelf, loadVault, saveShelf, saveVault, readShelfSnapshot, saveShelfIfUnchanged } from "@/lib/db/bench";
 import {
   getBooksByIsbns,
   isStale,
@@ -37,6 +37,45 @@ export async function loadBenchData(): Promise<{
   await requireAdmin();
   const [shelf, vault] = await Promise.all([loadShelf(), loadVault()]);
   return { shelf, vault };
+}
+
+export async function canMoveTbrBooksAction(): Promise<boolean> {
+  try { return isAdmin(await getCurrentUser()); } catch { return false; }
+}
+
+export async function moveTbrBookToReadingAction(input: { index: number; key: string; note: string }): Promise<
+  { success: true; warning?: string } | { success: false; error: string }
+> {
+  try {
+    await requireAdmin();
+    if (!input || !Number.isInteger(input.index) || input.index < 0 || typeof input.key !== "string" || typeof input.note !== "string") {
+      return { success: false, error: "書目資料無效，請重新整理書架。" };
+    }
+    const { shelf, updatedAt } = await readShelfSnapshot();
+    if (!Array.isArray(shelf?.currentlyReading) || !Array.isArray(shelf?.tbr)) throw new Error("Invalid shelf");
+    const entry = shelf.tbr[input.index];
+    const key = entry?.isbn13 ? `isbn:${normalizeIsbn13(entry.isbn13)}` : entry?.selection?.book?.googleBooksId ? `manual:${entry.selection.book.googleBooksId}` : "";
+    if (!entry || !key || key !== input.key || entry.note !== input.note) {
+      return { success: false, error: "書架已更新，請重新整理後再試。" };
+    }
+    const moved = {
+      ...shelf,
+      currentlyReading: [...shelf.currentlyReading, entry],
+      tbr: shelf.tbr.filter((_, index) => index !== input.index),
+    };
+    if (!await saveShelfIfUnchanged(moved, updatedAt)) {
+      return { success: false, error: "書架剛剛有其他修改，請重新整理後再試。" };
+    }
+  } catch {
+    return { success: false, error: "未能保存，請確認已登入管理員帳戶並稍後重試。" };
+  }
+  try {
+    revalidatePath("/");
+    revalidatePath("/admin/bench");
+    return { success: true };
+  } catch {
+    return { success: true, warning: "已保存，但公開書架更新可能需要稍後重試。" };
+  }
 }
 
 async function saveShelfActionInternal(

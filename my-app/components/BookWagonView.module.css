@@ -21,3 +21,4 @@
 @media(max-width:550px){.scene{transform:translateX(-50%) scale(.48)}.stage{height:360px}}
 @media(max-width:400px){.scene{transform:translateX(-50%) scale(.42)}.stage{height:317px}}
 @media(max-width:360px){.scene{transform:translateX(-50%) scale(.38)}.stage{height:288px}.collectionCover{height:145px}.collectionGrid{gap:16px 8px}}
+.collectionItem{min-width:0}.collectionCard{width:100%;display:block}.moveToReading{background:#b89b65;color:#172d25!important;border:1px solid #cfb77e;border-radius:3px;min-height:44px;padding:9px 13px;margin:10px 10px 0 0;font-size:12px}.moveMessage{font-size:12px;line-height:1.6;color:#f2d8a0}
